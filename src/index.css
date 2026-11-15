@@ -1,0 +1,88 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@layer base {
+  body {
+    background-color: #050811;
+    color: #f1f5f9;
+    font-family: var(--font-sans);
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #070b14;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-modal {
+  animation: modalIn 0.16s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.commit-node-ring {
+  transition: transform 0.18s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.18s ease;
+  transform-origin: center;
+  transform-box: fill-box;
+}
+
+.commit-row:hover .commit-node-ring {
+  transform: scale(1.32);
+  opacity: 0.95;
+}
+
+.overlap-highlighted {
+  border-color: rgba(245, 158, 11, 0.65) !important;
+  background-color: rgba(15, 23, 42, 0.96) !important;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35), 0 8px 20px -4px rgba(0, 0, 0, 0.6);
+}
+
+.crosslink-highlighted {
+  border-color: rgba(16, 185, 129, 0.85) !important;
+  background-color: rgba(6, 78, 59, 0.35) !important;
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.45), 0 10px 25px -4px rgba(0, 0, 0, 0.7);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-modal {
+    animation: none;
+  }
+  .commit-node-ring {
+    transition: none;
+  }
+}

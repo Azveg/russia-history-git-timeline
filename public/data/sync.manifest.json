@@ -1,0 +1,190 @@
+{
+  "$schema": "https://git-timeline.schema.org/v2/sync-manifest.json",
+  "project": "Военная и геополитическая история России: модульный Git-таймлайн (1686–2026)",
+  "schemaVersion": "2.0.0",
+  "timeAxis": {
+    "minYear": 1686,
+    "maxYear": 2026,
+    "resolution": "year",
+    "overlapRule": "inclusive_interval"
+  },
+  "mountedFiles": [
+    {
+      "fileId": "rulers",
+      "path": "data/rulers.json",
+      "role": "trunk",
+      "branchIds": ["MAIN_RULERS"],
+      "title": "Шкала правителей России (1686–2026)",
+      "enabled": true
+    },
+    {
+      "fileId": "wars",
+      "path": "data/wars.json",
+      "role": "military_branches",
+      "branchIds": ["SEAS", "PERIPHERY", "INTERNAL_BUFFER"],
+      "title": "Военные конфликты, походы и силовые операции (1686–2026)",
+      "enabled": true
+    },
+    {
+      "fileId": "economics",
+      "path": "data/economics.json",
+      "role": "thematic_branch",
+      "branchIds": ["REFORMS_ECO"],
+      "title": "Экономика, финансы и военные реформы",
+      "enabled": true
+    },
+    {
+      "fileId": "world",
+      "path": "data/world.json",
+      "role": "thematic_branch",
+      "branchIds": ["WORLD_CONTEXT"],
+      "title": "События в других странах и мировой контекст",
+      "enabled": true
+    },
+    {
+      "fileId": "diplomacy",
+      "path": "data/diplomacy.json",
+      "role": "thematic_branch",
+      "branchIds": ["DIPLOMACY_TREATIES"],
+      "title": "Дипломатия: ключевые мирные договоры и военные союзы (опциональный модуль)",
+      "enabled": false
+    }
+  ],
+  "macroEras": [
+    {
+      "id": "ERA_1",
+      "roman": "I",
+      "period": "1686–1800",
+      "title": "Становление Российской империи: от Петра I до конца XVIII века",
+      "thesis": "Прорыв к Балтийскому и Черному морям, создание регулярной армии и флота, разделы Речи Посполитой и подавление крупных казачье-крестьянских бунтов."
+    },
+    {
+      "id": "ERA_2",
+      "roman": "II",
+      "period": "1801–1917",
+      "title": "Российская империя в XIX — начале XX века: пик экспансии и крушение",
+      "thesis": "Триумф над Наполеоном, покорение Кавказа и Средней Азии, борьба за Балканы и Дальний Восток, завершившаяся надломом в Первой мировой войне."
+    },
+    {
+      "id": "ERA_3",
+      "roman": "III",
+      "period": "1917–1991",
+      "title": "Советский период: мировые войны, интервенции и борьба за глобальное влияние",
+      "thesis": "Сборка бывшей империи в Гражданской войне, победа в Великой Отечественной войне и глобальное противостояние Холодной войны от Европы до Африки."
+    },
+    {
+      "id": "ERA_4",
+      "roman": "IV",
+      "period": "1991–2026",
+      "title": "Постсоветская Россия (РФ): региональные кампании и геополитические конфликты",
+      "thesis": "Военные кампании на постсоветском пространстве, чеченские войны, экспедиции в Сирии и Африке и полномасштабная война против Украины."
+    }
+  ],
+  "crossLinks": [
+    {
+      "id": "link-streltsy-army",
+      "from": "1698-streltsy",
+      "to": "1699-reform-army",
+      "type": "triggers",
+      "label": "Роспуск мятежных стрелецких полков ускорил переход к регулярной рекрутской армии Петра I"
+    },
+    {
+      "id": "link-northern-spanish",
+      "from": "1701-world-spanish-succ",
+      "to": "1700-northern-war",
+      "type": "sync_context",
+      "label": "Война за испанское наследство сковала Англию, Францию и Австрию, не позволив им вмешаться в Северную войну"
+    },
+    {
+      "id": "link-northern-poll-tax",
+      "from": "1700-northern-war",
+      "to": "1718-reform-poll-tax",
+      "type": "triggers",
+      "label": "Затяжная 20-летняя Северная война потребовала введения подушной подати и ревизий населения"
+    },
+    {
+      "id": "link-seven-years-customs",
+      "from": "1754-reform-customs",
+      "to": "1756-seven-years",
+      "type": "sync_context",
+      "label": "Манифест о вольности дворянства Петра III (1762) совпал с резким выходом России из Семилетней войны"
+    },
+    {
+      "id": "link-turk-assignats",
+      "from": "1768-rus-turk",
+      "to": "1769-reform-assignats",
+      "type": "triggers",
+      "label": "Финансирование масштабной войны с Османской империей вызвало выпуск первых бумажных ассигнаций (1769)"
+    },
+    {
+      "id": "link-pugachev-guberniya",
+      "from": "1773-pugachev",
+      "to": "1769-reform-assignats",
+      "type": "triggers",
+      "label": "Разгром Пугачевского восстания привел к Губернской реформе 1775 г. для усиления контроля на местах"
+    },
+    {
+      "id": "link-tilsit-blockade",
+      "from": "1805-coalitions-3-4",
+      "to": "1807-anglo-rus",
+      "type": "triggers",
+      "label": "Тильзитский мир с Наполеоном обязал Россию присоединиться к Континентальной блокаде Британии"
+    },
+    {
+      "id": "link-spring-hungary",
+      "from": "1848-world-spring",
+      "to": "1849-hungary",
+      "type": "triggers",
+      "label": "Европейская «Весна народов» 1848 г. вызвала Венгерский поход армии Паскевича для спасения Габсбургов"
+    },
+    {
+      "id": "link-crimea-great-reforms",
+      "from": "1853-crimean-war",
+      "to": "1861-reform-emancipation",
+      "type": "triggers",
+      "label": "Поражение в Крымской войне вскрыло технологическое отставание и запустило Великие реформы Александра II и реформу Милютина"
+    },
+    {
+      "id": "link-germany-black-sea",
+      "from": "1871-world-germany",
+      "to": "1877-rus-turk",
+      "type": "enables",
+      "label": "Разгром Франции Пруссией позволил России отменить нейтрализацию Черного моря (1870) и подготовить войну за Балканы"
+    },
+    {
+      "id": "link-transsib-japan",
+      "from": "1891-reform-transsib",
+      "to": "1904-rus-japanese",
+      "type": "enables",
+      "label": "Строительство Транссиба и КВЖД обеспечило железнодорожную экспансию в Маньчжурию и столкновение с Японией"
+    },
+    {
+      "id": "link-japan-rev1905",
+      "from": "1904-rus-japanese",
+      "to": "1905-first-revolution",
+      "type": "triggers",
+      "label": "Военные поражения в Русско-японской войне стали катализатором Первой русской революции 1905–1907 гг."
+    },
+    {
+      "id": "link-civil-war-communism",
+      "from": "1917-civil-war",
+      "to": "1918-reform-war-communism",
+      "type": "sync_context",
+      "label": "Продразверстка «Военного коммунизма» снабжала РККА, но спровоцировала крестьянские восстания 1920–1921 гг."
+    },
+    {
+      "id": "link-georgia-serdyukov",
+      "from": "2008-georgia-war",
+      "to": "2008-reform-serdyukov",
+      "type": "triggers",
+      "label": "Пятидневная война 2008 г. выявила проблемы связи и управления, запустив реформу «Новый облик» ВС РФ"
+    },
+    {
+      "id": "link-ukraine-war-economy",
+      "from": "2022-ukraine-war",
+      "to": "2022-reform-war-economy",
+      "type": "triggers",
+      "label": "Затяжная война на истощение привела к переводу экономики РФ на военные рельсы и введению цифрового призыва"
+    }
+  ]
+}

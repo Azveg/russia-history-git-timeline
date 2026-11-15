@@ -1,0 +1,123 @@
+import { Crown, X } from 'lucide-react';
+import type { BranchDefinition, EnrichedEvent, RulerPeriod } from '../types/timeline';
+
+interface SidebarLegendProps {
+  rulers: RulerPeriod[];
+  matchingEvents: EnrichedEvent[];
+  visibleLanes: BranchDefinition[];
+  yearFrom: number;
+  yearTo: number;
+  onSelectYearRange: (from: number, to: number) => void;
+  onHideSidebar: () => void;
+}
+
+export function SidebarLegend({
+  rulers,
+  matchingEvents,
+  visibleLanes,
+  yearFrom,
+  yearTo,
+  onSelectYearRange,
+  onHideSidebar,
+}: SidebarLegendProps) {
+  return (
+    <aside className="hidden lg:block lg:col-span-3 sticky top-14 bg-slate-900/60 border border-slate-800/90 rounded-2xl p-4 max-h-[calc(100vh-4.5rem)] overflow-y-auto">
+      <div className="flex items-center justify-between text-xs font-mono font-bold text-amber-400 mb-2.5 px-1">
+        <span className="flex items-center gap-1.5">
+          <Crown className="w-3.5 h-3.5" />
+          Ветка правителей (main)
+        </span>
+        <button
+          type="button"
+          onClick={onHideSidebar}
+          className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+          title="Скрыть боковую панель"
+        >
+          <X className="w-3 h-3" />
+          <span>Скрыть</span>
+        </button>
+      </div>
+
+      <p className="text-[11px] text-slate-400 px-1 mb-3 leading-snug">
+        Клик по правителю фильтрует временное окно его правления и показывает все пересекающиеся события:
+      </p>
+
+      <nav className="space-y-1">
+        {rulers.map((r) => {
+          const overlappingCount = matchingEvents.filter((ev) =>
+            ev.overlappingRulers.some((or) => or.id === r.id),
+          ).length;
+          const isCurrentWindow = yearFrom === r.startYear && yearTo === r.endYear;
+
+          return (
+            <button
+              key={r.id}
+              type="button"
+              onClick={() => onSelectYearRange(r.startYear, r.endYear)}
+              className={`w-full group flex items-start justify-between gap-2 px-2.5 py-2 rounded-xl border transition-colors text-left cursor-pointer ${
+                isCurrentWindow
+                  ? 'bg-amber-500/15 border-amber-500/50 text-amber-200'
+                  : 'border-transparent hover:bg-slate-800/80 text-slate-200'
+              }`}
+            >
+              <div className="min-w-0">
+                <div className="text-[11px] font-mono font-bold tabular-nums text-amber-300">
+                  {r.reignPeriod}
+                </div>
+                <div className="text-xs font-semibold group-hover:text-amber-300 truncate mt-0.5">
+                  {r.ruler}
+                </div>
+              </div>
+              <span
+                className="text-[11px] font-mono font-bold tabular-nums text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded-md shrink-0 mt-0.5"
+                title="Активных событий в период правления"
+              >
+                {overlappingCount}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="mt-5 pt-4 border-t border-slate-800/80 px-1 space-y-2.5">
+        <div className="text-[11px] font-mono font-bold text-slate-300">Как читать наложение линий:</div>
+        <div className="text-[11px] text-slate-400 space-y-1.5 leading-snug">
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-1 bg-amber-400 rounded shrink-0" />
+            <span>
+              <strong className="text-slate-200">Сплошная рельса</strong> — в этот год идет активный процесс.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-2 border-y-2 border-orange-400 shrink-0" />
+            <span>
+              <strong className="text-slate-200">Двойная рельса</strong> — одновременно идут 2+ события ветки.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-0.5 border-b border-dashed border-slate-500 shrink-0" />
+            <span>
+              <strong className="text-slate-200">Пунктир</strong> — ветка без активных конфликтов в этот год.
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-2 rounded border border-emerald-400 bg-emerald-950/60 shrink-0" />
+            <span>
+              <strong className="text-emerald-300">Изумрудный контур</strong> — явная sync-связь при наведении.
+            </span>
+          </div>
+        </div>
+
+        <div className="pt-2 space-y-1.5 text-[11px] text-slate-400">
+          {visibleLanes.map((lane) => (
+            <div key={lane.id} className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
+              <span className="font-mono text-[10px] text-slate-300 shrink-0">{lane.gitName}</span>
+              <span className="text-slate-500 truncate">— {lane.label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </aside>
+  );
+}
