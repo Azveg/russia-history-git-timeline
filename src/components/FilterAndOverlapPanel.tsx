@@ -38,13 +38,13 @@ interface FilterAndOverlapPanelProps {
 }
 
 const PRESETS = [
-  { label: 'Весь график (1686–2026)', from: 1686, to: 2026, cls: 'border-slate-800 text-slate-300' },
+  { label: 'Весь график (1686–2000)', from: 1686, to: 2000, cls: 'border-slate-800 text-slate-300' },
   { label: '1700–1721: Северная война + 4 бунта + Реформы', from: 1700, to: 1721, cls: 'border-amber-500/30 text-amber-300' },
   { label: '1755–1764: Семилетняя война (3 правителя!)', from: 1755, to: 1764, cls: 'border-amber-500/30 text-amber-300' },
   { label: '1850–1865: Кавказ + Крымская + Смена власти', from: 1850, to: 1865, cls: 'border-sky-500/30 text-sky-300' },
   { label: '1914–1923: ПМВ + Революция + Гражданская', from: 1914, to: 1923, cls: 'border-rose-500/30 text-rose-300' },
   { label: '1979–1991: Афганистан (4 генсека) + Распад СССР', from: 1979, to: 1991, cls: 'border-emerald-500/30 text-emerald-300' },
-  { label: '2014–2026: Крым, Донбасс, Сирия, Африка, СВО', from: 2014, to: 2026, cls: 'border-purple-500/30 text-purple-300' },
+  { label: '1991–1999: Локальные конфликты 1990-х', from: 1991, to: 2000, cls: 'border-purple-500/30 text-purple-300' },
 ];
 
 export function FilterAndOverlapPanel({
@@ -104,7 +104,7 @@ export function FilterAndOverlapPanel({
                 <input
                   type="number"
                   min={1686}
-                  max={2026}
+                  max={2000}
                   value={yearFrom}
                   aria-label="Начало окна лет"
                   onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
@@ -114,7 +114,7 @@ export function FilterAndOverlapPanel({
                 <input
                   type="number"
                   min={1686}
-                  max={2026}
+                  max={2000}
                   value={yearTo}
                   aria-label="Конец окна лет"
                   onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
@@ -182,7 +182,7 @@ export function FilterAndOverlapPanel({
               <input
                 type="range"
                 min={1686}
-                max={2026}
+                max={2000}
                 value={yearFrom}
                 aria-label="Ползунок начала окна"
                 onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
@@ -194,7 +194,7 @@ export function FilterAndOverlapPanel({
               <input
                 type="range"
                 min={1686}
-                max={2026}
+                max={2000}
                 value={yearTo}
                 aria-label="Ползунок конца окна"
                 onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
@@ -229,7 +229,7 @@ export function FilterAndOverlapPanel({
                   : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
               }`}
             >
-              Все эпохи (1686–2026)
+              Все эпохи (1686–2000)
             </button>
             {macroEras.map((era) => {
               const active = selectedEra === era.id;

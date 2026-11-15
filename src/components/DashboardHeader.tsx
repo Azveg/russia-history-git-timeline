@@ -1,4 +1,4 @@
-import { Flag, FolderGit2, GitBranch, Plus } from 'lucide-react';
+import { Flag, GitBranch } from 'lucide-react';
 import type { BranchDefinition, MilitaryBranchMode } from '../types/timeline';
 
 interface DashboardHeaderProps {
@@ -6,7 +6,6 @@ interface DashboardHeaderProps {
   matchingRulersCount: number;
   streamCount: number;
   crossLinksCount: number;
-  mountedFilesCount: number;
   branchControls: Array<BranchDefinition & { count: number }>;
   activeBranches: Record<string, boolean>;
   militaryBranchMode: MilitaryBranchMode;
@@ -14,8 +13,6 @@ interface DashboardHeaderProps {
   onToggleBranch: (branchId: string) => void;
   onSetMilitaryBranchMode: (mode: MilitaryBranchMode) => void;
   onToggleShowEndNodes: () => void;
-  onOpenRepoStudio: () => void;
-  onOpenAddCommit: () => void;
 }
 
 export function DashboardHeader({
@@ -23,7 +20,6 @@ export function DashboardHeader({
   matchingRulersCount,
   streamCount,
   crossLinksCount,
-  mountedFilesCount,
   branchControls,
   activeBranches,
   militaryBranchMode,
@@ -31,8 +27,6 @@ export function DashboardHeader({
   onToggleBranch,
   onSetMilitaryBranchMode,
   onToggleShowEndNodes,
-  onOpenRepoStudio,
-  onOpenAddCommit,
 }: DashboardHeaderProps) {
   return (
     <header className="relative border-b border-slate-800/80 bg-gradient-to-b from-slate-900/90 via-[#050811] to-[#050811] overflow-hidden">
@@ -42,30 +36,24 @@ export function DashboardHeader({
             <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono text-slate-400 mb-2">
               <span className="inline-flex items-center gap-1.5 text-amber-300 font-semibold">
                 <GitBranch className="w-3.5 h-3.5" />
-                История в ветвях Git · 1686–2026
+                История в ветвях Git · 1686–2000
               </span>
               <span aria-hidden="true">·</span>
               <span className="text-emerald-300">
-                Подключено файлов: {mountedFilesCount} · Связей синхронизации: {crossLinksCount}
+                Связей синхронизации: {crossLinksCount}
               </span>
             </div>
 
             <h1 className="text-2xl sm:text-4xl font-extrabold tracking-tight text-white leading-tight [text-wrap:balance]">
               Военная история России:{' '}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-sky-300 to-emerald-300">
-                модульный Git-граф пересекающихся таймлайнов
+                Git-граф пересекающихся таймлайнов
               </span>
             </h1>
 
             <p className="mt-2.5 text-slate-300 text-xs sm:text-sm leading-relaxed">
-              Каждая историческая линия хранится в отдельном JSON-файле (
-              <code className="text-amber-300 font-mono">data/rulers.json</code>,{' '}
-              <code className="text-sky-300 font-mono">data/wars.json</code>,{' '}
-              <code className="text-emerald-300 font-mono">data/economics.json</code>,{' '}
-              <code className="text-purple-300 font-mono">data/world.json</code>) и объединяется через{' '}
-              <code className="text-emerald-300 font-mono">data/sync.manifest.json</code>, который вычисляет
-              пересечения периодов и строит причинно-следственные связи (
-              <code className="text-emerald-300 font-mono">crossLinks</code>) между ветвями.
+              Параллельная хронология правлений, войн, внутренних реформ и мирового контекста с 1686 по 2000 год:
+              отслеживайте смены правителей в ходе кампаний, пересечения эпох и причинно-следственные связи между ветвями.
             </p>
           </div>
 
@@ -95,25 +83,6 @@ export function DashboardHeader({
                 </div>
                 <div className="text-[10px] text-slate-400">связей</div>
               </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={onOpenRepoStudio}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-xs transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <FolderGit2 className="w-3.5 h-3.5" />
-                <span>Git-файлы и GitHub Pages</span>
-              </button>
-              <button
-                type="button"
-                onClick={onOpenAddCommit}
-                className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-lg shadow-amber-500/10 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Коммит / Ветка</span>
-              </button>
             </div>
           </div>
         </div>

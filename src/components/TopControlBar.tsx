@@ -1,11 +1,10 @@
-import { FolderGit2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from 'lucide-react';
+import { Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from 'lucide-react';
 import type { BranchDefinition } from '../types/timeline';
 
 interface TopControlBarProps {
   branchControls: Array<BranchDefinition & { count: number }>;
   activeBranches: Record<string, boolean>;
   onToggleBranch: (branchId: string) => void;
-  mountedFilesCount: number;
   yearFrom: number;
   yearTo: number;
   onYearRangeChange: (from: number, to: number) => void;
@@ -15,14 +14,12 @@ interface TopControlBarProps {
   onToggleFilters: () => void;
   onToggleLegend: () => void;
   onToggleBranchesOnly: () => void;
-  onOpenRepoStudio: () => void;
 }
 
 export function TopControlBar({
   branchControls,
   activeBranches,
   onToggleBranch,
-  mountedFilesCount,
   yearFrom,
   yearTo,
   onYearRangeChange,
@@ -32,7 +29,6 @@ export function TopControlBar({
   onToggleFilters,
   onToggleLegend,
   onToggleBranchesOnly,
-  onOpenRepoStudio,
 }: TopControlBarProps) {
   return (
     <div className="sticky top-0 z-40 bg-[#050811]/95 backdrop-blur-md border-b border-slate-800/90 shadow-lg">
@@ -72,25 +68,12 @@ export function TopControlBar({
         </div>
 
         <div className="flex items-center gap-2 ml-auto shrink-0">
-          <button
-            type="button"
-            onClick={onOpenRepoStudio}
-            className="px-2.5 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            title="Управление раздельными JSON-файлами ветвей и экспорт для GitHub Pages"
-          >
-            <FolderGit2 className="w-3.5 h-3.5" />
-            <span>Файлы Git / JSON</span>
-            <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-500/30 text-[10px] tabular-nums">
-              {mountedFilesCount}
-            </span>
-          </button>
-
           <div className="hidden md:flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-[11px] font-mono">
             <span className="text-slate-400">Годы:</span>
             <input
               type="number"
               min={1686}
-              max={2026}
+              max={2000}
               value={yearFrom}
               aria-label="Год начала"
               onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
@@ -100,7 +83,7 @@ export function TopControlBar({
             <input
               type="number"
               min={1686}
-              max={2026}
+              max={2000}
               value={yearTo}
               aria-label="Год окончания"
               onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}

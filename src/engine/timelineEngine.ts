@@ -36,9 +36,6 @@ const CUSTOM_EVENT_YEARS: Record<string, [number, number]> = {
   '1944-upa-forest-brothers': [1944, 1956],
   '1973-reform-oil-boom': [1970, 1986],
   '1975-world-helsinki': [1975, 1989],
-  '2015-syria': [2015, 2026],
-  '2018-africa': [2018, 2026],
-  '2022-ukraine-war': [2022, 2026],
 };
 
 export function parseEventYears(periodStr: string, eventId?: string): { startYear: number; endYear: number } {
@@ -349,7 +346,7 @@ export function buildUnifiedTimelineStream(
     const minEventYear = matchingEvents.reduce((m, e) => Math.min(m, e.startYear), focusTarget.startYear);
     const maxEventYear = matchingEvents.reduce((m, e) => Math.max(m, e.endYear), focusTarget.endYear);
     effectiveYearFrom = Math.max(1686, minEventYear);
-    effectiveYearTo = Math.min(2026, Math.max(effectiveYearFrom + 1, maxEventYear));
+    effectiveYearTo = Math.min(2000, Math.max(effectiveYearFrom + 1, maxEventYear));
   } else {
     matchingEvents = enrichedEvents.filter((ev) => {
       if (!isEventBranchActive(ev, branches, filters.activeBranches, filters.militaryBranchMode)) return false;

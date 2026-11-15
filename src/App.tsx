@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AddCommitModal, type NewCommitPayload } from './components/AddCommitModal';
 import { CardDetailModal } from './components/CardDetailModal';
 import { DashboardHeader } from './components/DashboardHeader';
 import { FilterAndOverlapPanel } from './components/FilterAndOverlapPanel';
 import { GitTimeline } from './components/GitTimeline';
 import { PeriodSummaryModal } from './components/PeriodSummaryModal';
-import { RepoStudioModal } from './components/RepoStudioModal';
 import { SidebarLegend } from './components/SidebarLegend';
 import { TopControlBar } from './components/TopControlBar';
 import {
@@ -16,21 +14,17 @@ import {
   getEnrichedEvents,
   getVisibleLanes,
   intersectsTimeWindow,
-  isBranchFile,
   isEventBranchActive,
-  parseEventYears,
   resolveEventBranch,
   UNIFIED_MILITARY_BRANCH,
 } from './engine/timelineEngine';
 import type {
   BranchDefinition,
-  BranchFile,
   CardDensity,
   FocusScope,
   MilitaryBranchMode,
   SyncManifest,
   TimelineDataFile,
-  TimelineNode,
 } from './types/timeline';
 
 export default function App() {
@@ -52,7 +46,7 @@ export default function App() {
   });
 
   const [yearFrom, setYearFrom] = useState(1686);
-  const [yearTo, setYearTo] = useState(2026);
+  const [yearTo, setYearTo] = useState(2000);
   const [selectedEra, setSelectedEra] = useState('ALL');
   const [selectedReign, setSelectedReign] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,8 +65,6 @@ export default function App() {
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
-  const [isAddCommitOpen, setIsAddCommitOpen] = useState(false);
-  const [isRepoStudioOpen, setIsRepoStudioOpen] = useState(false);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -114,11 +106,9 @@ export default function App() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        if (activeCardId || activePeriodId || isAddCommitOpen || isRepoStudioOpen) {
+        if (activeCardId || activePeriodId) {
           setActiveCardId(null);
           setActivePeriodId(null);
-          setIsAddCommitOpen(false);
-          setIsRepoStudioOpen(false);
         } else if (focusedEventId) {
           setFocusedEventId(null);
         }
@@ -126,7 +116,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeCardId, activePeriodId, isAddCommitOpen, isRepoStudioOpen, focusedEventId]);
+  }, [activeCardId, activePeriodId, focusedEventId]);
 
   const branches = useMemo(() => {
     if (!manifest) return [];
@@ -261,16 +251,11 @@ export default function App() {
     return counts;
   }, [matchingEvents]);
 
-  const mountedFilesCount = useMemo(
-    () => manifest?.mountedFiles.filter((f) => f.enabled).length ?? 0,
-    [manifest],
-  );
-
   function handleYearRangeChange(fromVal: number, toVal: number) {
     let y1 = Number.isFinite(fromVal) ? Math.round(fromVal) : 1686;
-    let y2 = Number.isFinite(toVal) ? Math.round(toVal) : 2026;
-    y1 = Math.max(1686, Math.min(2026, y1));
-    y2 = Math.max(1686, Math.min(2026, y2));
+    let y2 = Number.isFinite(toVal) ? Math.round(toVal) : 2000;
+    y1 = Math.max(1686, Math.min(2000, y1));
+    y2 = Math.max(1686, Math.min(2000, y2));
     if (y1 > y2) {
       [y1, y2] = [y2, y1];
     }
@@ -284,8 +269,8 @@ export default function App() {
     if (eraId === 'ERA_1') handleYearRangeChange(1686, 1800);
     else if (eraId === 'ERA_2') handleYearRangeChange(1801, 1917);
     else if (eraId === 'ERA_3') handleYearRangeChange(1917, 1991);
-    else if (eraId === 'ERA_4') handleYearRangeChange(1991, 2026);
-    else handleYearRangeChange(1686, 2026);
+    else if (eraId === 'ERA_4') handleYearRangeChange(1991, 2000);
+    else handleYearRangeChange(1686, 2000);
   }
 
   function handleSelectReign(rulerId: string) {
@@ -294,7 +279,7 @@ export default function App() {
       const r = rulers.find((item) => item.id === rulerId);
       if (r) handleYearRangeChange(r.startYear, r.endYear);
     } else {
-      handleYearRangeChange(1686, 2026);
+      handleYearRangeChange(1686, 2000);
     }
   }
 
@@ -305,7 +290,7 @@ export default function App() {
     setOnlyWithSyncLinks(false);
     setFocusedEventId(null);
     setYearFrom(1686);
-    setYearTo(2026);
+    setYearTo(2000);
     const nextActive: Record<string, boolean> = { MILITARY_ALL: true };
     branches.forEach((b) => {
       nextActive[b.id] = true;
@@ -401,174 +386,6 @@ export default function App() {
     }
   }
 
-  function handleToggleFileEnabled(fileId: string) {
-    if (!manifest) return;
-    let toggledMetaTitle = '';
-    let nextEnabled = false;
-    const nextMounted = manifest.mountedFiles.map((f) => {
-      if (f.fileId === fileId) {
-        toggledMetaTitle = f.path;
-        nextEnabled = !f.enabled;
-        return { ...f, enabled: nextEnabled };
-      }
-      return f;
-    });
-    setManifest({ ...manifest, mountedFiles: nextMounted });
-    if (toggledMetaTitle) {
-      showToast(`Файл ${toggledMetaTitle} ${nextEnabled ? 'подключен к графу' : 'отключен от графа'}.`);
-    }
-  }
-
-  function handleUpdateFileContent(filePath: string, parsedData: SyncManifest | TimelineDataFile) {
-    if (filePath === 'data/sync.manifest.json') {
-      setManifest(parsedData as SyncManifest);
-    } else {
-      setFilesMap((prev) => ({
-        ...prev,
-        [filePath]: parsedData as TimelineDataFile,
-      }));
-    }
-  }
-
-  function handleMountExternalBranch(branchJson: BranchFile, virtualPath: string) {
-    if (!manifest) return;
-    const fileId = branchJson.fileId || `ext_${Date.now()}`;
-    const branchIds = branchJson.branch
-      ? [branchJson.branch.id]
-      : (branchJson.branches || []).map((b) => b.id);
-
-    setFilesMap((prev) => ({
-      ...prev,
-      [virtualPath]: branchJson,
-    }));
-
-    const exists = manifest.mountedFiles.some((f) => f.path === virtualPath || f.fileId === fileId);
-    const nextMounted = exists
-      ? manifest.mountedFiles.map((f) =>
-          f.path === virtualPath || f.fileId === fileId ? { ...f, enabled: true } : f,
-        )
-      : [
-          ...manifest.mountedFiles,
-          {
-            fileId,
-            path: virtualPath,
-            role: 'thematic_branch',
-            branchIds,
-            title: branchJson.branch?.label || 'Подключенная ветка',
-            enabled: true,
-          },
-        ];
-
-    setManifest({ ...manifest, mountedFiles: nextMounted });
-    setActiveBranches((prev) => {
-      const copy = { ...prev };
-      branchIds.forEach((id) => {
-        copy[id] = true;
-      });
-      return copy;
-    });
-    showToast(`Ветка из файла ${virtualPath} (${branchJson.nodes.length} событий) синхронизирована.`);
-  }
-
-  function handleAddCommitSubmit(payload: NewCommitPayload) {
-    if (!manifest) return;
-    const newEventId = `commit-${Date.now()}`;
-    const { startYear, endYear } = parseEventYears(payload.period, newEventId);
-
-    if (payload.branchId === '__NEW_BRANCH__') {
-      const branchName = payload.customBranchName || 'Новая ветка';
-      const branchColor = payload.customBranchColor || '#2dd4bf';
-      const newBranchId = `CUSTOM_${Date.now()}`;
-      const slug = branchName
-        .toLowerCase()
-        .replace(/[^a-zа-я0-9]+/gi, '-')
-        .replace(/^-|-$/g, '')
-        .slice(0, 14);
-      const customPath = `data/custom-${slug || newBranchId.toLowerCase()}.json`;
-
-      const newBranchObj: BranchDefinition = {
-        id: newBranchId,
-        gitName: `branch/${slug || 'custom'}`,
-        label: branchName,
-        short: branchName.slice(0, 14),
-        sourceFile: customPath,
-        description: `Пользовательская параллельная ветка: ${branchName}`,
-        color: branchColor,
-        badgeClass: 'bg-teal-500/15 text-teal-300 border-teal-500/40',
-        isMilitary: false,
-      };
-
-      const newNode: TimelineNode = {
-        id: newEventId,
-        startYear,
-        endYear,
-        period: payload.period,
-        title: payload.title,
-        subtitle: payload.subtitle,
-        details: payload.details,
-        task: newBranchId,
-        region: payload.region,
-        type: payload.type,
-      };
-
-      const newBranchFile: BranchFile = {
-        $schema: 'https://git-timeline.schema.org/v2/branch.json',
-        fileId: newBranchId.toLowerCase(),
-        path: customPath,
-        version: '1.0.0',
-        branch: newBranchObj,
-        nodes: [newNode],
-      };
-
-      setFilesMap((prev) => ({ ...prev, [customPath]: newBranchFile }));
-      setManifest({
-        ...manifest,
-        mountedFiles: [
-          ...manifest.mountedFiles,
-          {
-            fileId: newBranchId.toLowerCase(),
-            path: customPath,
-            role: 'thematic_branch',
-            branchIds: [newBranchId],
-            title: branchName,
-            enabled: true,
-          },
-        ],
-      });
-      setActiveBranches((prev) => ({ ...prev, [newBranchId]: true }));
-      setIsAddCommitOpen(false);
-      showToast(`Создана ветка «${branchName}» и файл ${customPath}.`);
-      return;
-    }
-
-    const newNode: TimelineNode = {
-      id: newEventId,
-      startYear,
-      endYear,
-      period: payload.period,
-      title: payload.title,
-      subtitle: payload.subtitle,
-      details: payload.details,
-      task: payload.branchId,
-      region: payload.region,
-      type: payload.type,
-    };
-
-    const targetMeta = manifest.mountedFiles.find((f) => f.branchIds.includes(payload.branchId));
-    if (targetMeta && isBranchFile(filesMap[targetMeta.path])) {
-      const existingFile = filesMap[targetMeta.path] as BranchFile;
-      setFilesMap((prev) => ({
-        ...prev,
-        [targetMeta.path]: {
-          ...existingFile,
-          nodes: [...existingFile.nodes, newNode],
-        },
-      }));
-      setIsAddCommitOpen(false);
-      showToast(`Коммит добавлен в ${targetMeta.path}. Вы можете скачать обновленный файл в Студии.`);
-    }
-  }
-
   if (loading) {
     return (
       <div className="min-h-screen bg-[#050811] text-slate-100 p-6 sm:p-10 max-w-7xl mx-auto space-y-6">
@@ -608,7 +425,7 @@ export default function App() {
     onlyWithSyncLinks ||
     focusedEventId !== null ||
     yearFrom !== 1686 ||
-    yearTo !== 2026;
+    yearTo !== 2000;
 
   return (
     <div className="min-h-screen bg-[#050811] text-slate-100">
@@ -623,7 +440,6 @@ export default function App() {
         branchControls={branchControls}
         activeBranches={activeBranches}
         onToggleBranch={handleToggleBranch}
-        mountedFilesCount={mountedFilesCount}
         yearFrom={yearFrom}
         yearTo={yearTo}
         onYearRangeChange={handleYearRangeChange}
@@ -633,7 +449,6 @@ export default function App() {
         onToggleFilters={handleToggleFilters}
         onToggleLegend={handleToggleLegend}
         onToggleBranchesOnly={() => setIsBranchesOnlyMode((prev) => !prev)}
-        onOpenRepoStudio={() => setIsRepoStudioOpen(true)}
       />
 
       {!isBranchesOnlyMode && (
@@ -642,7 +457,6 @@ export default function App() {
           matchingRulersCount={matchingRulers.length}
           streamCount={stream.length}
           crossLinksCount={manifest.crossLinks.length}
-          mountedFilesCount={mountedFilesCount}
           branchControls={branchControls}
           activeBranches={activeBranches}
           militaryBranchMode={militaryBranchMode}
@@ -650,8 +464,6 @@ export default function App() {
           onToggleBranch={handleToggleBranch}
           onSetMilitaryBranchMode={setMilitaryBranchMode}
           onToggleShowEndNodes={() => setShowEndNodes((prev) => !prev)}
-          onOpenRepoStudio={() => setIsRepoStudioOpen(true)}
-          onOpenAddCommit={() => setIsAddCommitOpen(true)}
         />
       )}
 
@@ -700,7 +512,7 @@ export default function App() {
               onClick={handleResetAll}
               className="mt-5 px-4 py-2 bg-amber-500 text-slate-950 font-semibold text-xs rounded-lg hover:bg-amber-400 transition-colors cursor-pointer"
             >
-              Восстановить весь график (1686–2026)
+              Восстановить весь график (1686–2000)
             </button>
           </div>
         ) : (
@@ -766,25 +578,6 @@ export default function App() {
         branches={branches}
         onClose={() => setActivePeriodId(null)}
         onOpenCard={setActiveCardId}
-      />
-
-      <AddCommitModal
-        isOpen={isAddCommitOpen}
-        branches={branches}
-        onClose={() => setIsAddCommitOpen(false)}
-        onSubmit={handleAddCommitSubmit}
-      />
-
-      <RepoStudioModal
-        isOpen={isRepoStudioOpen}
-        manifest={manifest}
-        filesMap={filesMap}
-        onClose={() => setIsRepoStudioOpen(false)}
-        onToggleFileEnabled={handleToggleFileEnabled}
-        onUpdateFileContent={handleUpdateFileContent}
-        onMountExternalBranch={handleMountExternalBranch}
-        onReloadFromServer={loadRepositoryData}
-        onNotify={showToast}
       />
     </div>
   );
