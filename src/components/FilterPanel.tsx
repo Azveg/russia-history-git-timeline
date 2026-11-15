@@ -1,16 +1,20 @@
 import { useRef } from 'react';
-import { Link2, Search, X } from 'lucide-react';
-import type { MacroEra, RulerPeriod, YearRangeStep } from '../types/timeline';
+import { BookOpen, Flame, Link2, Search, X } from 'lucide-react';
+import { resolveMacroEras } from '../engine/timelineEngine';
+import type { DynamicWindowHotspot, MacroEra, RulerPeriod, YearRangeStep } from '../types/timeline';
 
 interface FilterPanelProps {
   yearFrom: number;
   yearTo: number;
   onYearRangeChange: (from: number, to: number, recordHistory?: boolean) => void;
   onRecordZoomStep: (from: number, to: number) => void;
+  onQuickWindowSelect: (from: number, to: number) => void;
+  hotspots: DynamicWindowHotspot[];
   searchQuery: string;
   onSearchChange: (q: string) => void;
   selectedEra: string;
   onSelectEra: (eraId: string) => void;
+  onOpenEraModal: (eraId: string) => void;
   selectedReign: string;
   onSelectReign: (rulerId: string) => void;
   onResetAll: () => void;
@@ -25,15 +29,11 @@ interface FilterPanelProps {
   syncLinkedCount: number;
 }
 
-const PRESETS = [
-  { label: 'Весь график (1686–2000)', from: 1686, to: 2000, cls: 'border-slate-800 text-slate-300' },
-  { label: '1700–1721: Северная война + Реформы', from: 1700, to: 1721, cls: 'border-amber-500/30 text-amber-300' },
-  { label: '1755–1764: Семилетняя война (месяцы)', from: 1755, to: 1764, cls: 'border-amber-500/30 text-amber-300' },
-  { label: '1850–1865: Кавказ + Крымская + Смена власти', from: 1850, to: 1865, cls: 'border-sky-500/30 text-sky-300' },
-  { label: '1917–1918: Революции и Гражданская (дни)', from: 1917, to: 1918, cls: 'border-rose-500/30 text-rose-300' },
-  { label: '1961–1963: Новочеркасск + Карибский кризис (дни)', from: 1961, to: 1963, cls: 'border-rose-500/30 text-rose-300' },
-  { label: '1979–1991: Афганистан (4 генсека) + Распад', from: 1979, to: 1991, cls: 'border-emerald-500/30 text-emerald-300' },
-  { label: '1991–1999: Локальные конфликты 1990-х (месяцы)', from: 1991, to: 2000, cls: 'border-purple-500/30 text-purple-300' },
+const CENTURY_WINDOWS = [
+  { label: 'Весь период', from: 1686, to: 2000 },
+  { label: 'XVIII в.', from: 1700, to: 1800 },
+  { label: 'XIX в.', from: 1801, to: 1900 },
+  { label: 'XX в.', from: 1901, to: 2000 },
 ];
 
 export function FilterPanel({
@@ -41,10 +41,13 @@ export function FilterPanel({
   yearTo,
   onYearRangeChange,
   onRecordZoomStep,
+  onQuickWindowSelect,
+  hotspots,
   searchQuery,
   onSearchChange,
   selectedEra,
   onSelectEra,
+  onOpenEraModal,
   selectedReign,
   onSelectReign,
   onResetAll,
@@ -197,17 +200,69 @@ export function FilterPanel({
           </div>
 
           <div className="pt-0.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            <span className="text-[11px] font-mono text-slate-400 shrink-0 mr-1">Примеры окон:</span>
-            {PRESETS.map((p) => (
-              <button
-                key={p.label}
-                type="button"
-                onClick={() => onYearRangeChange(p.from, p.to)}
-                className={`px-2.5 py-1 rounded-md bg-slate-950 hover:bg-slate-800 border text-[11px] font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors ${p.cls}`}
-              >
-                {p.label}
-              </button>
-            ))}
+            <span className="text-[11px] font-mono text-slate-400 shrink-0 mr-1">Быстрые окна:</span>
+
+            {CENTURY_WINDOWS.map((w) => {
+              const isActive = yearFrom === w.from && yearTo === w.to;
+              return (
+                <button
+                  key={w.label}
+                  type="button"
+                  onClick={() => onQuickWindowSelect(w.from, w.to)}
+                  className={`px-2.5 py-1 rounded-md border text-[11px] font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    isActive
+                      ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-semibold'
+                      : 'bg-slate-950 hover:bg-slate-800 border-slate-800 text-slate-300'
+                  }`}
+                >
+                  {w.label}
+                </button>
+              );
+            })}
+
+            {hotspots.length > 0 ? (
+              <>
+                <span aria-hidden="true" className="h-4 w-px bg-slate-800 mx-1 shrink-0" />
+                <span
+                  className="text-[11px] font-mono text-slate-500 inline-flex items-center gap-1 shrink-0 mr-0.5"
+                  title="Автоматически вычисленные отрезки максимальной плотности для выбранных веток"
+                >
+                  <Flame className="w-3 h-3 text-rose-400" />
+                  <span>Пики веток:</span>
+                </span>
+                {hotspots.map((h) => {
+                  const isActive = yearFrom === h.fromYear && yearTo === h.toYear;
+                  const detailHint =
+                    h.resolution === 'day'
+                      ? 'дни'
+                      : h.resolution === 'month'
+                        ? 'мес.'
+                        : `${h.eventCount} соб.`;
+                  return (
+                    <button
+                      key={h.id}
+                      type="button"
+                      onClick={() => onQuickWindowSelect(h.fromYear, h.toYear)}
+                      title={`Топ-период по выбранным веткам (${h.peakCount} одновр., всего ${h.eventCount} соб.): ${h.previewTitles.join(', ')}`}
+                      className={`px-2.5 py-1 rounded-md border text-[11px] font-mono tabular-nums whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        isActive
+                          ? 'bg-rose-500/25 border-rose-400 text-rose-100 font-semibold'
+                          : 'bg-slate-950 hover:bg-slate-800 border-rose-500/30 text-rose-200'
+                      }`}
+                    >
+                      {h.fromYear}–{h.toYear} · {detailHint}
+                    </button>
+                  );
+                })}
+              </>
+            ) : (
+              <>
+                <span aria-hidden="true" className="h-4 w-px bg-slate-800 mx-1 shrink-0" />
+                <span className="text-[11px] font-mono text-slate-500 whitespace-nowrap shrink-0">
+                  Включите тематические ветки для расчёта пиковых окон
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -216,37 +271,57 @@ export function FilterPanel({
             <button
               type="button"
               onClick={() => onSelectEra('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                 selectedEra === 'ALL'
                   ? 'bg-amber-500 text-slate-950 shadow-sm'
                   : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
               }`}
             >
-              Все эпохи (1686–2000)
+              Все периоды (1686–2000)
             </button>
-            {macroEras.map((era) => {
+            {resolveMacroEras(macroEras).map((era) => {
               const active = selectedEra === era.id;
               return (
-                <button
+                <div
                   key={era.id}
-                  type="button"
-                  onClick={() => onSelectEra(active ? 'ALL' : era.id)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
+                  className={`inline-flex items-stretch rounded-lg border shrink-0 overflow-hidden transition-colors ${
                     active
-                      ? 'bg-amber-500 text-slate-950 shadow-sm'
-                      : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
+                      : 'bg-slate-900 text-slate-300 border-slate-800'
                   }`}
                 >
-                  <span className="font-bold">Эпоха {era.roman}</span>
-                  <span className="text-[11px] opacity-80 tabular-nums">({era.period})</span>
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums ${
-                      active ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800 text-slate-400'
+                  <button
+                    type="button"
+                    onClick={() => onSelectEra(active ? 'ALL' : era.id)}
+                    title={era.title}
+                    className={`px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
+                      active ? 'hover:bg-amber-400/40' : 'hover:bg-slate-800'
                     }`}
                   >
-                    {eraCounts[era.id] || 0}
-                  </span>
-                </button>
+                    <span className="font-bold max-w-[200px] truncate">{era.displayShortTitle}</span>
+                    <span className="text-[11px] opacity-80 tabular-nums">({era.period})</span>
+                    <span
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums ${
+                        active ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800 text-slate-400'
+                      }`}
+                    >
+                      {eraCounts[era.id] || 0}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onOpenEraModal(era.id)}
+                    aria-label={`Открыть карточку периода: ${era.displayShortTitle}`}
+                    title={`Открыть динамическую карточку периода «${era.displayShortTitle}»`}
+                    className={`px-2 flex items-center justify-center border-l cursor-pointer transition-colors ${
+                      active
+                        ? 'border-slate-950/20 hover:bg-slate-950/15 text-slate-950'
+                        : 'border-slate-800 hover:bg-slate-800 text-amber-400 hover:text-amber-300'
+                    }`}
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               );
             })}
           </div>

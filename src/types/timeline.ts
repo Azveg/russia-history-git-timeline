@@ -28,10 +28,19 @@ export interface BranchDefinition {
 
 export interface MacroEra {
   id: string;
-  roman: string;
+  roman?: string;
   period: string;
+  startYear?: number;
+  endYear?: number;
+  shortTitle?: string;
   title: string;
   thesis: string;
+}
+
+export interface ResolvedMacroEra extends MacroEra {
+  startYear: number;
+  endYear: number;
+  displayShortTitle: string;
 }
 
 export interface RulerPeriod {
@@ -268,3 +277,27 @@ export interface YearRangeStep {
   from: number;
   to: number;
 }
+
+export interface BranchLaneLayout {
+  branchId: string;
+  baseX: number;
+  subLaneCount: number;
+  subXs: number[];
+}
+
+export interface BranchSubLaneLayout {
+  slotByEventId: Map<string, number>;
+  branchLayouts: Map<string, BranchLaneLayout>;
+  totalSvgWidth: number;
+}
+
+export interface DynamicWindowHotspot {
+  id: string;
+  fromYear: number;
+  toYear: number;
+  peakCount: number;
+  eventCount: number;
+  resolution: AxisResolution;
+  previewTitles: string[];
+}
+

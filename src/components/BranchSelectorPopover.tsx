@@ -1,6 +1,7 @@
 import { Check, ChevronDown, ChevronRight, GitBranch, Lock, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { groupBranchesByCategory } from '../engine/timelineEngine';
+import { useOverlayScrollLock } from '../utils/scrollIsolation';
 import type {
   BranchCategoryKey,
   BranchDefinition,
@@ -35,9 +36,10 @@ export function BranchSelectorPopover({
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const dialogRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+
+  useOverlayScrollLock(isOpen, [listRef]);
 
   const activeItems = useMemo(
     () => branchControls.filter((b) => activeBranches[b.id] !== false),
@@ -70,14 +72,6 @@ export function BranchSelectorPopover({
       searchInputRef.current?.focus();
     }, 30);
 
-    const prevOverflow = document.body.style.overflow;
-    const prevPaddingRight = document.body.style.paddingRight;
-    const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
-    document.body.style.overflow = 'hidden';
-    if (scrollbarWidth > 0) {
-      document.body.style.paddingRight = `${scrollbarWidth}px`;
-    }
-
     function handlePointerDown(e: PointerEvent) {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setIsOpen(false);
@@ -91,35 +85,12 @@ export function BranchSelectorPopover({
       }
     }
 
-    function handleDialogWheel(e: WheelEvent) {
-      const listEl = listRef.current;
-      if (!listEl || !listEl.contains(e.target as Node)) {
-        e.preventDefault();
-        return;
-      }
-      const { scrollTop, scrollHeight, clientHeight } = listEl;
-      if (scrollHeight <= clientHeight) {
-        e.preventDefault();
-        return;
-      }
-      const atTop = scrollTop <= 0 && e.deltaY < 0;
-      const atBottom = scrollTop + clientHeight >= scrollHeight - 1 && e.deltaY > 0;
-      if (atTop || atBottom) {
-        e.preventDefault();
-      }
-    }
-
-    const dialogEl = dialogRef.current;
     document.addEventListener('pointerdown', handlePointerDown);
     window.addEventListener('keydown', handleKeyDown, true);
-    dialogEl?.addEventListener('wheel', handleDialogWheel, { passive: false });
     return () => {
       window.clearTimeout(timer);
-      document.body.style.overflow = prevOverflow;
-      document.body.style.paddingRight = prevPaddingRight;
       document.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown, true);
-      dialogEl?.removeEventListener('wheel', handleDialogWheel);
     };
   }, [isOpen]);
 
@@ -172,7 +143,6 @@ export function BranchSelectorPopover({
 
       {isOpen && (
         <div
-          ref={dialogRef}
           role="dialog"
           aria-label="Управление ветками таймлайна"
           className="absolute left-0 top-full mt-2 w-[340px] sm:w-[440px] max-w-[calc(100vw-1.5rem)] bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"

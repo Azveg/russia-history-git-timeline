@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CardDetailModal } from './components/CardDetailModal';
 import { DashboardHeader } from './components/DashboardHeader';
+import { EraSummaryModal } from './components/EraSummaryModal';
 import { FilterPanel } from './components/FilterPanel';
 import { GitTimeline } from './components/GitTimeline';
 import { OverlapMapSection } from './components/OverlapMapSection';
@@ -10,6 +11,7 @@ import { TopControlBar } from './components/TopControlBar';
 import {
   buildUnifiedTimelineStream,
   computeBranchPresetMap,
+  computeDynamicWindowHotspots,
   extractBranchesFromStore,
   extractRulersFromStore,
   fetchTimelineRepository,
@@ -18,6 +20,7 @@ import {
   intersectsTimeWindow,
   isEventBranchActive,
   resolveEventBranch,
+  resolveMacroEras,
 } from './engine/timelineEngine';
 import type {
   BranchDefinition,
@@ -65,6 +68,7 @@ export default function App() {
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
+  const [activeEraModalId, setActiveEraModalId] = useState<string | null>(null);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -106,9 +110,10 @@ export default function App() {
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        if (activeCardId || activePeriodId) {
+        if (activeCardId || activePeriodId || activeEraModalId) {
           setActiveCardId(null);
           setActivePeriodId(null);
+          setActiveEraModalId(null);
         } else if (focusedEventId) {
           setFocusedEventId(null);
         }
@@ -116,7 +121,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeCardId, activePeriodId, focusedEventId]);
+  }, [activeCardId, activePeriodId, activeEraModalId, focusedEventId]);
 
   const branches = useMemo(() => {
     if (!manifest) return [];
@@ -222,13 +227,27 @@ export default function App() {
     );
   }, [branches, enrichedEvents, matchingRulers.length, yearFrom, yearTo]);
 
+  const resolvedMacroEras = useMemo(
+    () => (manifest ? resolveMacroEras(manifest.macroEras) : []),
+    [manifest],
+  );
+
   const eraCounts = useMemo(() => {
-    const counts: Record<string, number> = { ERA_1: 0, ERA_2: 0, ERA_3: 0, ERA_4: 0 };
-    matchingEvents.forEach((ev) => {
-      counts[ev.eraId] = (counts[ev.eraId] || 0) + 1;
+    const counts: Record<string, number> = {};
+    resolvedMacroEras.forEach((era) => {
+      counts[era.id] = enrichedEvents.filter(
+        (ev) =>
+          isEventBranchActive(ev, activeBranches) &&
+          (ev.eraId === era.id || intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear)),
+      ).length;
     });
     return counts;
-  }, [matchingEvents]);
+  }, [resolvedMacroEras, enrichedEvents, activeBranches]);
+
+  const dynamicWindowHotspots = useMemo(
+    () => computeDynamicWindowHotspots(enrichedEvents, activeBranches),
+    [enrichedEvents, activeBranches],
+  );
 
   function handleRecordZoomStep(fromVal: number, toVal: number) {
     setZoomHistory((prev) => {
@@ -268,14 +287,25 @@ export default function App() {
     setYearTo(2000);
   }
 
+  function handleQuickWindowSelect(fromVal: number, toVal: number) {
+    if (selectedEra !== 'ALL') setSelectedEra('ALL');
+    if (selectedReign !== 'ALL') setSelectedReign('ALL');
+    handleYearRangeChange(fromVal, toVal, true);
+  }
+
   function handleSelectEra(eraId: string) {
     setSelectedEra(eraId);
     setSelectedReign('ALL');
-    if (eraId === 'ERA_1') handleYearRangeChange(1686, 1800);
-    else if (eraId === 'ERA_2') handleYearRangeChange(1801, 1917);
-    else if (eraId === 'ERA_3') handleYearRangeChange(1917, 1991);
-    else if (eraId === 'ERA_4') handleYearRangeChange(1991, 2000);
-    else handleYearRangeChange(1686, 2000);
+    if (eraId === 'ALL') {
+      handleYearRangeChange(1686, 2000);
+      return;
+    }
+    const targetEra = resolvedMacroEras.find((e) => e.id === eraId);
+    if (targetEra) {
+      handleYearRangeChange(targetEra.startYear, targetEra.endYear);
+    } else {
+      handleYearRangeChange(1686, 2000);
+    }
   }
 
   function handleSelectReign(rulerId: string) {
@@ -488,10 +518,13 @@ export default function App() {
           yearTo={effectiveYearTo}
           onYearRangeChange={handleYearRangeChange}
           onRecordZoomStep={handleRecordZoomStep}
+          onQuickWindowSelect={handleQuickWindowSelect}
+          hotspots={dynamicWindowHotspots}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           selectedEra={selectedEra}
           onSelectEra={handleSelectEra}
+          onOpenEraModal={setActiveEraModalId}
           selectedReign={selectedReign}
           onSelectReign={handleSelectReign}
           onResetAll={handleResetAll}
@@ -582,6 +615,7 @@ export default function App() {
                 onHoverEvent={setHoveredEventId}
                 onOpenCardModal={setActiveCardId}
                 onOpenPeriodModal={setActivePeriodId}
+                onOpenEraModal={setActiveEraModalId}
                 onSelectYearRange={handleYearRangeChange}
               />
             </div>
@@ -606,7 +640,21 @@ export default function App() {
         enrichedEvents={enrichedEvents}
         branches={branches}
         onClose={() => setActivePeriodId(null)}
+        onSelectRuler={setActivePeriodId}
         onOpenCard={setActiveCardId}
+      />
+
+      <EraSummaryModal
+        eraId={activeEraModalId}
+        macroEras={manifest.macroEras}
+        rulers={rulers}
+        enrichedEvents={enrichedEvents}
+        branches={branches}
+        onClose={() => setActiveEraModalId(null)}
+        onSelectEraModal={setActiveEraModalId}
+        onFilterByEraOnTimeline={handleSelectEra}
+        onOpenRulerModal={setActivePeriodId}
+        onOpenCardModal={setActiveCardId}
       />
     </div>
   );

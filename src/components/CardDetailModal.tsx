@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import { ChevronLeft, ChevronRight, Crosshair, Crown, FileJson, GitBranch, Link2, X, Zap } from 'lucide-react';
 import { getGitHash } from '../engine/timelineEngine';
+import { useOverlayScrollLock } from '../utils/scrollIsolation';
 import type { BranchDefinition, EnrichedEvent } from '../types/timeline';
 
 interface CardDetailModalProps {
@@ -23,9 +25,14 @@ export function CardDetailModal({
   onSelectEvent,
   onSelectYearRange,
 }: CardDetailModalProps) {
-  if (!eventId) return null;
-  const idx = enrichedEvents.findIndex((item) => item.id === eventId);
-  if (idx === -1) return null;
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const concurrentRef = useRef<HTMLDivElement | null>(null);
+  const idx = eventId ? enrichedEvents.findIndex((item) => item.id === eventId) : -1;
+  const isModalOpen = Boolean(eventId && idx !== -1);
+
+  useOverlayScrollLock(isModalOpen, [concurrentRef, bodyRef]);
+
+  if (!isModalOpen) return null;
 
   const card = enrichedEvents[idx];
   const branchObj = branches.find((b) => b.id === card.task) || branches[0];
@@ -36,13 +43,13 @@ export function CardDetailModal({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-2xl w-full overflow-hidden shadow-2xl my-8 animate-modal"
+        className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden shadow-2xl animate-modal"
       >
-        <div className="p-6 bg-gradient-to-b from-slate-800/90 to-slate-900 border-b border-slate-800 relative">
+        <div className="p-6 bg-gradient-to-b from-slate-800/90 to-slate-900 border-b border-slate-800 relative shrink-0">
           <button
             type="button"
             onClick={onClose}
@@ -104,7 +111,7 @@ export function CardDetailModal({
           </div>
         </div>
 
-        <div className="p-6 space-y-4 max-h-[68vh] overflow-y-auto">
+        <div ref={bodyRef} className="p-6 space-y-4 flex-1 overflow-y-auto overscroll-contain">
           <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
             <div className="text-[11px] font-mono text-amber-400 font-bold mb-2 flex items-center gap-1.5">
               <Crown className="w-3.5 h-3.5" />
@@ -209,7 +216,10 @@ export function CardDetailModal({
                   Фильтр на {card.startYear}–{card.endYear} гг. →
                 </button>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+              <div
+                ref={concurrentRef}
+                className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto overscroll-contain pr-1"
+              >
                 {card.concurrentEvents.map((ce) => {
                   const cb = branches.find((b) => b.id === ce.task) || branches[0];
                   return (
@@ -234,7 +244,7 @@ export function CardDetailModal({
           )}
         </div>
 
-        <div className="px-6 py-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-4">
+        <div className="px-6 py-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-4 shrink-0">
           <button
             type="button"
             disabled={!prevEvent}

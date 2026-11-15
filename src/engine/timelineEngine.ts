@@ -3,7 +3,10 @@ import type {
   BranchCategoryKey,
   BranchDefinition,
   BranchFile,
+  BranchLaneLayout,
   BranchPresetId,
+  BranchSubLaneLayout,
+  DynamicWindowHotspot,
   EnrichedEvent,
   ExplicitLinkInfo,
   FilterState,
@@ -12,6 +15,7 @@ import type {
   OverlapPeakInterval,
   OverlapYearBucket,
   PreciseDateParts,
+  ResolvedMacroEra,
   RulerBoundaryTick,
   RulerPeriod,
   RulerSpanSegment,
@@ -109,6 +113,48 @@ export function detectAxisResolution(yearFrom: number, yearTo: number): AxisReso
   if (span <= 2) return 'day';
   if (span <= 12) return 'month';
   return 'year';
+}
+
+export function resolveMacroEra(era: MacroEra): ResolvedMacroEra {
+  const parsed = parseEventYears(era.period || '1686–2000');
+  const startYear = typeof era.startYear === 'number' ? era.startYear : parsed.startYear;
+  const endYear = typeof era.endYear === 'number' ? era.endYear : parsed.endYear;
+
+  let displayShortTitle = (era.shortTitle || '').trim();
+  if (!displayShortTitle) {
+    const colonIdx = era.title.indexOf(':');
+    if (colonIdx > 0 && colonIdx <= 48) {
+      displayShortTitle = era.title.slice(0, colonIdx).trim();
+    } else if (era.title.length <= 44) {
+      displayShortTitle = era.title;
+    } else if (era.roman) {
+      displayShortTitle = `Период ${era.roman}`;
+    } else {
+      displayShortTitle = era.period;
+    }
+  }
+
+  return {
+    ...era,
+    startYear,
+    endYear: Math.max(startYear, endYear),
+    displayShortTitle,
+  };
+}
+
+export function resolveMacroEras(macroEras: MacroEra[]): ResolvedMacroEra[] {
+  return macroEras.map(resolveMacroEra).sort((a, b) => a.startYear - b.startYear);
+}
+
+export function findMacroEraForYear(year: number, eras: ResolvedMacroEra[]): ResolvedMacroEra | undefined {
+  if (eras.length === 0) return undefined;
+  const exact = eras.find((e) => year >= e.startYear && year <= e.endYear);
+  if (exact) return exact;
+  if (year < eras[0].startYear) return eras[0];
+  for (let i = eras.length - 1; i >= 0; i--) {
+    if (year >= eras[i].startYear) return eras[i];
+  }
+  return eras[eras.length - 1];
 }
 
 export function formatDateForResolution(parts: PreciseDateParts, resolution: AxisResolution): string {
@@ -222,7 +268,7 @@ export function getEnrichedEvents(
 ): EnrichedEvent[] {
   const list: EnrichedEvent[] = [];
   let seq = 0;
-  const macroEras = manifest.macroEras || [];
+  const resolvedEras = resolveMacroEras(manifest.macroEras || []);
 
   manifest.mountedFiles.forEach((fileMeta) => {
     if (
@@ -254,10 +300,7 @@ export function getEnrichedEvents(
         overlappingRulers.push(rulers[0]);
       }
 
-      let eraObj: MacroEra | undefined = macroEras[0];
-      if (startYear >= 1991) eraObj = macroEras[3] || macroEras[macroEras.length - 1];
-      else if (startYear >= 1917) eraObj = macroEras[2] || macroEras[macroEras.length - 1];
-      else if (startYear >= 1801) eraObj = macroEras[1] || macroEras[macroEras.length - 1];
+      const eraObj = findMacroEraForYear(startYear, resolvedEras);
 
       list.push({
         ...ev,
@@ -270,8 +313,8 @@ export function getEnrichedEvents(
         isAtomic,
         duration,
         eraId: eraObj?.id || 'ERA_1',
-        eraRoman: eraObj?.roman || 'I',
-        eraTitle: eraObj?.title || '',
+        eraRoman: eraObj?.roman || '',
+        eraTitle: eraObj?.displayShortTitle || eraObj?.title || '',
         overlappingRulers,
         ruler: overlappingRulers.map((r) => r.shortRuler).join(' → '),
         reignPeriod:
@@ -406,6 +449,12 @@ export function buildUnifiedTimelineStream(
   );
   const isRulersFileMounted = rulersFileMeta ? rulersFileMeta.enabled : true;
 
+  const resolvedEras = resolveMacroEras(manifest.macroEras || []);
+  const selectedEraObj =
+    filters.selectedEra !== 'ALL'
+      ? resolvedEras.find((e) => e.id === filters.selectedEra) ?? null
+      : null;
+
   if (focusTarget) {
     const allowedIds = new Set<string>([focusTarget.id]);
     focusTarget.explicitLinks.forEach((lnk) => {
@@ -437,7 +486,12 @@ export function buildUnifiedTimelineStream(
     matchingEvents = enrichedEvents.filter((ev) => {
       if (!isEventBranchActive(ev, filters.activeBranches)) return false;
       if (!intersectsTimeWindow(ev.startYear, ev.endYear, filters.yearFrom, filters.yearTo)) return false;
-      if (filters.selectedEra !== 'ALL' && ev.eraId !== filters.selectedEra) return false;
+      if (selectedEraObj) {
+        const inEra =
+          ev.eraId === selectedEraObj.id ||
+          intersectsTimeWindow(ev.startYear, ev.endYear, selectedEraObj.startYear, selectedEraObj.endYear);
+        if (!inEra) return false;
+      }
       if (filters.onlyWithSyncLinks && ev.explicitLinks.length === 0) return false;
       if (filters.selectedReign !== 'ALL') {
         const matchesRuler = ev.overlappingRulers.some((r) => r.id === filters.selectedReign);
@@ -458,7 +512,12 @@ export function buildUnifiedTimelineStream(
     matchingRulers = rulers.filter((r) => {
       if (!isRulersFileMounted || filters.activeBranches.MAIN_RULERS === false) return false;
       if (!intersectsTimeWindow(r.startYear, r.endYear, filters.yearFrom, filters.yearTo)) return false;
-      if (filters.selectedEra !== 'ALL' && r.eraId !== filters.selectedEra) return false;
+      if (selectedEraObj) {
+        const inEra =
+          r.eraId === selectedEraObj.id ||
+          intersectsTimeWindow(r.startYear, r.endYear, selectedEraObj.startYear, selectedEraObj.endYear);
+        if (!inEra) return false;
+      }
       if (filters.selectedReign !== 'ALL' && r.id !== filters.selectedReign) return false;
       if (!q && !filters.onlyWithSyncLinks) return true;
       const selfMatch = q !== '' && (r.ruler.toLowerCase().includes(q) || r.reignTitle.toLowerCase().includes(q));
@@ -469,12 +528,16 @@ export function buildUnifiedTimelineStream(
 
   const axisResolution = detectAxisResolution(effectiveYearFrom, effectiveYearTo);
   const stream: StreamRow[] = [];
-  const eraStartYears: Record<string, number> = { ERA_1: 1686, ERA_2: 1801, ERA_3: 1917, ERA_4: 1991 };
 
-  manifest.macroEras.forEach((era) => {
-    const y = eraStartYears[era.id] ?? 1686;
+  resolvedEras.forEach((era) => {
+    const y = era.startYear;
     const hasItemsInEra =
-      matchingEvents.some((e) => e.eraId === era.id) || matchingRulers.some((r) => r.eraId === era.id);
+      matchingEvents.some(
+        (e) => e.eraId === era.id || intersectsTimeWindow(e.startYear, e.endYear, era.startYear, era.endYear),
+      ) ||
+      matchingRulers.some(
+        (r) => r.eraId === era.id || intersectsTimeWindow(r.startYear, r.endYear, era.startYear, era.endYear),
+      );
     if (hasItemsInEra && y >= effectiveYearFrom && y <= effectiveYearTo) {
       stream.push({
         rowType: 'ERA_START',
@@ -793,5 +856,360 @@ export function computeOverlapAnalytics(
     activeLanesCount: thematicLanesCount,
   };
 }
+
+export function computeBranchSubLaneLayout(
+  matchingEvents: EnrichedEvent[],
+  thematicLanes: BranchDefinition[],
+  branches: BranchDefinition[],
+  axisResolution: AxisResolution,
+  timeSpineX: number,
+  options?: {
+    firstThematicOffset?: number;
+    laneGap?: number;
+    subStep?: number;
+  },
+): BranchSubLaneLayout {
+  const firstThematicX = timeSpineX + (options?.firstThematicOffset ?? 28);
+  const laneGap = options?.laneGap ?? 22;
+  const subStep = options?.subStep ?? 10;
+
+  const slotByEventId = new Map<string, number>();
+  const branchLayouts = new Map<string, BranchLaneLayout>();
+
+  let cursorX = firstThematicX;
+
+  thematicLanes.forEach((lane) => {
+    const laneNonAtomicEvents = matchingEvents
+      .filter(
+        (ev) =>
+          resolveEventBranch(ev, branches).id === lane.id &&
+          !isAtomicEventNode(ev, ev.startPrecision, ev.endPrecision, axisResolution),
+      )
+      .sort((a, b) => {
+        if (a.startPrecision.sortKey !== b.startPrecision.sortKey) {
+          return a.startPrecision.sortKey - b.startPrecision.sortKey;
+        }
+        if (a.endPrecision.sortKey !== b.endPrecision.sortKey) {
+          return a.endPrecision.sortKey - b.endPrecision.sortKey;
+        }
+        return a.seq - b.seq;
+      });
+
+    const slotEndKeys: number[] = [];
+
+    laneNonAtomicEvents.forEach((ev) => {
+      let assigned = -1;
+      for (let s = 0; s < slotEndKeys.length; s++) {
+        if (slotEndKeys[s] < ev.startPrecision.sortKey) {
+          assigned = s;
+          break;
+        }
+      }
+      if (assigned === -1) {
+        assigned = slotEndKeys.length;
+        slotEndKeys.push(ev.endPrecision.sortKey);
+      } else {
+        slotEndKeys[assigned] = ev.endPrecision.sortKey;
+      }
+      slotByEventId.set(ev.id, assigned);
+    });
+
+    const subLaneCount = Math.max(1, slotEndKeys.length);
+    const baseX = cursorX;
+    const subXs = Array.from({ length: subLaneCount }, (_, idx) => baseX + idx * subStep);
+
+    branchLayouts.set(lane.id, {
+      branchId: lane.id,
+      baseX,
+      subLaneCount,
+      subXs,
+    });
+
+    cursorX = baseX + (subLaneCount - 1) * subStep + laneGap;
+  });
+
+  const totalSvgWidth = Math.max(
+    112,
+    thematicLanes.length > 0 ? cursorX - laneGap + 20 : timeSpineX + 30,
+  );
+
+  return {
+    slotByEventId,
+    branchLayouts,
+    totalSvgWidth,
+  };
+}
+
+export function computeDynamicWindowHotspots(
+  enrichedEvents: EnrichedEvent[],
+  activeBranches: Record<string, boolean>,
+  minYear = 1686,
+  maxYear = 2000,
+  maxHotspots = 4,
+): DynamicWindowHotspot[] {
+  const branchEvents = enrichedEvents.filter((ev) => isEventBranchActive(ev, activeBranches));
+  if (branchEvents.length === 0) return [];
+
+  const yearStats: Array<{
+    year: number;
+    activeCount: number;
+    startCount: number;
+    preciseCount: number;
+    score: number;
+  }> = [];
+
+  for (let y = minYear; y <= maxYear; y++) {
+    let activeCount = 0;
+    let startCount = 0;
+    let preciseCount = 0;
+
+    for (let i = 0; i < branchEvents.length; i++) {
+      const ev = branchEvents[i];
+      if (ev.startYear <= y && ev.endYear >= y) {
+        activeCount++;
+        if (ev.startYear === y) {
+          startCount++;
+        }
+        if (
+          ev.duration <= 4 ||
+          ev.startPrecision.precision !== 'year' ||
+          ev.endPrecision.precision !== 'year'
+        ) {
+          preciseCount++;
+        }
+      }
+    }
+
+    if (activeCount > 0) {
+      const score = activeCount * 10 + startCount * 4 + preciseCount * 2;
+      yearStats.push({ year: y, activeCount, startCount, preciseCount, score });
+    }
+  }
+
+  if (yearStats.length === 0) return [];
+
+  const statsByYear = new Map(yearStats.map((s) => [s.year, s]));
+  const sortedCandidates = [...yearStats].sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    if (b.activeCount !== a.activeCount) return b.activeCount - a.activeCount;
+    if (b.startCount !== a.startCount) return b.startCount - a.startCount;
+    return a.year - b.year;
+  });
+
+  const minAnchorGap = 20;
+  const pickedAnchors: number[] = [];
+
+  for (let i = 0; i < sortedCandidates.length && pickedAnchors.length < maxHotspots; i++) {
+    const candidate = sortedCandidates[i];
+    if (pickedAnchors.every((anchor) => Math.abs(anchor - candidate.year) >= minAnchorGap)) {
+      pickedAnchors.push(candidate.year);
+    }
+  }
+
+  // Если остался слот, подхватываем плотное короткое окно (≤ 3 лет) с высокой концентрацией событий
+  if (pickedAnchors.length < maxHotspots) {
+    const sharpCandidate = sortedCandidates.find(
+      (c) =>
+        c.preciseCount >= 2 &&
+        pickedAnchors.every((anchor) => Math.abs(anchor - c.year) >= 12),
+    );
+    if (sharpCandidate) {
+      pickedAnchors.push(sharpCandidate.year);
+    }
+  }
+
+  const rawHotspots: DynamicWindowHotspot[] = [];
+
+  pickedAnchors.forEach((peakYear) => {
+    const peakStat = statsByYear.get(peakYear);
+    if (!peakStat) return;
+
+    const plateauThreshold = Math.max(1, peakStat.activeCount - 1);
+    let plateauFrom = peakYear;
+    let plateauTo = peakYear;
+
+    while (
+      plateauFrom > minYear &&
+      peakYear - plateauFrom < 5 &&
+      (statsByYear.get(plateauFrom - 1)?.activeCount ?? 0) >= plateauThreshold
+    ) {
+      plateauFrom--;
+    }
+    while (
+      plateauTo < maxYear &&
+      plateauTo - peakYear < 5 &&
+      (statsByYear.get(plateauTo + 1)?.activeCount ?? 0) >= plateauThreshold
+    ) {
+      plateauTo++;
+    }
+
+    const coreEvents = branchEvents.filter((ev) =>
+      intersectsTimeWindow(ev.startYear, ev.endYear, plateauFrom, plateauTo),
+    );
+    const shortCore = coreEvents.filter((ev) => ev.duration <= 10);
+
+    let fromYear = plateauFrom;
+    let toYear = plateauTo;
+
+    if (shortCore.length >= 2) {
+      const minShortStart = Math.min(...shortCore.map((e) => e.startYear));
+      const maxShortEnd = Math.max(...shortCore.map((e) => e.endYear));
+      fromYear = Math.max(minYear, plateauFrom - 2, minShortStart);
+      toYear = Math.min(maxYear, plateauTo + 2, maxShortEnd);
+    } else if (coreEvents.length > 0) {
+      const minCoreStart = Math.min(...coreEvents.map((e) => e.startYear));
+      const maxCoreEnd = Math.max(...coreEvents.map((e) => e.endYear));
+      fromYear = Math.max(minYear, plateauFrom - 2, minCoreStart);
+      toYear = Math.min(maxYear, plateauTo + 2, maxCoreEnd);
+    }
+
+    if (toYear - fromYear > 14) {
+      fromYear = Math.max(minYear, peakYear - 6);
+      toYear = Math.min(maxYear, peakYear + 6);
+    }
+
+    if (fromYear === toYear) {
+      const hasSubYearDetail = coreEvents.some(
+        (ev) => ev.startPrecision.precision !== 'year' || ev.endPrecision.precision !== 'year',
+      );
+      if (!hasSubYearDetail) {
+        toYear = Math.min(maxYear, fromYear + 1);
+      }
+    }
+
+    if (toYear < fromYear) {
+      toYear = fromYear;
+    }
+
+    const eventsInWindow = branchEvents.filter((ev) =>
+      intersectsTimeWindow(ev.startYear, ev.endYear, fromYear, toYear),
+    );
+    if (eventsInWindow.length === 0) return;
+
+    let windowPeak = 0;
+    for (let y = fromYear; y <= toYear; y++) {
+      const cnt = statsByYear.get(y)?.activeCount ?? 0;
+      if (cnt > windowPeak) windowPeak = cnt;
+    }
+
+    const rankedTitles = [...eventsInWindow]
+      .sort((a, b) => {
+        const aAtPeak = a.startYear <= peakYear && a.endYear >= peakYear ? 1 : 0;
+        const bAtPeak = b.startYear <= peakYear && b.endYear >= peakYear ? 1 : 0;
+        if (bAtPeak !== aAtPeak) return bAtPeak - aAtPeak;
+        if (a.duration !== b.duration) return a.duration - b.duration;
+        return a.seq - b.seq;
+      })
+      .slice(0, 3)
+      .map((ev) => ev.title);
+
+    rawHotspots.push({
+      id: `${fromYear}-${toYear}`,
+      fromYear,
+      toYear,
+      peakCount: windowPeak,
+      eventCount: eventsInWindow.length,
+      resolution: detectAxisResolution(fromYear, toYear),
+      previewTitles: rankedTitles,
+    });
+  });
+
+  // Дедупликация сильно перекрывающихся вычисленных окон и сортировка по хронологии
+  const deduped: DynamicWindowHotspot[] = [];
+  rawHotspots.forEach((candidate) => {
+    const overlapsExisting = deduped.some((existing) => {
+      const overlapStart = Math.max(existing.fromYear, candidate.fromYear);
+      const overlapEnd = Math.min(existing.toYear, candidate.toYear);
+      if (overlapEnd < overlapStart) return false;
+      const overlapLen = overlapEnd - overlapStart + 1;
+      const minLen = Math.min(
+        existing.toYear - existing.fromYear + 1,
+        candidate.toYear - candidate.fromYear + 1,
+      );
+      return overlapLen / Math.max(1, minLen) > 0.6;
+    });
+    if (!overlapsExisting) {
+      deduped.push(candidate);
+    }
+  });
+
+  return deduped.sort((a, b) => a.fromYear - b.fromYear);
+}
+
+export interface MacroEraSummaryData {
+  era: ResolvedMacroEra;
+  rulers: Array<{ ruler: RulerPeriod; eventCount: number }>;
+  events: EnrichedEvent[];
+  branchTags: Array<{ branch: BranchDefinition; count: number }>;
+  typeTags: Array<{ type: string; count: number }>;
+  carryOverBeforeIds: Set<string>;
+  carryOverAfterIds: Set<string>;
+}
+
+export function getMacroEraSummaryData(
+  era: ResolvedMacroEra,
+  rulers: RulerPeriod[],
+  enrichedEvents: EnrichedEvent[],
+  branches: BranchDefinition[],
+): MacroEraSummaryData {
+  const events = enrichedEvents.filter(
+    (ev) =>
+      ev.eraId === era.id || intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
+  );
+
+  const eraRulersRaw = rulers.filter(
+    (r) => r.eraId === era.id || intersectsTimeWindow(r.startYear, r.endYear, era.startYear, era.endYear),
+  );
+
+  const rulersWithCounts = eraRulersRaw.map((ruler) => ({
+    ruler,
+    eventCount: events.filter((ev) => ev.overlappingRulers.some((or) => or.id === ruler.id)).length,
+  }));
+
+  const branchCountMap = new Map<string, number>();
+  const typeCountMap = new Map<string, number>();
+  const carryOverBeforeIds = new Set<string>();
+  const carryOverAfterIds = new Set<string>();
+
+  events.forEach((ev) => {
+    const resolvedBranch = resolveEventBranch(ev, branches);
+    branchCountMap.set(resolvedBranch.id, (branchCountMap.get(resolvedBranch.id) || 0) + 1);
+
+    const typeLabel = (ev.type || 'Событие').trim();
+    typeCountMap.set(typeLabel, (typeCountMap.get(typeLabel) || 0) + 1);
+
+    if (ev.startYear < era.startYear) {
+      carryOverBeforeIds.add(ev.id);
+    }
+    if (ev.endYear > era.endYear) {
+      carryOverAfterIds.add(ev.id);
+    }
+  });
+
+  const branchTags: Array<{ branch: BranchDefinition; count: number }> = [];
+  branches.forEach((b) => {
+    const count = branchCountMap.get(b.id) || 0;
+    if (count > 0) {
+      branchTags.push({ branch: b, count });
+    }
+  });
+
+  const typeTags = Array.from(typeCountMap.entries())
+    .map(([type, count]) => ({ type, count }))
+    .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.type.localeCompare(b.type, 'ru')));
+
+  return {
+    era,
+    rulers: rulersWithCounts,
+    events,
+    branchTags,
+    typeTags,
+    carryOverBeforeIds,
+    carryOverAfterIds,
+  };
+}
+
+
+
 
 

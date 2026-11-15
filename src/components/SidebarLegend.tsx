@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import { Crown, X } from 'lucide-react';
+import { useWheelScrollContainment } from '../utils/scrollIsolation';
 import type { BranchDefinition, EnrichedEvent, RulerPeriod } from '../types/timeline';
 
 interface SidebarLegendProps {
@@ -20,8 +22,14 @@ export function SidebarLegend({
   onSelectYearRange,
   onHideSidebar,
 }: SidebarLegendProps) {
+  const asideRef = useRef<HTMLElement | null>(null);
+  useWheelScrollContainment(asideRef);
+
   return (
-    <aside className="hidden lg:block lg:col-span-3 sticky top-14 bg-slate-900/60 border border-slate-800/90 rounded-2xl p-4 max-h-[calc(100vh-4.5rem)] overflow-y-auto">
+    <aside
+      ref={asideRef}
+      className="hidden lg:block lg:col-span-3 sticky top-14 bg-slate-900/60 border border-slate-800/90 rounded-2xl p-4 max-h-[calc(100vh-4.5rem)] overflow-y-auto overscroll-contain"
+    >
       <div className="flex items-center justify-between text-xs font-mono font-bold text-amber-400 mb-3 px-1">
         <span className="flex items-center gap-1.5">
           <Crown className="w-3.5 h-3.5" />
@@ -91,9 +99,13 @@ export function SidebarLegend({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-4 h-2 border-y-2 border-orange-400 shrink-0" />
+            <span className="w-4 flex items-center justify-between shrink-0" aria-hidden="true">
+              <span className="w-0.5 h-3 bg-orange-400 rounded-full" />
+              <span className="w-0.5 h-3 bg-orange-400/80 rounded-full" />
+              <span className="w-0.5 h-3 bg-orange-400/60 rounded-full" />
+            </span>
             <span>
-              <strong className="text-slate-200">Двойная рельса</strong> — одновременно идут 2+ события ветки.
+              <strong className="text-slate-200">Параллельные под-ветки</strong> — при 2, 3, 4+ одновременных событиях ветки каждое идёт по своей нити.
             </span>
           </div>
           <div className="flex items-center gap-2">
