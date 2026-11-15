@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Crown, FileJson, GitBranch, Link2, X, Zap } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Crosshair, Crown, FileJson, GitBranch, Link2, X, Zap } from 'lucide-react';
 import { getGitHash } from '../engine/timelineEngine';
 import type { BranchDefinition, EnrichedEvent } from '../types/timeline';
 
@@ -6,6 +6,8 @@ interface CardDetailModalProps {
   eventId: string | null;
   enrichedEvents: EnrichedEvent[];
   branches: BranchDefinition[];
+  focusedEventId: string | null;
+  onToggleFocusEvent: (eventId: string) => void;
   onClose: () => void;
   onSelectEvent: (eventId: string) => void;
   onSelectYearRange: (from: number, to: number) => void;
@@ -15,6 +17,8 @@ export function CardDetailModal({
   eventId,
   enrichedEvents,
   branches,
+  focusedEventId,
+  onToggleFocusEvent,
   onClose,
   onSelectEvent,
   onSelectYearRange,
@@ -76,6 +80,28 @@ export function CardDetailModal({
             {card.period} — {card.title}
           </h2>
           <p className="mt-2 text-sm sm:text-base text-amber-200/90 font-medium">{card.subtitle}</p>
+
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onToggleFocusEvent(card.id);
+                onClose();
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold inline-flex items-center gap-1.5 border transition-colors cursor-pointer ${
+                focusedEventId === card.id
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400'
+                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300'
+              }`}
+            >
+              <Crosshair className="w-3.5 h-3.5" />
+              <span>
+                {focusedEventId === card.id
+                  ? 'Выйти из фокуса связей'
+                  : `Фокус связей на графе (sync: ${card.explicitLinks.length}, паралл.: ${card.concurrentEvents.length})`}
+              </span>
+            </button>
+          </div>
         </div>
 
         <div className="p-6 space-y-4 max-h-[68vh] overflow-y-auto">

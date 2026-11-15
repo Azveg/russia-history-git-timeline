@@ -17,12 +17,16 @@ import {
   getVisibleLanes,
   intersectsTimeWindow,
   isBranchFile,
+  isEventBranchActive,
   parseEventYears,
+  resolveEventBranch,
   UNIFIED_MILITARY_BRANCH,
 } from './engine/timelineEngine';
 import type {
   BranchDefinition,
   BranchFile,
+  CardDensity,
+  FocusScope,
   MilitaryBranchMode,
   SyncManifest,
   TimelineDataFile,
@@ -52,6 +56,12 @@ export default function App() {
   const [selectedEra, setSelectedEra] = useState('ALL');
   const [selectedReign, setSelectedReign] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [onlyWithSyncLinks, setOnlyWithSyncLinks] = useState(false);
+
+  const [cardDensity, setCardDensity] = useState<CardDensity>('detailed');
+  const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
+  const [focusScope, setFocusScope] = useState<FocusScope>('sync_only');
+  const [highlightedJumpId, setHighlightedJumpId] = useState<string | null>(null);
 
   const [showEndNodes, setShowEndNodes] = useState(true);
   const [showOverlapMatrix, setShowOverlapMatrix] = useState(true);
@@ -96,17 +106,27 @@ export default function App() {
   }, [loadRepositoryData]);
 
   useEffect(() => {
+    if (!highlightedJumpId) return;
+    const timer = window.setTimeout(() => setHighlightedJumpId(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [highlightedJumpId]);
+
+  useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        setActiveCardId(null);
-        setActivePeriodId(null);
-        setIsAddCommitOpen(false);
-        setIsRepoStudioOpen(false);
+        if (activeCardId || activePeriodId || isAddCommitOpen || isRepoStudioOpen) {
+          setActiveCardId(null);
+          setActivePeriodId(null);
+          setIsAddCommitOpen(false);
+          setIsRepoStudioOpen(false);
+        } else if (focusedEventId) {
+          setFocusedEventId(null);
+        }
       }
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [activeCardId, activePeriodId, isAddCommitOpen, isRepoStudioOpen, focusedEventId]);
 
   const branches = useMemo(() => {
     if (!manifest) return [];
@@ -128,9 +148,16 @@ export default function App() {
     [branches, activeBranches, militaryBranchMode],
   );
 
-  const { stream, matchingEvents, matchingRulers } = useMemo(() => {
+  const { stream, matchingEvents, matchingRulers, focusedEvent, effectiveYearFrom, effectiveYearTo } = useMemo(() => {
     if (!manifest) {
-      return { stream: [], matchingEvents: [], matchingRulers: [] };
+      return {
+        stream: [],
+        matchingEvents: [],
+        matchingRulers: [],
+        focusedEvent: null,
+        effectiveYearFrom: yearFrom,
+        effectiveYearTo: yearTo,
+      };
     }
     return buildUnifiedTimelineStream(enrichedEvents, rulers, manifest, branches, {
       militaryBranchMode,
@@ -140,6 +167,9 @@ export default function App() {
       selectedEra,
       selectedReign,
       searchQuery,
+      onlyWithSyncLinks,
+      focusedEventId,
+      focusScope,
       showEndNodes,
       showOverlapMatrix,
     });
@@ -155,9 +185,37 @@ export default function App() {
     selectedEra,
     selectedReign,
     searchQuery,
+    onlyWithSyncLinks,
+    focusedEventId,
+    focusScope,
     showEndNodes,
     showOverlapMatrix,
   ]);
+
+  const displayLanes = useMemo(() => {
+    if (!focusedEvent) return visibleLanes;
+    const laneIds = new Set(visibleLanes.map((l) => l.id));
+    const extras: BranchDefinition[] = [];
+    matchingEvents.forEach((ev) => {
+      const b = resolveEventBranch(ev, branches, militaryBranchMode);
+      if (!laneIds.has(b.id)) {
+        laneIds.add(b.id);
+        extras.push(b);
+      }
+    });
+    return extras.length > 0 ? [...visibleLanes, ...extras] : visibleLanes;
+  }, [focusedEvent, visibleLanes, matchingEvents, branches, militaryBranchMode]);
+
+  const syncLinkedCount = useMemo(
+    () =>
+      enrichedEvents.filter(
+        (ev) =>
+          ev.explicitLinks.length > 0 &&
+          isEventBranchActive(ev, branches, activeBranches, militaryBranchMode) &&
+          intersectsTimeWindow(ev.startYear, ev.endYear, yearFrom, yearTo),
+      ).length,
+    [enrichedEvents, branches, activeBranches, militaryBranchMode, yearFrom, yearTo],
+  );
 
   const branchControls = useMemo(() => {
     const byBranchCount: Record<string, number> = {};
@@ -244,6 +302,8 @@ export default function App() {
     setSelectedEra('ALL');
     setSelectedReign('ALL');
     setSearchQuery('');
+    setOnlyWithSyncLinks(false);
+    setFocusedEventId(null);
     setYearFrom(1686);
     setYearTo(2026);
     const nextActive: Record<string, boolean> = { MILITARY_ALL: true };
@@ -251,6 +311,69 @@ export default function App() {
       nextActive[b.id] = true;
     });
     setActiveBranches(nextActive);
+  }
+
+  function handleToggleFocusEvent(eventId: string) {
+    setFocusedEventId((prev) => {
+      const next = prev === eventId ? null : eventId;
+      if (next) {
+        const ev = enrichedEvents.find((e) => e.id === next);
+        if (ev) {
+          showToast(`Режим фокуса связей: «${ev.title}». Нажмите Esc для возврата.`);
+        }
+      }
+      return next;
+    });
+  }
+
+  function handleJumpToEvent(targetEventId: string) {
+    const target = enrichedEvents.find((e) => e.id === targetEventId);
+    if (!target) return;
+
+    const adjustments: string[] = [];
+
+    if (!isEventBranchActive(target, branches, activeBranches, militaryBranchMode)) {
+      const orig = branches.find((b) => b.id === target.task);
+      const branchKey = militaryBranchMode === 'UNIFIED' && orig?.isMilitary ? 'MILITARY_ALL' : target.task;
+      setActiveBranches((prev) => ({ ...prev, [branchKey]: true }));
+      adjustments.push('включена ветка');
+    }
+
+    if (target.endYear < yearFrom || target.startYear > yearTo) {
+      const nextFrom = Math.min(yearFrom, target.startYear);
+      const nextTo = Math.max(yearTo, target.endYear);
+      handleYearRangeChange(nextFrom, nextTo);
+      adjustments.push(`окно расширено до ${nextFrom}–${nextTo}`);
+    }
+
+    if (selectedEra !== 'ALL' && target.eraId !== selectedEra) {
+      setSelectedEra('ALL');
+    }
+    if (selectedReign !== 'ALL' && !target.overlappingRulers.some((r) => r.id === selectedReign)) {
+      setSelectedReign('ALL');
+    }
+    if (searchQuery.trim() !== '') {
+      setSearchQuery('');
+    }
+
+    if (focusedEventId && !matchingEvents.some((e) => e.id === target.id)) {
+      setFocusedEventId(null);
+      adjustments.push('снят фокус');
+    }
+
+    setHighlightedJumpId(target.id);
+    if (adjustments.length > 0) {
+      showToast(`Переход к «${target.title}» (${adjustments.join(', ')}).`);
+    } else {
+      showToast(`Переход к связанному событию: «${target.title}».`);
+    }
+
+    window.setTimeout(() => {
+      const el = document.getElementById(`row-${target.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 80);
   }
 
   function handleToggleBranch(branchId: string) {
@@ -482,6 +605,8 @@ export default function App() {
     selectedEra !== 'ALL' ||
     selectedReign !== 'ALL' ||
     searchQuery.trim() !== '' ||
+    onlyWithSyncLinks ||
+    focusedEventId !== null ||
     yearFrom !== 1686 ||
     yearTo !== 2026;
 
@@ -532,8 +657,8 @@ export default function App() {
 
       {!isBranchesOnlyMode && !isFiltersCollapsed && (
         <FilterAndOverlapPanel
-          yearFrom={yearFrom}
-          yearTo={yearTo}
+          yearFrom={effectiveYearFrom}
+          yearTo={effectiveYearTo}
           onYearRangeChange={handleYearRangeChange}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -548,11 +673,14 @@ export default function App() {
           rulers={rulers}
           matchingRulers={matchingRulers}
           matchingEvents={matchingEvents}
-          visibleLanes={visibleLanes}
+          visibleLanes={displayLanes}
           branches={branches}
           militaryBranchMode={militaryBranchMode}
           showOverlapMatrix={showOverlapMatrix}
           onToggleOverlapMatrix={() => setShowOverlapMatrix((prev) => !prev)}
+          onlyWithSyncLinks={onlyWithSyncLinks}
+          onToggleOnlyWithSyncLinks={() => setOnlyWithSyncLinks((prev) => !prev)}
+          syncLinkedCount={syncLinkedCount}
           onOpenCardModal={setActiveCardId}
           onHoverEvent={setHoveredEventId}
         />
@@ -565,7 +693,7 @@ export default function App() {
               На выбранном отрезке времени активных событий не найдено
             </h3>
             <p className="text-sm text-slate-400 mt-1 max-w-md mx-auto">
-              Расширьте диапазон лет, включите дополнительные ветви или сбросьте поисковый запрос.
+              Расширьте диапазон лет, включите дополнительные ветви или сбросьте фильтры.
             </p>
             <button
               type="button"
@@ -581,9 +709,9 @@ export default function App() {
               <SidebarLegend
                 rulers={rulers}
                 matchingEvents={matchingEvents}
-                visibleLanes={visibleLanes}
-                yearFrom={yearFrom}
-                yearTo={yearTo}
+                visibleLanes={displayLanes}
+                yearFrom={effectiveYearFrom}
+                yearTo={effectiveYearTo}
                 onSelectYearRange={handleYearRangeChange}
                 onHideSidebar={() => setIsLegendCollapsed(true)}
               />
@@ -593,12 +721,23 @@ export default function App() {
               <GitTimeline
                 stream={stream}
                 matchingEvents={matchingEvents}
-                visibleLanes={visibleLanes}
+                matchingRulers={matchingRulers}
+                rulers={rulers}
+                visibleLanes={displayLanes}
                 branches={branches}
                 militaryBranchMode={militaryBranchMode}
                 manifest={manifest}
-                yearFrom={yearFrom}
+                yearFrom={effectiveYearFrom}
                 hoveredEventId={hoveredEventId}
+                cardDensity={cardDensity}
+                onChangeCardDensity={setCardDensity}
+                focusedEvent={focusedEvent}
+                focusScope={focusScope}
+                onChangeFocusScope={setFocusScope}
+                onToggleFocusEvent={handleToggleFocusEvent}
+                onExitFocusMode={() => setFocusedEventId(null)}
+                highlightedJumpId={highlightedJumpId}
+                onJumpToEvent={handleJumpToEvent}
                 onHoverEvent={setHoveredEventId}
                 onOpenCardModal={setActiveCardId}
                 onOpenPeriodModal={setActivePeriodId}
@@ -613,6 +752,8 @@ export default function App() {
         eventId={activeCardId}
         enrichedEvents={enrichedEvents}
         branches={branches}
+        focusedEventId={focusedEventId}
+        onToggleFocusEvent={handleToggleFocusEvent}
         onClose={() => setActiveCardId(null)}
         onSelectEvent={setActiveCardId}
         onSelectYearRange={handleYearRangeChange}

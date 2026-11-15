@@ -7,6 +7,7 @@ import type {
   MacroEra,
   MilitaryBranchMode,
   RulerPeriod,
+  RulerSpanSegment,
   RulersFile,
   StreamRow,
   SyncManifest,
@@ -280,6 +281,21 @@ export function intersectsTimeWindow(startYear: number, endYear: number, yearFro
   return startYear <= yearTo && endYear >= yearFrom;
 }
 
+export function getEventRulerSegments(ev: EnrichedEvent): RulerSpanSegment[] {
+  if (ev.overlappingRulers.length === 0) return [];
+  const raw = ev.overlappingRulers.map((ruler) => {
+    const overlapStart = Math.max(ev.startYear, ruler.startYear);
+    const overlapEnd = Math.min(ev.endYear, ruler.endYear);
+    const years = Math.max(1, overlapEnd - overlapStart);
+    return { ruler, overlapStart, overlapEnd, years };
+  });
+  const totalYears = raw.reduce((acc, item) => acc + item.years, 0) || 1;
+  return raw.map((item) => ({
+    ...item,
+    pct: (item.years / totalYears) * 100,
+  }));
+}
+
 export function buildUnifiedTimelineStream(
   enrichedEvents: EnrichedEvent[],
   rulers: RulerPeriod[],
@@ -290,42 +306,83 @@ export function buildUnifiedTimelineStream(
   stream: StreamRow[];
   matchingEvents: EnrichedEvent[];
   matchingRulers: RulerPeriod[];
+  focusedEvent: EnrichedEvent | null;
+  effectiveYearFrom: number;
+  effectiveYearTo: number;
 } {
   const q = filters.searchQuery.trim().toLowerCase();
+  const focusTarget = filters.focusedEventId
+    ? (enrichedEvents.find((ev) => ev.id === filters.focusedEventId) ?? null)
+    : null;
 
-  const matchingEvents = enrichedEvents.filter((ev) => {
-    if (!isEventBranchActive(ev, branches, filters.activeBranches, filters.militaryBranchMode)) return false;
-    if (!intersectsTimeWindow(ev.startYear, ev.endYear, filters.yearFrom, filters.yearTo)) return false;
-    if (filters.selectedEra !== 'ALL' && ev.eraId !== filters.selectedEra) return false;
-    if (filters.selectedReign !== 'ALL') {
-      const matchesRuler = ev.overlappingRulers.some((r) => r.id === filters.selectedReign);
-      if (!matchesRuler) return false;
-    }
-    if (!q) return true;
-    return (
-      ev.title.toLowerCase().includes(q) ||
-      ev.subtitle.toLowerCase().includes(q) ||
-      ev.details.toLowerCase().includes(q) ||
-      ev.period.toLowerCase().includes(q) ||
-      ev.ruler.toLowerCase().includes(q) ||
-      ev.region.toLowerCase().includes(q) ||
-      Boolean(ev.subEvents?.some((s) => s.title.toLowerCase().includes(q) || s.text.toLowerCase().includes(q)))
-    );
-  });
+  let matchingEvents: EnrichedEvent[] = [];
+  let matchingRulers: RulerPeriod[] = [];
+  let effectiveYearFrom = filters.yearFrom;
+  let effectiveYearTo = filters.yearTo;
 
   const rulersFileMeta = manifest.mountedFiles.find((f) => f.role === 'trunk' || f.fileId === 'rulers');
   const isRulersFileMounted = rulersFileMeta ? rulersFileMeta.enabled : true;
 
-  const matchingRulers = rulers.filter((r) => {
-    if (!isRulersFileMounted || filters.activeBranches.MAIN_RULERS === false) return false;
-    if (!intersectsTimeWindow(r.startYear, r.endYear, filters.yearFrom, filters.yearTo)) return false;
-    if (filters.selectedEra !== 'ALL' && r.eraId !== filters.selectedEra) return false;
-    if (filters.selectedReign !== 'ALL' && r.id !== filters.selectedReign) return false;
-    if (!q) return true;
-    const selfMatch = r.ruler.toLowerCase().includes(q) || r.reignTitle.toLowerCase().includes(q);
-    const hasMatchingEvent = matchingEvents.some((ev) => ev.overlappingRulers.some((or) => or.id === r.id));
-    return selfMatch || hasMatchingEvent;
-  });
+  if (focusTarget) {
+    const allowedIds = new Set<string>([focusTarget.id]);
+    focusTarget.explicitLinks.forEach((lnk) => {
+      allowedIds.add(lnk.targetEvent.id);
+    });
+    if (filters.focusScope === 'sync_and_concurrent') {
+      focusTarget.concurrentEvents.forEach((ce) => {
+        allowedIds.add(ce.id);
+      });
+    }
+
+    matchingEvents = enrichedEvents.filter((ev) => allowedIds.has(ev.id));
+
+    const touchedRulerIds = new Set<string>();
+    matchingEvents.forEach((ev) => {
+      ev.overlappingRulers.forEach((r) => touchedRulerIds.add(r.id));
+    });
+
+    matchingRulers = rulers.filter((r) => {
+      if (!isRulersFileMounted || filters.activeBranches.MAIN_RULERS === false) return false;
+      return touchedRulerIds.has(r.id);
+    });
+
+    const minEventYear = matchingEvents.reduce((m, e) => Math.min(m, e.startYear), focusTarget.startYear);
+    const maxEventYear = matchingEvents.reduce((m, e) => Math.max(m, e.endYear), focusTarget.endYear);
+    effectiveYearFrom = Math.max(1686, minEventYear);
+    effectiveYearTo = Math.min(2026, Math.max(effectiveYearFrom + 1, maxEventYear));
+  } else {
+    matchingEvents = enrichedEvents.filter((ev) => {
+      if (!isEventBranchActive(ev, branches, filters.activeBranches, filters.militaryBranchMode)) return false;
+      if (!intersectsTimeWindow(ev.startYear, ev.endYear, filters.yearFrom, filters.yearTo)) return false;
+      if (filters.selectedEra !== 'ALL' && ev.eraId !== filters.selectedEra) return false;
+      if (filters.onlyWithSyncLinks && ev.explicitLinks.length === 0) return false;
+      if (filters.selectedReign !== 'ALL') {
+        const matchesRuler = ev.overlappingRulers.some((r) => r.id === filters.selectedReign);
+        if (!matchesRuler) return false;
+      }
+      if (!q) return true;
+      return (
+        ev.title.toLowerCase().includes(q) ||
+        ev.subtitle.toLowerCase().includes(q) ||
+        ev.details.toLowerCase().includes(q) ||
+        ev.period.toLowerCase().includes(q) ||
+        ev.ruler.toLowerCase().includes(q) ||
+        ev.region.toLowerCase().includes(q) ||
+        Boolean(ev.subEvents?.some((s) => s.title.toLowerCase().includes(q) || s.text.toLowerCase().includes(q)))
+      );
+    });
+
+    matchingRulers = rulers.filter((r) => {
+      if (!isRulersFileMounted || filters.activeBranches.MAIN_RULERS === false) return false;
+      if (!intersectsTimeWindow(r.startYear, r.endYear, filters.yearFrom, filters.yearTo)) return false;
+      if (filters.selectedEra !== 'ALL' && r.eraId !== filters.selectedEra) return false;
+      if (filters.selectedReign !== 'ALL' && r.id !== filters.selectedReign) return false;
+      if (!q && !filters.onlyWithSyncLinks) return true;
+      const selfMatch = q !== '' && (r.ruler.toLowerCase().includes(q) || r.reignTitle.toLowerCase().includes(q));
+      const hasMatchingEvent = matchingEvents.some((ev) => ev.overlappingRulers.some((or) => or.id === r.id));
+      return selfMatch || hasMatchingEvent;
+    });
+  }
 
   const stream: StreamRow[] = [];
   const eraStartYears: Record<string, number> = { ERA_1: 1686, ERA_2: 1801, ERA_3: 1917, ERA_4: 1991 };
@@ -334,7 +391,7 @@ export function buildUnifiedTimelineStream(
     const y = eraStartYears[era.id] ?? 1686;
     const hasItemsInEra =
       matchingEvents.some((e) => e.eraId === era.id) || matchingRulers.some((r) => r.eraId === era.id);
-    if (hasItemsInEra && y >= filters.yearFrom && y <= filters.yearTo) {
+    if (hasItemsInEra && y >= effectiveYearFrom && y <= effectiveYearTo) {
       stream.push({
         rowType: 'ERA_START',
         year: y,
@@ -345,8 +402,8 @@ export function buildUnifiedTimelineStream(
   });
 
   matchingRulers.forEach((rulerObj) => {
-    const displayYear = Math.max(rulerObj.startYear, filters.yearFrom);
-    const startedBeforeWindow = rulerObj.startYear < filters.yearFrom;
+    const displayYear = focusTarget ? rulerObj.startYear : Math.max(rulerObj.startYear, effectiveYearFrom);
+    const startedBeforeWindow = !focusTarget && rulerObj.startYear < effectiveYearFrom;
     stream.push({
       rowType: 'RULER_COMMIT',
       year: displayYear,
@@ -357,8 +414,8 @@ export function buildUnifiedTimelineStream(
   });
 
   matchingEvents.forEach((eventObj) => {
-    const displayYear = Math.max(eventObj.startYear, filters.yearFrom);
-    const startedBeforeWindow = eventObj.startYear < filters.yearFrom;
+    const displayYear = focusTarget ? eventObj.startYear : Math.max(eventObj.startYear, effectiveYearFrom);
+    const startedBeforeWindow = !focusTarget && eventObj.startYear < effectiveYearFrom;
     stream.push({
       rowType: 'EVENT_COMMIT',
       year: displayYear,
@@ -371,7 +428,7 @@ export function buildUnifiedTimelineStream(
     if (
       filters.showEndNodes &&
       eventObj.duration >= 3 &&
-      eventObj.endYear <= filters.yearTo &&
+      (focusTarget || eventObj.endYear <= effectiveYearTo) &&
       (eventObj.overlappingRulers.length > 1 || eventObj.duration >= 6)
     ) {
       stream.push({
@@ -392,7 +449,14 @@ export function buildUnifiedTimelineStream(
     return seqA - seqB;
   });
 
-  return { stream, matchingEvents, matchingRulers };
+  return {
+    stream,
+    matchingEvents,
+    matchingRulers,
+    focusedEvent: focusTarget,
+    effectiveYearFrom,
+    effectiveYearTo,
+  };
 }
 
 export function downloadJsonFile(filename: string, data: unknown): void {

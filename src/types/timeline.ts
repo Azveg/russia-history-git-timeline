@@ -156,6 +156,18 @@ export type StreamRow =
       eventObj: EnrichedEvent;
     };
 
+export type CardDensity = 'detailed' | 'compact';
+
+export type FocusScope = 'sync_only' | 'sync_and_concurrent';
+
+export interface RulerSpanSegment {
+  ruler: RulerPeriod;
+  overlapStart: number;
+  overlapEnd: number;
+  years: number;
+  pct: number;
+}
+
 export interface FilterState {
   militaryBranchMode: MilitaryBranchMode;
   activeBranches: Record<string, boolean>;
@@ -164,6 +176,9 @@ export interface FilterState {
   selectedEra: string;
   selectedReign: string;
   searchQuery: string;
+  onlyWithSyncLinks: boolean;
+  focusedEventId: string | null;
+  focusScope: FocusScope;
   showEndNodes: boolean;
   showOverlapMatrix: boolean;
 }

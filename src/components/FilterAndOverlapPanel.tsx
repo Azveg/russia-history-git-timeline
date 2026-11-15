@@ -1,4 +1,4 @@
-import { Clock, Search, X } from 'lucide-react';
+import { Clock, Link2, Search, X } from 'lucide-react';
 import { resolveEventBranch } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
@@ -30,6 +30,9 @@ interface FilterAndOverlapPanelProps {
   militaryBranchMode: MilitaryBranchMode;
   showOverlapMatrix: boolean;
   onToggleOverlapMatrix: () => void;
+  onlyWithSyncLinks: boolean;
+  onToggleOnlyWithSyncLinks: () => void;
+  syncLinkedCount: number;
   onOpenCardModal: (eventId: string) => void;
   onHoverEvent: (eventId: string | null) => void;
 }
@@ -66,6 +69,9 @@ export function FilterAndOverlapPanel({
   militaryBranchMode,
   showOverlapMatrix,
   onToggleOverlapMatrix,
+  onlyWithSyncLinks,
+  onToggleOnlyWithSyncLinks,
+  syncLinkedCount,
   onOpenCardModal,
   onHoverEvent,
 }: FilterAndOverlapPanelProps) {
@@ -252,13 +258,36 @@ export function FilterAndOverlapPanel({
             })}
           </div>
 
-          <button
-            type="button"
-            onClick={onToggleOverlapMatrix}
-            className="text-[11px] font-mono text-amber-300 hover:text-amber-200 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-lg cursor-pointer whitespace-nowrap"
-          >
-            {showOverlapMatrix ? '− Скрыть карту наложения полос' : '+ Показать карту наложения полос'}
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={onToggleOnlyWithSyncLinks}
+              className={`text-[11px] font-mono px-2.5 py-1 rounded-lg border flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors ${
+                onlyWithSyncLinks
+                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-bold'
+                  : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300'
+              }`}
+              title="Показать только события, имеющие явные причинно-следственные связи (crossLinks)"
+            >
+              <Link2 className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Только со связями (sync)</span>
+              <span
+                className={`px-1.5 py-0.5 rounded text-[10px] tabular-nums ${
+                  onlyWithSyncLinks ? 'bg-emerald-950 text-emerald-200' : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {syncLinkedCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onToggleOverlapMatrix}
+              className="text-[11px] font-mono text-amber-300 hover:text-amber-200 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-lg cursor-pointer whitespace-nowrap"
+            >
+              {showOverlapMatrix ? '− Скрыть карту наложения полос' : '+ Показать карту наложения полос'}
+            </button>
+          </div>
         </div>
 
         {showOverlapMatrix && (
