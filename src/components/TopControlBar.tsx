@@ -1,10 +1,14 @@
 import { PanelLeftClose, PanelLeftOpen, Rows3, Rows4, SlidersHorizontal } from 'lucide-react';
-import type { BranchDefinition, CardDensity } from '../types/timeline';
+import type { BranchDefinition, BranchPresetId, CardDensity } from '../types/timeline';
+import { BranchSelectorPopover } from './BranchSelectorPopover';
 
 interface TopControlBarProps {
   branchControls: Array<BranchDefinition & { count: number }>;
   activeBranches: Record<string, boolean>;
   onToggleBranch: (branchId: string) => void;
+  onToggleCategory: (branchIds: string[], enable: boolean) => void;
+  onApplyPreset: (presetId: BranchPresetId) => void;
+  onIsolateBranch: (branchId: string) => void;
   yearFrom: number;
   yearTo: number;
   onYearRangeChange: (from: number, to: number) => void;
@@ -20,6 +24,9 @@ export function TopControlBar({
   branchControls,
   activeBranches,
   onToggleBranch,
+  onToggleCategory,
+  onApplyPreset,
+  onIsolateBranch,
   yearFrom,
   yearTo,
   onYearRangeChange,
@@ -33,38 +40,15 @@ export function TopControlBar({
   return (
     <div className="sticky top-0 z-40 bg-[#050811]/95 backdrop-blur-md border-b border-slate-800/90 shadow-lg">
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 min-w-0 flex-1">
-          <span className="text-[11px] font-mono text-slate-400 mr-1 shrink-0 hidden sm:inline">
-            Ветки:
-          </span>
-          <div className="flex items-center gap-1.5 shrink-0">
-            {branchControls.map((b) => {
-              const isActive = activeBranches[b.id] !== false;
-              return (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() => onToggleBranch(b.id)}
-                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                    isActive
-                      ? 'bg-slate-900 border-slate-700 text-white hover:border-slate-500'
-                      : 'bg-slate-950/50 border-slate-800/70 text-slate-500 opacity-60 hover:opacity-100'
-                  }`}
-                  title={`${b.label}: нажмите, чтобы включить или скрыть ветку`}
-                >
-                  <span
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{
-                      backgroundColor: isActive ? b.color : 'transparent',
-                      border: `2px solid ${b.color}`,
-                    }}
-                  />
-                  <span>{b.short}</span>
-                  <span className="text-[10px] text-slate-400 tabular-nums">({b.count})</span>
-                </button>
-              );
-            })}
-          </div>
+        <div className="flex items-center min-w-0">
+          <BranchSelectorPopover
+            branchControls={branchControls}
+            activeBranches={activeBranches}
+            onToggleBranch={onToggleBranch}
+            onToggleCategory={onToggleCategory}
+            onApplyPreset={onApplyPreset}
+            onIsolateBranch={onIsolateBranch}
+          />
         </div>
 
         <div className="flex items-center gap-2 ml-auto shrink-0">
@@ -128,7 +112,7 @@ export function TopControlBar({
             type="button"
             onClick={onToggleFilters}
             className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            title="Свернуть или развернуть панель фильтров и диаграмму наложения"
+            title="Свернуть или развернуть панель фильтров"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
             <span>{isFiltersCollapsed ? '+ Фильтры' : '− Фильтры'}</span>

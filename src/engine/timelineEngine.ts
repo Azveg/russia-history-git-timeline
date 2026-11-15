@@ -1,13 +1,18 @@
 import type {
   AxisResolution,
+  BranchCategoryKey,
   BranchDefinition,
   BranchFile,
+  BranchPresetId,
   EnrichedEvent,
   ExplicitLinkInfo,
   FilterState,
   MacroEra,
-  MilitaryBranchMode,
+  OverlapAnalyticsSummary,
+  OverlapPeakInterval,
+  OverlapYearBucket,
   PreciseDateParts,
+  RulerBoundaryTick,
   RulerPeriod,
   RulerSpanSegment,
   RulersFile,
@@ -27,18 +32,6 @@ export const TIME_AXIS_BRANCH: BranchDefinition = {
   badgeClass: 'bg-slate-500/15 text-slate-200 border-slate-500/40',
   isMilitary: false,
   alwaysTrunk: true,
-};
-
-export const UNIFIED_MILITARY_BRANCH: BranchDefinition = {
-  id: 'MILITARY_ALL',
-  gitName: 'war/conflicts',
-  label: 'Военные конфликты (все)',
-  short: 'war/all',
-  sourceFile: 'data/wars.json',
-  description: 'Все международные войны, колониальные походы, интервенции и силовые операции',
-  color: '#ef4444',
-  badgeClass: 'bg-red-500/15 text-red-300 border-red-500/40',
-  isMilitary: true,
 };
 
 export const RULER_ALT_COLORS = ['#f59e0b', '#fcd34d'] as const;
@@ -330,7 +323,6 @@ export function getEnrichedEvents(
 export function getVisibleLanes(
   branches: BranchDefinition[],
   activeBranches: Record<string, boolean>,
-  militaryBranchMode: MilitaryBranchMode,
 ): BranchDefinition[] {
   const list: BranchDefinition[] = [];
   const rulersBranch = branches.find((b) => b.id === 'MAIN_RULERS');
@@ -343,22 +335,10 @@ export function getVisibleLanes(
 
   branches.forEach((b) => {
     if (b.id === 'MAIN_RULERS') return;
-    if (b.isMilitary) {
-      if (militaryBranchMode === 'SPLIT' && activeBranches[b.id] !== false) {
-        list.push(b);
-      }
-    } else if (activeBranches[b.id] !== false) {
+    if (activeBranches[b.id] !== false) {
       list.push(b);
     }
   });
-
-  if (militaryBranchMode === 'UNIFIED' && activeBranches.MILITARY_ALL !== false) {
-    const hasMilitary = branches.some((b) => b.isMilitary);
-    if (hasMilitary) {
-      const timeIdx = list.findIndex((l) => l.id === 'TIME_AXIS');
-      list.splice(timeIdx + 1, 0, UNIFIED_MILITARY_BRANCH);
-    }
-  }
 
   return list;
 }
@@ -366,25 +346,14 @@ export function getVisibleLanes(
 export function resolveEventBranch(
   ev: EnrichedEvent,
   branches: BranchDefinition[],
-  militaryBranchMode: MilitaryBranchMode,
 ): BranchDefinition {
-  const origBranch = branches.find((b) => b.id === ev.task);
-  if (militaryBranchMode === 'UNIFIED' && origBranch?.isMilitary) {
-    return UNIFIED_MILITARY_BRANCH;
-  }
-  return origBranch || branches[0] || UNIFIED_MILITARY_BRANCH;
+  return branches.find((b) => b.id === ev.task) || branches[0] || TIME_AXIS_BRANCH;
 }
 
 export function isEventBranchActive(
   ev: EnrichedEvent,
-  branches: BranchDefinition[],
   activeBranches: Record<string, boolean>,
-  militaryBranchMode: MilitaryBranchMode,
 ): boolean {
-  const origBranch = branches.find((b) => b.id === ev.task);
-  if (militaryBranchMode === 'UNIFIED' && origBranch?.isMilitary) {
-    return activeBranches.MILITARY_ALL !== false;
-  }
   return activeBranches[ev.task] !== false;
 }
 
@@ -466,7 +435,7 @@ export function buildUnifiedTimelineStream(
     effectiveYearTo = Math.min(2000, Math.max(effectiveYearFrom + 1, maxEventYear));
   } else {
     matchingEvents = enrichedEvents.filter((ev) => {
-      if (!isEventBranchActive(ev, branches, filters.activeBranches, filters.militaryBranchMode)) return false;
+      if (!isEventBranchActive(ev, filters.activeBranches)) return false;
       if (!intersectsTimeWindow(ev.startYear, ev.endYear, filters.yearFrom, filters.yearTo)) return false;
       if (filters.selectedEra !== 'ALL' && ev.eraId !== filters.selectedEra) return false;
       if (filters.onlyWithSyncLinks && ev.explicitLinks.length === 0) return false;
@@ -643,3 +612,186 @@ export function buildUnifiedTimelineStream(
     axisResolution,
   };
 }
+
+const CATEGORY_META: Record<BranchCategoryKey, { label: string; order: number }> = {
+  rulers: { label: 'Правители и правления', order: 1 },
+  military: { label: 'Военные кампании', order: 2 },
+  economy: { label: 'Экономика и реформы', order: 3 },
+  world: { label: 'Мировой контекст', order: 4 },
+  other: { label: 'Тематические ветки', order: 5 },
+};
+
+export function resolveBranchCategory(branch: BranchDefinition): {
+  key: BranchCategoryKey;
+  label: string;
+  order: number;
+} {
+  if (branch.category && CATEGORY_META[branch.category]) {
+    return { key: branch.category, ...CATEGORY_META[branch.category] };
+  }
+  if (branch.id === 'MAIN_RULERS') {
+    return { key: 'rulers', ...CATEGORY_META.rulers };
+  }
+  if (branch.isMilitary) {
+    return { key: 'military', ...CATEGORY_META.military };
+  }
+  if (
+    branch.id.includes('ECO') ||
+    branch.id.includes('REFORM') ||
+    branch.sourceFile?.includes('economics')
+  ) {
+    return { key: 'economy', ...CATEGORY_META.economy };
+  }
+  if (branch.id.includes('WORLD') || branch.sourceFile?.includes('world')) {
+    return { key: 'world', ...CATEGORY_META.world };
+  }
+  return { key: 'other', ...CATEGORY_META.other };
+}
+
+export interface BranchCategoryGroup<T extends BranchDefinition> {
+  key: BranchCategoryKey;
+  label: string;
+  order: number;
+  items: T[];
+}
+
+export function groupBranchesByCategory<T extends BranchDefinition>(
+  branches: T[],
+): BranchCategoryGroup<T>[] {
+  const map = new Map<BranchCategoryKey, BranchCategoryGroup<T>>();
+  branches.forEach((b) => {
+    const meta = resolveBranchCategory(b);
+    const existing = map.get(meta.key);
+    if (existing) {
+      existing.items.push(b);
+    } else {
+      map.set(meta.key, {
+        key: meta.key,
+        label: meta.label,
+        order: meta.order,
+        items: [b],
+      });
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => a.order - b.order);
+}
+
+export function computeBranchPresetMap(
+  branches: Array<BranchDefinition>,
+  presetId: BranchPresetId,
+): Record<string, boolean> {
+  const next: Record<string, boolean> = {};
+  branches.forEach((b) => {
+    const cat = resolveBranchCategory(b).key;
+    if (presetId === 'all') {
+      next[b.id] = true;
+    } else if (presetId === 'rulers_wars') {
+      next[b.id] = cat === 'rulers' || cat === 'military';
+    } else if (presetId === 'eco_world') {
+      next[b.id] = cat === 'economy' || cat === 'world';
+    } else if (presetId === 'rulers_only') {
+      next[b.id] = cat === 'rulers';
+    }
+  });
+  return next;
+}
+
+export function computeOverlapAnalytics(
+  matchingEvents: EnrichedEvent[],
+  matchingRulers: RulerPeriod[],
+  thematicLanesCount: number,
+  yearFrom: number,
+  yearTo: number,
+): OverlapAnalyticsSummary {
+  const safeFrom = Math.min(yearFrom, yearTo);
+  const safeTo = Math.max(safeFrom + 1, yearTo);
+
+  const countsByYear: Array<{ year: number; count: number }> = [];
+  let maxConcurrency = 0;
+
+  for (let y = safeFrom; y <= safeTo; y++) {
+    let count = 0;
+    for (let i = 0; i < matchingEvents.length; i++) {
+      const ev = matchingEvents[i];
+      if (ev.startYear <= y && ev.endYear >= y) {
+        count++;
+      }
+    }
+    if (count > maxConcurrency) {
+      maxConcurrency = count;
+    }
+    countsByYear.push({ year: y, count });
+  }
+
+  const hasMeaningfulPeak = maxConcurrency >= 2;
+  const yearBuckets: OverlapYearBucket[] = countsByYear.map((b) => ({
+    year: b.year,
+    count: b.count,
+    isPeak: hasMeaningfulPeak && b.count === maxConcurrency,
+  }));
+
+  const peakIntervals: OverlapPeakInterval[] = [];
+  let currentPeak: OverlapPeakInterval | null = null;
+
+  yearBuckets.forEach((b) => {
+    if (b.isPeak) {
+      if (currentPeak && b.year === currentPeak.toYear + 1) {
+        currentPeak.toYear = b.year;
+      } else {
+        if (currentPeak) peakIntervals.push(currentPeak);
+        currentPeak = { fromYear: b.year, toYear: b.year, maxCount: maxConcurrency };
+      }
+    } else if (currentPeak) {
+      peakIntervals.push(currentPeak);
+      currentPeak = null;
+    }
+  });
+  if (currentPeak) {
+    peakIntervals.push(currentPeak);
+  }
+
+  let primaryPeak: OverlapPeakInterval | null = null;
+  peakIntervals.forEach((interval) => {
+    if (!primaryPeak) {
+      primaryPeak = interval;
+    } else {
+      const len = interval.toYear - interval.fromYear;
+      const bestLen = primaryPeak.toYear - primaryPeak.fromYear;
+      if (len > bestLen) {
+        primaryPeak = interval;
+      }
+    }
+  });
+
+  const seenBoundaryYears = new Set<number>();
+  const rulerBoundaries: RulerBoundaryTick[] = [];
+  matchingRulers.forEach((r) => {
+    if (r.startYear > safeFrom && r.startYear < safeTo && !seenBoundaryYears.has(r.startYear)) {
+      seenBoundaryYears.add(r.startYear);
+      rulerBoundaries.push({
+        year: r.startYear,
+        rulerId: r.id,
+        shortRuler: r.shortRuler,
+        reignPeriod: r.reignPeriod,
+      });
+    }
+  });
+  rulerBoundaries.sort((a, b) => a.year - b.year);
+
+  const multiReignCount = matchingEvents.filter((ev) => ev.overlappingRulers.length > 1).length;
+
+  return {
+    yearFrom: safeFrom,
+    yearTo: safeTo,
+    maxConcurrency,
+    peakIntervals,
+    primaryPeak,
+    yearBuckets,
+    rulerBoundaries,
+    multiReignCount,
+    totalEventsCount: matchingEvents.length,
+    activeLanesCount: thematicLanesCount,
+  };
+}
+
+

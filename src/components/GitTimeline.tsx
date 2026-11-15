@@ -13,7 +13,6 @@ import type {
   EnrichedEvent,
   FocusScope,
   MacroEra,
-  MilitaryBranchMode,
   RulerPeriod,
   StreamRow,
   SyncManifest,
@@ -26,7 +25,6 @@ interface GitTimelineProps {
   rulers: RulerPeriod[];
   visibleLanes: BranchDefinition[];
   branches: BranchDefinition[];
-  militaryBranchMode: MilitaryBranchMode;
   manifest: SyncManifest;
   yearFrom: number;
   axisResolution: AxisResolution;
@@ -65,7 +63,6 @@ export function GitTimeline({
   rulers,
   visibleLanes,
   branches,
-  militaryBranchMode,
   manifest,
   yearFrom,
   axisResolution,
@@ -308,7 +305,7 @@ export function GitTimeline({
           const activeCount = matchingEvents.filter((ev) => {
             if (ev.id === options?.excludeEventIdFromThematic) return false;
             if (ev.isAtomic) return false;
-            if (resolveEventBranch(ev, branches, militaryBranchMode).id !== lane.id) return false;
+            if (resolveEventBranch(ev, branches).id !== lane.id) return false;
             return ev.startPrecision.sortKey <= sortKey && ev.endPrecision.sortKey >= sortKey;
           }).length;
 
@@ -826,7 +823,7 @@ export function GitTimeline({
 
           if (item.rowType === 'EVENT_COMMIT') {
             const ev = item.eventObj;
-            const branchObj = resolveEventBranch(ev, branches, militaryBranchMode);
+            const branchObj = resolveEventBranch(ev, branches);
             const origBranchObj = branches.find((b) => b.id === ev.task) || branchObj;
             const thematicIdx = Math.max(0, thematicLanes.findIndex((l) => l.id === branchObj.id));
             const commitX = getThematicX(thematicIdx);
@@ -1256,7 +1253,7 @@ export function GitTimeline({
 
           // EVENT_END: точка завершения и обратное слияние (merge) длительного процесса с центральной осью времени
           const ev = item.eventObj;
-          const branchObj = resolveEventBranch(ev, branches, militaryBranchMode);
+          const branchObj = resolveEventBranch(ev, branches);
           const thematicIdx = Math.max(0, thematicLanes.findIndex((l) => l.id === branchObj.id));
           const commitX = getThematicX(thematicIdx);
           const mergeY = 22;

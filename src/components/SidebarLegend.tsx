@@ -22,10 +22,10 @@ export function SidebarLegend({
 }: SidebarLegendProps) {
   return (
     <aside className="hidden lg:block lg:col-span-3 sticky top-14 bg-slate-900/60 border border-slate-800/90 rounded-2xl p-4 max-h-[calc(100vh-4.5rem)] overflow-y-auto">
-      <div className="flex items-center justify-between text-xs font-mono font-bold text-amber-400 mb-2.5 px-1">
+      <div className="flex items-center justify-between text-xs font-mono font-bold text-amber-400 mb-3 px-1">
         <span className="flex items-center gap-1.5">
           <Crown className="w-3.5 h-3.5" />
-          Ветка правителей (rulers)
+          Ветка правителей
         </span>
         <button
           type="button"
@@ -37,10 +37,6 @@ export function SidebarLegend({
           <span>Скрыть</span>
         </button>
       </div>
-
-      <p className="text-[11px] text-slate-400 px-1 mb-3 leading-snug">
-        Каждое правление ответвляется от центральной оси времени и возвращается к ней при смене власти. Клик фильтрует окно:
-      </p>
 
       <nav className="space-y-1">
         {rulers.map((r) => {

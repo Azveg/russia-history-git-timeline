@@ -1,5 +1,3 @@
-export type MilitaryBranchMode = 'SPLIT' | 'UNIFIED';
-
 export type AxisResolution = 'year' | 'month' | 'day';
 
 export interface PreciseDateParts {
@@ -10,11 +8,16 @@ export interface PreciseDateParts {
   sortKey: number;
 }
 
+export type BranchCategoryKey = 'rulers' | 'military' | 'economy' | 'world' | 'other';
+
+export type BranchPresetId = 'all' | 'rulers_wars' | 'eco_world' | 'rulers_only';
+
 export interface BranchDefinition {
   id: string;
   gitName: string;
   label: string;
   short: string;
+  category?: BranchCategoryKey;
   sourceFile?: string;
   description: string;
   color: string;
@@ -216,7 +219,6 @@ export interface RulerSpanSegment {
 }
 
 export interface FilterState {
-  militaryBranchMode: MilitaryBranchMode;
   activeBranches: Record<string, boolean>;
   yearFrom: number;
   yearTo: number;
@@ -228,4 +230,41 @@ export interface FilterState {
   focusScope: FocusScope;
   showEndNodes: boolean;
   showOverlapMatrix: boolean;
+}
+
+export interface OverlapYearBucket {
+  year: number;
+  count: number;
+  isPeak: boolean;
+}
+
+export interface OverlapPeakInterval {
+  fromYear: number;
+  toYear: number;
+  maxCount: number;
+}
+
+export interface RulerBoundaryTick {
+  year: number;
+  rulerId: string;
+  shortRuler: string;
+  reignPeriod: string;
+}
+
+export interface OverlapAnalyticsSummary {
+  yearFrom: number;
+  yearTo: number;
+  maxConcurrency: number;
+  peakIntervals: OverlapPeakInterval[];
+  primaryPeak: OverlapPeakInterval | null;
+  yearBuckets: OverlapYearBucket[];
+  rulerBoundaries: RulerBoundaryTick[];
+  multiReignCount: number;
+  totalEventsCount: number;
+  activeLanesCount: number;
+}
+
+export interface YearRangeStep {
+  from: number;
+  to: number;
 }

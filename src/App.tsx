@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CardDetailModal } from './components/CardDetailModal';
 import { DashboardHeader } from './components/DashboardHeader';
-import { FilterAndOverlapPanel } from './components/FilterAndOverlapPanel';
+import { FilterPanel } from './components/FilterPanel';
 import { GitTimeline } from './components/GitTimeline';
+import { OverlapMapSection } from './components/OverlapMapSection';
 import { PeriodSummaryModal } from './components/PeriodSummaryModal';
 import { SidebarLegend } from './components/SidebarLegend';
 import { TopControlBar } from './components/TopControlBar';
 import {
   buildUnifiedTimelineStream,
+  computeBranchPresetMap,
   extractBranchesFromStore,
   extractRulersFromStore,
   fetchTimelineRepository,
@@ -16,15 +18,15 @@ import {
   intersectsTimeWindow,
   isEventBranchActive,
   resolveEventBranch,
-  UNIFIED_MILITARY_BRANCH,
 } from './engine/timelineEngine';
 import type {
   BranchDefinition,
+  BranchPresetId,
   CardDensity,
   FocusScope,
-  MilitaryBranchMode,
   SyncManifest,
   TimelineDataFile,
+  YearRangeStep,
 } from './types/timeline';
 
 export default function App() {
@@ -33,13 +35,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [militaryBranchMode, setMilitaryBranchMode] = useState<MilitaryBranchMode>('SPLIT');
   const [activeBranches, setActiveBranches] = useState<Record<string, boolean>>({
     MAIN_RULERS: true,
     SEAS: true,
     PERIPHERY: true,
     INTERNAL_BUFFER: true,
-    MILITARY_ALL: true,
     REFORMS_ECO: true,
     WORLD_CONTEXT: true,
     DIPLOMACY_TREATIES: true,
@@ -47,6 +47,7 @@ export default function App() {
 
   const [yearFrom, setYearFrom] = useState(1686);
   const [yearTo, setYearTo] = useState(2000);
+  const [zoomHistory, setZoomHistory] = useState<YearRangeStep[]>([]);
   const [selectedEra, setSelectedEra] = useState('ALL');
   const [selectedReign, setSelectedReign] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
@@ -133,8 +134,8 @@ export default function App() {
   }, [manifest, filesMap, rulers]);
 
   const visibleLanes = useMemo(
-    () => getVisibleLanes(branches, activeBranches, militaryBranchMode),
-    [branches, activeBranches, militaryBranchMode],
+    () => getVisibleLanes(branches, activeBranches),
+    [branches, activeBranches],
   );
 
   const { stream, matchingEvents, matchingRulers, focusedEvent, effectiveYearFrom, effectiveYearTo, axisResolution } =
@@ -151,7 +152,6 @@ export default function App() {
         };
       }
       return buildUnifiedTimelineStream(enrichedEvents, rulers, manifest, branches, {
-        militaryBranchMode,
         activeBranches,
         yearFrom,
         yearTo,
@@ -169,7 +169,6 @@ export default function App() {
     enrichedEvents,
     rulers,
     branches,
-    militaryBranchMode,
     activeBranches,
     yearFrom,
     yearTo,
@@ -188,24 +187,24 @@ export default function App() {
     const laneIds = new Set(visibleLanes.map((l) => l.id));
     const extras: BranchDefinition[] = [];
     matchingEvents.forEach((ev) => {
-      const b = resolveEventBranch(ev, branches, militaryBranchMode);
+      const b = resolveEventBranch(ev, branches);
       if (!laneIds.has(b.id)) {
         laneIds.add(b.id);
         extras.push(b);
       }
     });
     return extras.length > 0 ? [...visibleLanes, ...extras] : visibleLanes;
-  }, [focusedEvent, visibleLanes, matchingEvents, branches, militaryBranchMode]);
+  }, [focusedEvent, visibleLanes, matchingEvents, branches]);
 
   const syncLinkedCount = useMemo(
     () =>
       enrichedEvents.filter(
         (ev) =>
           ev.explicitLinks.length > 0 &&
-          isEventBranchActive(ev, branches, activeBranches, militaryBranchMode) &&
+          isEventBranchActive(ev, activeBranches) &&
           intersectsTimeWindow(ev.startYear, ev.endYear, yearFrom, yearTo),
       ).length,
-    [enrichedEvents, branches, activeBranches, militaryBranchMode, yearFrom, yearTo],
+    [enrichedEvents, activeBranches, yearFrom, yearTo],
   );
 
   const branchControls = useMemo(() => {
@@ -213,36 +212,15 @@ export default function App() {
     enrichedEvents.forEach((ev) => {
       if (intersectsTimeWindow(ev.startYear, ev.endYear, yearFrom, yearTo)) {
         byBranchCount[ev.task] = (byBranchCount[ev.task] || 0) + 1;
-        const orig = branches.find((b) => b.id === ev.task);
-        if (orig?.isMilitary) {
-          byBranchCount.MILITARY_ALL = (byBranchCount.MILITARY_ALL || 0) + 1;
-        }
       }
     });
 
-    const list: Array<BranchDefinition & { count: number }> = [];
-    branches.forEach((b) => {
-      if (b.id === 'MAIN_RULERS') {
-        list.push({ ...b, count: matchingRulers.length });
-      } else if (b.isMilitary) {
-        if (militaryBranchMode === 'SPLIT') {
-          list.push({ ...b, count: byBranchCount[b.id] || 0 });
-        }
-      } else {
-        list.push({ ...b, count: byBranchCount[b.id] || 0 });
-      }
-    });
-
-    if (militaryBranchMode === 'UNIFIED' && branches.some((b) => b.isMilitary)) {
-      const insertAt = list.length > 0 && list[0].id === 'MAIN_RULERS' ? 1 : 0;
-      list.splice(insertAt, 0, {
-        ...UNIFIED_MILITARY_BRANCH,
-        count: byBranchCount.MILITARY_ALL || 0,
-      });
-    }
-
-    return list;
-  }, [branches, enrichedEvents, matchingRulers.length, militaryBranchMode, yearFrom, yearTo]);
+    return branches.map((b) =>
+      b.id === 'MAIN_RULERS'
+        ? { ...b, count: matchingRulers.length }
+        : { ...b, count: byBranchCount[b.id] || 0 },
+    );
+  }, [branches, enrichedEvents, matchingRulers.length, yearFrom, yearTo]);
 
   const eraCounts = useMemo(() => {
     const counts: Record<string, number> = { ERA_1: 0, ERA_2: 0, ERA_3: 0, ERA_4: 0 };
@@ -252,7 +230,15 @@ export default function App() {
     return counts;
   }, [matchingEvents]);
 
-  function handleYearRangeChange(fromVal: number, toVal: number) {
+  function handleRecordZoomStep(fromVal: number, toVal: number) {
+    setZoomHistory((prev) => {
+      const top = prev[prev.length - 1];
+      if (top && top.from === fromVal && top.to === toVal) return prev;
+      return [...prev.slice(-19), { from: fromVal, to: toVal }];
+    });
+  }
+
+  function handleYearRangeChange(fromVal: number, toVal: number, recordHistory = true) {
     let y1 = Number.isFinite(fromVal) ? Math.round(fromVal) : 1686;
     let y2 = Number.isFinite(toVal) ? Math.round(toVal) : 2000;
     y1 = Math.max(1686, Math.min(2000, y1));
@@ -260,8 +246,26 @@ export default function App() {
     if (y1 > y2) {
       [y1, y2] = [y2, y1];
     }
+    if (y1 === yearFrom && y2 === yearTo) return;
+    if (recordHistory) {
+      handleRecordZoomStep(yearFrom, yearTo);
+    }
     setYearFrom(y1);
     setYearTo(y2);
+  }
+
+  function handleZoomStepUp() {
+    if (zoomHistory.length === 0) return;
+    const prevRange = zoomHistory[zoomHistory.length - 1];
+    setZoomHistory((prev) => prev.slice(0, -1));
+    setYearFrom(prevRange.from);
+    setYearTo(prevRange.to);
+  }
+
+  function handleResetYearWindow() {
+    setZoomHistory([]);
+    setYearFrom(1686);
+    setYearTo(2000);
   }
 
   function handleSelectEra(eraId: string) {
@@ -290,9 +294,10 @@ export default function App() {
     setSearchQuery('');
     setOnlyWithSyncLinks(false);
     setFocusedEventId(null);
+    setZoomHistory([]);
     setYearFrom(1686);
     setYearTo(2000);
-    const nextActive: Record<string, boolean> = { MILITARY_ALL: true };
+    const nextActive: Record<string, boolean> = {};
     branches.forEach((b) => {
       nextActive[b.id] = true;
     });
@@ -318,10 +323,8 @@ export default function App() {
 
     const adjustments: string[] = [];
 
-    if (!isEventBranchActive(target, branches, activeBranches, militaryBranchMode)) {
-      const orig = branches.find((b) => b.id === target.task);
-      const branchKey = militaryBranchMode === 'UNIFIED' && orig?.isMilitary ? 'MILITARY_ALL' : target.task;
-      setActiveBranches((prev) => ({ ...prev, [branchKey]: true }));
+    if (!isEventBranchActive(target, activeBranches)) {
+      setActiveBranches((prev) => ({ ...prev, [target.task]: true }));
       adjustments.push('включена ветка');
     }
 
@@ -367,6 +370,31 @@ export default function App() {
       ...prev,
       [branchId]: prev[branchId] === false,
     }));
+  }
+
+  function handleToggleBranchCategory(branchIds: string[], enable: boolean) {
+    setActiveBranches((prev) => {
+      const next = { ...prev };
+      branchIds.forEach((id) => {
+        next[id] = enable;
+      });
+      return next;
+    });
+  }
+
+  function handleApplyBranchPreset(presetId: BranchPresetId) {
+    setActiveBranches((prev) => ({
+      ...prev,
+      ...computeBranchPresetMap(branches, presetId),
+    }));
+  }
+
+  function handleIsolateBranch(branchId: string) {
+    const next: Record<string, boolean> = {};
+    branches.forEach((b) => {
+      next[b.id] = b.id === branchId;
+    });
+    setActiveBranches(next);
   }
 
   function handleToggleFilters() {
@@ -431,6 +459,9 @@ export default function App() {
         branchControls={branchControls}
         activeBranches={activeBranches}
         onToggleBranch={handleToggleBranch}
+        onToggleCategory={handleToggleBranchCategory}
+        onApplyPreset={handleApplyBranchPreset}
+        onIsolateBranch={handleIsolateBranch}
         yearFrom={yearFrom}
         yearTo={yearTo}
         onYearRangeChange={handleYearRangeChange}
@@ -447,20 +478,16 @@ export default function App() {
         matchingRulersCount={matchingRulers.length}
         streamCount={stream.length}
         crossLinksCount={manifest.crossLinks.length}
-        branchControls={branchControls}
-        activeBranches={activeBranches}
-        militaryBranchMode={militaryBranchMode}
         showEndNodes={showEndNodes}
-        onToggleBranch={handleToggleBranch}
-        onSetMilitaryBranchMode={setMilitaryBranchMode}
         onToggleShowEndNodes={() => setShowEndNodes((prev) => !prev)}
       />
 
       {!isFiltersCollapsed && (
-        <FilterAndOverlapPanel
+        <FilterPanel
           yearFrom={effectiveYearFrom}
           yearTo={effectiveYearTo}
           onYearRangeChange={handleYearRangeChange}
+          onRecordZoomStep={handleRecordZoomStep}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           selectedEra={selectedEra}
@@ -472,20 +499,34 @@ export default function App() {
           macroEras={manifest.macroEras}
           eraCounts={eraCounts}
           rulers={rulers}
-          matchingRulers={matchingRulers}
-          matchingEvents={matchingEvents}
-          visibleLanes={displayLanes}
-          branches={branches}
-          militaryBranchMode={militaryBranchMode}
-          showOverlapMatrix={showOverlapMatrix}
-          onToggleOverlapMatrix={() => setShowOverlapMatrix((prev) => !prev)}
+          matchingRulersCount={matchingRulers.length}
+          matchingEventsCount={matchingEvents.length}
           onlyWithSyncLinks={onlyWithSyncLinks}
           onToggleOnlyWithSyncLinks={() => setOnlyWithSyncLinks((prev) => !prev)}
           syncLinkedCount={syncLinkedCount}
-          onOpenCardModal={setActiveCardId}
-          onHoverEvent={setHoveredEventId}
         />
       )}
+
+      <OverlapMapSection
+        yearFrom={effectiveYearFrom}
+        yearTo={effectiveYearTo}
+        previousYearRange={zoomHistory.length > 0 ? zoomHistory[zoomHistory.length - 1] : null}
+        canStepUp={zoomHistory.length > 0}
+        onZoomStepUp={handleZoomStepUp}
+        onResetYearWindow={handleResetYearWindow}
+        onYearRangeChange={handleYearRangeChange}
+        matchingRulers={matchingRulers}
+        matchingEvents={matchingEvents}
+        visibleLanes={displayLanes}
+        branches={branches}
+        hoveredEventId={hoveredEventId}
+        showOverlapMatrix={showOverlapMatrix}
+        onToggleOverlapMatrix={() => setShowOverlapMatrix((prev) => !prev)}
+        onOpenCardModal={setActiveCardId}
+        onHoverEvent={setHoveredEventId}
+        onResetAll={handleResetAll}
+        hasActiveFilters={hasActiveFilters}
+      />
 
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6">
         {stream.length === 0 ? (
@@ -526,7 +567,6 @@ export default function App() {
                 rulers={rulers}
                 visibleLanes={displayLanes}
                 branches={branches}
-                militaryBranchMode={militaryBranchMode}
                 manifest={manifest}
                 yearFrom={effectiveYearFrom}
                 axisResolution={axisResolution}
