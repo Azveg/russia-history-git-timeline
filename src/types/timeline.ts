@@ -1,5 +1,15 @@
 export type MilitaryBranchMode = 'SPLIT' | 'UNIFIED';
 
+export type AxisResolution = 'year' | 'month' | 'day';
+
+export interface PreciseDateParts {
+  year: number;
+  month?: number;
+  day?: number;
+  precision: AxisResolution;
+  sortKey: number;
+}
+
 export interface BranchDefinition {
   id: string;
   gitName: string;
@@ -29,6 +39,8 @@ export interface RulerPeriod {
   reignPeriod: string;
   startYear: number;
   endYear: number;
+  startDate?: string;
+  endDate?: string;
   reignTitle: string;
   reignThesis: string;
 }
@@ -42,6 +54,9 @@ export interface TimelineNode {
   id: string;
   startYear?: number;
   endYear?: number;
+  startDate?: string;
+  endDate?: string;
+  isAtomic?: boolean;
   period: string;
   title: string;
   subtitle: string;
@@ -115,6 +130,9 @@ export interface EnrichedEvent extends TimelineNode {
   seq: number;
   startYear: number;
   endYear: number;
+  startPrecision: PreciseDateParts;
+  endPrecision: PreciseDateParts;
+  isAtomic: boolean;
   duration: number;
   eraId: string;
   eraRoman: string;
@@ -130,27 +148,56 @@ export type StreamRow =
   | {
       rowType: 'ERA_START';
       year: number;
+      sortKey: number;
       priority: number;
       era: MacroEra;
     }
   | {
+      rowType: 'TIME_TICK';
+      year: number;
+      month?: number;
+      day?: number;
+      label: string;
+      sortKey: number;
+      priority: number;
+    }
+  | {
       rowType: 'RULER_COMMIT';
       year: number;
+      sortKey: number;
+      dateLabel: string;
       priority: number;
       startedBeforeWindow: boolean;
+      rulerIndex: number;
+      rulerColor: string;
+      rulerObj: RulerPeriod;
+    }
+  | {
+      rowType: 'RULER_END';
+      year: number;
+      sortKey: number;
+      dateLabel: string;
+      priority: number;
+      rulerIndex: number;
+      rulerColor: string;
       rulerObj: RulerPeriod;
     }
   | {
       rowType: 'EVENT_COMMIT';
       year: number;
+      sortKey: number;
+      dateLabel: string;
       priority: number;
       seq: number;
       startedBeforeWindow: boolean;
+      isAtomicInView: boolean;
       eventObj: EnrichedEvent;
     }
   | {
       rowType: 'EVENT_END';
       year: number;
+      sortKey: number;
+      dateLabel: string;
       priority: number;
       seq: number;
       eventObj: EnrichedEvent;

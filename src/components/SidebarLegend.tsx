@@ -25,7 +25,7 @@ export function SidebarLegend({
       <div className="flex items-center justify-between text-xs font-mono font-bold text-amber-400 mb-2.5 px-1">
         <span className="flex items-center gap-1.5">
           <Crown className="w-3.5 h-3.5" />
-          Ветка правителей (main)
+          Ветка правителей (rulers)
         </span>
         <button
           type="button"
@@ -39,7 +39,7 @@ export function SidebarLegend({
       </div>
 
       <p className="text-[11px] text-slate-400 px-1 mb-3 leading-snug">
-        Клик по правителю фильтрует временное окно его правления и показывает все пересекающиеся события:
+        Каждое правление ответвляется от центральной оси времени и возвращается к ней при смене власти. Клик фильтрует окно:
       </p>
 
       <nav className="space-y-1">
@@ -80,12 +80,18 @@ export function SidebarLegend({
       </nav>
 
       <div className="mt-5 pt-4 border-t border-slate-800/80 px-1 space-y-2.5">
-        <div className="text-[11px] font-mono font-bold text-slate-300">Как читать наложение линий:</div>
+        <div className="text-[11px] font-mono font-bold text-slate-300">Как читать граф от оси времени:</div>
         <div className="text-[11px] text-slate-400 space-y-1.5 leading-snug">
+          <div className="flex items-center gap-2">
+            <span className="w-4 h-1 bg-slate-300 rounded shrink-0" />
+            <span>
+              <strong className="text-slate-200">Ось времени (центр)</strong> — главный ствол (годы → месяцы → дни).
+            </span>
+          </div>
           <div className="flex items-center gap-2">
             <span className="w-4 h-1 bg-amber-400 rounded shrink-0" />
             <span>
-              <strong className="text-slate-200">Сплошная рельса</strong> — в этот год идет активный процесс.
+              <strong className="text-slate-200">Сплошная рельса</strong> — длительность правления или процесса от ответвления до слияния.
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -95,9 +101,9 @@ export function SidebarLegend({
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-4 h-0.5 border-b border-dashed border-slate-500 shrink-0" />
+            <span className="w-2.5 h-2.5 rotate-45 border-2 border-sky-400 bg-slate-950 shrink-0 ml-0.5 mr-1" />
             <span>
-              <strong className="text-slate-200">Пунктир</strong> — ветка без активных конфликтов в этот год.
+              <strong className="text-slate-200">Ромб на ветке</strong> — атомарное (точечное) событие без слияния.
             </span>
           </div>
           <div className="flex items-center gap-2">

@@ -1,5 +1,5 @@
-import { Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, SlidersHorizontal } from 'lucide-react';
-import type { BranchDefinition } from '../types/timeline';
+import { PanelLeftClose, PanelLeftOpen, Rows3, Rows4, SlidersHorizontal } from 'lucide-react';
+import type { BranchDefinition, CardDensity } from '../types/timeline';
 
 interface TopControlBarProps {
   branchControls: Array<BranchDefinition & { count: number }>;
@@ -8,12 +8,12 @@ interface TopControlBarProps {
   yearFrom: number;
   yearTo: number;
   onYearRangeChange: (from: number, to: number) => void;
+  cardDensity: CardDensity;
+  onChangeCardDensity: (density: CardDensity) => void;
   isFiltersCollapsed: boolean;
   isLegendCollapsed: boolean;
-  isBranchesOnlyMode: boolean;
   onToggleFilters: () => void;
   onToggleLegend: () => void;
-  onToggleBranchesOnly: () => void;
 }
 
 export function TopControlBar({
@@ -23,17 +23,17 @@ export function TopControlBar({
   yearFrom,
   yearTo,
   onYearRangeChange,
+  cardDensity,
+  onChangeCardDensity,
   isFiltersCollapsed,
   isLegendCollapsed,
-  isBranchesOnlyMode,
   onToggleFilters,
   onToggleLegend,
-  onToggleBranchesOnly,
 }: TopControlBarProps) {
   return (
     <div className="sticky top-0 z-40 bg-[#050811]/95 backdrop-blur-md border-b border-slate-800/90 shadow-lg">
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2 flex flex-wrap lg:flex-nowrap items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 min-w-0 flex-1">
           <span className="text-[11px] font-mono text-slate-400 mr-1 shrink-0 hidden sm:inline">
             Ветки:
           </span>
@@ -91,6 +91,39 @@ export function TopControlBar({
             />
           </div>
 
+          <div
+            className="inline-flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[11px] font-mono"
+            role="group"
+            aria-label="Плотность карточек"
+          >
+            <button
+              type="button"
+              onClick={() => onChangeCardDensity('detailed')}
+              className={`px-2 py-1 rounded-md inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
+                cardDensity === 'detailed'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+              title="Подробные карточки со шкалой правителей и кнопками переходов"
+            >
+              <Rows3 className="w-3.5 h-3.5" />
+              <span>Подробно</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeCardDensity('compact')}
+              className={`px-2 py-1 rounded-md inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
+                cardDensity === 'compact'
+                  ? 'bg-amber-500 text-slate-950 font-bold'
+                  : 'text-slate-300 hover:text-white'
+              }`}
+              title="Компактные однострочные строки для быстрого обзора"
+            >
+              <Rows4 className="w-3.5 h-3.5" />
+              <span>Компактно</span>
+            </button>
+          </div>
+
           <button
             type="button"
             onClick={onToggleFilters}
@@ -98,7 +131,7 @@ export function TopControlBar({
             title="Свернуть или развернуть панель фильтров и диаграмму наложения"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
-            <span>{isBranchesOnlyMode || isFiltersCollapsed ? '+ Фильтры' : '− Фильтры'}</span>
+            <span>{isFiltersCollapsed ? '+ Фильтры' : '− Фильтры'}</span>
           </button>
 
           <button
@@ -107,26 +140,12 @@ export function TopControlBar({
             className="hidden lg:flex px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-[11px] font-mono font-semibold items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             title="Скрыть или показать боковую легенду и список правителей"
           >
-            {isBranchesOnlyMode || isLegendCollapsed ? (
+            {isLegendCollapsed ? (
               <PanelLeftOpen className="w-3.5 h-3.5 text-slate-400" />
             ) : (
               <PanelLeftClose className="w-3.5 h-3.5 text-slate-400" />
             )}
-            <span>{isBranchesOnlyMode || isLegendCollapsed ? '+ Легенда' : '− Легенда'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={onToggleBranchesOnly}
-            className={`px-3 py-1.5 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              isBranchesOnlyMode
-                ? 'bg-amber-500 text-slate-950 shadow-md'
-                : 'bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300'
-            }`}
-            title="Свернуть шапку, фильтры и легенды для работы только с графом веток"
-          >
-            {isBranchesOnlyMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-            <span>{isBranchesOnlyMode ? 'Показать всё' : 'Только ветки'}</span>
+            <span>{isLegendCollapsed ? '+ Легенда' : '− Легенда'}</span>
           </button>
         </div>
       </div>

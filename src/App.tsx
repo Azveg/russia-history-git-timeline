@@ -61,7 +61,6 @@ export default function App() {
   const [showOverlapMatrix, setShowOverlapMatrix] = useState(true);
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(false);
   const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
-  const [isBranchesOnlyMode, setIsBranchesOnlyMode] = useState(false);
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
@@ -138,32 +137,34 @@ export default function App() {
     [branches, activeBranches, militaryBranchMode],
   );
 
-  const { stream, matchingEvents, matchingRulers, focusedEvent, effectiveYearFrom, effectiveYearTo } = useMemo(() => {
-    if (!manifest) {
-      return {
-        stream: [],
-        matchingEvents: [],
-        matchingRulers: [],
-        focusedEvent: null,
-        effectiveYearFrom: yearFrom,
-        effectiveYearTo: yearTo,
-      };
-    }
-    return buildUnifiedTimelineStream(enrichedEvents, rulers, manifest, branches, {
-      militaryBranchMode,
-      activeBranches,
-      yearFrom,
-      yearTo,
-      selectedEra,
-      selectedReign,
-      searchQuery,
-      onlyWithSyncLinks,
-      focusedEventId,
-      focusScope,
-      showEndNodes,
-      showOverlapMatrix,
-    });
-  }, [
+  const { stream, matchingEvents, matchingRulers, focusedEvent, effectiveYearFrom, effectiveYearTo, axisResolution } =
+    useMemo(() => {
+      if (!manifest) {
+        return {
+          stream: [],
+          matchingEvents: [],
+          matchingRulers: [],
+          focusedEvent: null,
+          effectiveYearFrom: yearFrom,
+          effectiveYearTo: yearTo,
+          axisResolution: 'year' as const,
+        };
+      }
+      return buildUnifiedTimelineStream(enrichedEvents, rulers, manifest, branches, {
+        militaryBranchMode,
+        activeBranches,
+        yearFrom,
+        yearTo,
+        selectedEra,
+        selectedReign,
+        searchQuery,
+        onlyWithSyncLinks,
+        focusedEventId,
+        focusScope,
+        showEndNodes,
+        showOverlapMatrix,
+      });
+    }, [
     manifest,
     enrichedEvents,
     rulers,
@@ -369,21 +370,11 @@ export default function App() {
   }
 
   function handleToggleFilters() {
-    if (isBranchesOnlyMode) {
-      setIsBranchesOnlyMode(false);
-      setIsFiltersCollapsed(false);
-    } else {
-      setIsFiltersCollapsed((prev) => !prev);
-    }
+    setIsFiltersCollapsed((prev) => !prev);
   }
 
   function handleToggleLegend() {
-    if (isBranchesOnlyMode) {
-      setIsBranchesOnlyMode(false);
-      setIsLegendCollapsed(false);
-    } else {
-      setIsLegendCollapsed((prev) => !prev);
-    }
+    setIsLegendCollapsed((prev) => !prev);
   }
 
   if (loading) {
@@ -417,7 +408,7 @@ export default function App() {
     );
   }
 
-  const hideSidebar = isBranchesOnlyMode || isLegendCollapsed;
+  const hideSidebar = isLegendCollapsed;
   const hasActiveFilters =
     selectedEra !== 'ALL' ||
     selectedReign !== 'ALL' ||
@@ -443,31 +434,29 @@ export default function App() {
         yearFrom={yearFrom}
         yearTo={yearTo}
         onYearRangeChange={handleYearRangeChange}
+        cardDensity={cardDensity}
+        onChangeCardDensity={setCardDensity}
         isFiltersCollapsed={isFiltersCollapsed}
         isLegendCollapsed={isLegendCollapsed}
-        isBranchesOnlyMode={isBranchesOnlyMode}
         onToggleFilters={handleToggleFilters}
         onToggleLegend={handleToggleLegend}
-        onToggleBranchesOnly={() => setIsBranchesOnlyMode((prev) => !prev)}
       />
 
-      {!isBranchesOnlyMode && (
-        <DashboardHeader
-          visibleLanesCount={visibleLanes.length}
-          matchingRulersCount={matchingRulers.length}
-          streamCount={stream.length}
-          crossLinksCount={manifest.crossLinks.length}
-          branchControls={branchControls}
-          activeBranches={activeBranches}
-          militaryBranchMode={militaryBranchMode}
-          showEndNodes={showEndNodes}
-          onToggleBranch={handleToggleBranch}
-          onSetMilitaryBranchMode={setMilitaryBranchMode}
-          onToggleShowEndNodes={() => setShowEndNodes((prev) => !prev)}
-        />
-      )}
+      <DashboardHeader
+        visibleLanesCount={visibleLanes.length}
+        matchingRulersCount={matchingRulers.length}
+        streamCount={stream.length}
+        crossLinksCount={manifest.crossLinks.length}
+        branchControls={branchControls}
+        activeBranches={activeBranches}
+        militaryBranchMode={militaryBranchMode}
+        showEndNodes={showEndNodes}
+        onToggleBranch={handleToggleBranch}
+        onSetMilitaryBranchMode={setMilitaryBranchMode}
+        onToggleShowEndNodes={() => setShowEndNodes((prev) => !prev)}
+      />
 
-      {!isBranchesOnlyMode && !isFiltersCollapsed && (
+      {!isFiltersCollapsed && (
         <FilterAndOverlapPanel
           yearFrom={effectiveYearFrom}
           yearTo={effectiveYearTo}
@@ -540,9 +529,9 @@ export default function App() {
                 militaryBranchMode={militaryBranchMode}
                 manifest={manifest}
                 yearFrom={effectiveYearFrom}
+                axisResolution={axisResolution}
                 hoveredEventId={hoveredEventId}
                 cardDensity={cardDensity}
-                onChangeCardDensity={setCardDensity}
                 focusedEvent={focusedEvent}
                 focusScope={focusScope}
                 onChangeFocusScope={setFocusScope}

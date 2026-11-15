@@ -39,12 +39,13 @@ interface FilterAndOverlapPanelProps {
 
 const PRESETS = [
   { label: 'Весь график (1686–2000)', from: 1686, to: 2000, cls: 'border-slate-800 text-slate-300' },
-  { label: '1700–1721: Северная война + 4 бунта + Реформы', from: 1700, to: 1721, cls: 'border-amber-500/30 text-amber-300' },
-  { label: '1755–1764: Семилетняя война (3 правителя!)', from: 1755, to: 1764, cls: 'border-amber-500/30 text-amber-300' },
+  { label: '1700–1721: Северная война + Реформы', from: 1700, to: 1721, cls: 'border-amber-500/30 text-amber-300' },
+  { label: '1755–1764: Семилетняя война (месяцы)', from: 1755, to: 1764, cls: 'border-amber-500/30 text-amber-300' },
   { label: '1850–1865: Кавказ + Крымская + Смена власти', from: 1850, to: 1865, cls: 'border-sky-500/30 text-sky-300' },
-  { label: '1914–1923: ПМВ + Революция + Гражданская', from: 1914, to: 1923, cls: 'border-rose-500/30 text-rose-300' },
-  { label: '1979–1991: Афганистан (4 генсека) + Распад СССР', from: 1979, to: 1991, cls: 'border-emerald-500/30 text-emerald-300' },
-  { label: '1991–1999: Локальные конфликты 1990-х', from: 1991, to: 2000, cls: 'border-purple-500/30 text-purple-300' },
+  { label: '1917–1918: Революции и Гражданская (дни)', from: 1917, to: 1918, cls: 'border-rose-500/30 text-rose-300' },
+  { label: '1961–1963: Новочеркасск + Карибский кризис (дни)', from: 1961, to: 1963, cls: 'border-rose-500/30 text-rose-300' },
+  { label: '1979–1991: Афганистан (4 генсека) + Распад', from: 1979, to: 1991, cls: 'border-emerald-500/30 text-emerald-300' },
+  { label: '1991–1999: Локальные конфликты 1990-х (месяцы)', from: 1991, to: 2000, cls: 'border-purple-500/30 text-purple-300' },
 ];
 
 export function FilterAndOverlapPanel({
@@ -80,7 +81,7 @@ export function FilterAndOverlapPanel({
   const totalSpan = maxY - yearFrom;
   const toPct = (y: number) => Math.max(0, Math.min(100, ((y - yearFrom) / totalSpan) * 100));
 
-  const thematicLanes = visibleLanes.filter((l) => l.id !== 'MAIN_RULERS');
+  const thematicLanes = visibleLanes.filter((l) => l.id !== 'MAIN_RULERS' && l.id !== 'TIME_AXIS');
   const ticks = [
     yearFrom,
     Math.round(yearFrom + totalSpan * 0.25),
@@ -308,7 +309,7 @@ export function FilterAndOverlapPanel({
               <div className="grid grid-cols-12 items-center gap-2 py-0.5">
                 <div className="col-span-3 sm:col-span-2 flex items-center gap-1.5 truncate">
                   <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                  <span className="text-[10px] font-mono font-bold text-amber-300 truncate">main/rulers</span>
+                  <span className="text-[10px] font-mono font-bold text-amber-300 truncate">rulers/reigns</span>
                 </div>
                 <div className="col-span-9 sm:col-span-10 relative h-7 bg-slate-900 rounded border border-slate-800 overflow-hidden">
                   {matchingRulers.map((r, idx) => {

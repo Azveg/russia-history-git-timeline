@@ -5,16 +5,16 @@
   "timeAxis": {
     "minYear": 1686,
     "maxYear": 2000,
-    "resolution": "year",
+    "resolution": "adaptive_year_month_day",
     "overlapRule": "inclusive_interval"
   },
   "mountedFiles": [
     {
       "fileId": "rulers",
       "path": "data/rulers.json",
-      "role": "trunk",
+      "role": "rulers_branch",
       "branchIds": ["MAIN_RULERS"],
-      "title": "Шкала правителей России (1686–1999)",
+      "title": "Ветка правителей России (1686–1999)",
       "enabled": true
     },
     {

@@ -1,4 +1,5 @@
 import type {
+  AxisResolution,
   BranchDefinition,
   BranchFile,
   EnrichedEvent,
@@ -6,13 +7,27 @@ import type {
   FilterState,
   MacroEra,
   MilitaryBranchMode,
+  PreciseDateParts,
   RulerPeriod,
   RulerSpanSegment,
   RulersFile,
   StreamRow,
   SyncManifest,
   TimelineDataFile,
+  TimelineNode,
 } from '../types/timeline';
+
+export const TIME_AXIS_BRANCH: BranchDefinition = {
+  id: 'TIME_AXIS',
+  gitName: 'time/main',
+  label: 'Ось времени (центр)',
+  short: 'time/main',
+  description: 'Центральный ствол хронологии (годы, месяцы, дни), от которого ответвляются правления и процессы',
+  color: '#cbd5e1',
+  badgeClass: 'bg-slate-500/15 text-slate-200 border-slate-500/40',
+  isMilitary: false,
+  alwaysTrunk: true,
+};
 
 export const UNIFIED_MILITARY_BRANCH: BranchDefinition = {
   id: 'MILITARY_ALL',
@@ -25,6 +40,23 @@ export const UNIFIED_MILITARY_BRANCH: BranchDefinition = {
   badgeClass: 'bg-red-500/15 text-red-300 border-red-500/40',
   isMilitary: true,
 };
+
+export const RULER_ALT_COLORS = ['#f59e0b', '#fcd34d'] as const;
+
+const MONTHS_SHORT_RU = [
+  'янв',
+  'фев',
+  'мар',
+  'апр',
+  'май',
+  'июн',
+  'июл',
+  'авг',
+  'сен',
+  'окт',
+  'ноя',
+  'дек',
+];
 
 const CUSTOM_EVENT_YEARS: Record<string, [number, number]> = {
   '1746-chukchi': [1746, 1776],
@@ -50,6 +82,68 @@ export function parseEventYears(periodStr: string, eventId?: string): { startYea
   const startYear = nums[0];
   const endYear = nums.length > 1 ? Math.max(...nums) : startYear;
   return { startYear, endYear: Math.max(startYear, endYear) };
+}
+
+export function parsePreciseDate(rawDate: string | undefined, fallbackYear: number, isEnd = false): PreciseDateParts {
+  if (rawDate) {
+    const match = rawDate.trim().match(/^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/);
+    if (match) {
+      const year = Number(match[1]);
+      const month = match[2] ? Math.max(1, Math.min(12, Number(match[2]))) : undefined;
+      const day = match[3] ? Math.max(1, Math.min(31, Number(match[3]))) : undefined;
+      const precision: AxisResolution = day !== undefined ? 'day' : month !== undefined ? 'month' : 'year';
+      const sortMonth = month ?? (isEnd ? 12 : 1);
+      const sortDay = day ?? (isEnd ? 28 : 1);
+      return {
+        year,
+        month,
+        day,
+        precision,
+        sortKey: year * 10000 + sortMonth * 100 + sortDay,
+      };
+    }
+  }
+
+  return {
+    year: fallbackYear,
+    precision: 'year',
+    sortKey: fallbackYear * 10000 + (isEnd ? 1228 : 101),
+  };
+}
+
+export function detectAxisResolution(yearFrom: number, yearTo: number): AxisResolution {
+  const span = Math.max(0, yearTo - yearFrom);
+  if (span <= 2) return 'day';
+  if (span <= 12) return 'month';
+  return 'year';
+}
+
+export function formatDateForResolution(parts: PreciseDateParts, resolution: AxisResolution): string {
+  if (resolution === 'day' && parts.day !== undefined && parts.month !== undefined) {
+    return `${parts.day} ${MONTHS_SHORT_RU[parts.month - 1]} ${parts.year}`;
+  }
+  if ((resolution === 'day' || resolution === 'month') && parts.month !== undefined) {
+    return `${MONTHS_SHORT_RU[parts.month - 1]} ${parts.year}`;
+  }
+  return `${parts.year} г.`;
+}
+
+export function isAtomicEventNode(
+  node: TimelineNode,
+  startParts: PreciseDateParts,
+  endParts: PreciseDateParts,
+  resolution: AxisResolution,
+): boolean {
+  if (node.isAtomic === true) return true;
+  if (endParts.year > startParts.year) return false;
+  if (resolution === 'year') return true;
+  const startMonth = startParts.month ?? 1;
+  const endMonth = endParts.month ?? startMonth;
+  if (endMonth - startMonth >= 2) return false;
+  if (resolution === 'day' && startParts.day !== undefined && endParts.day !== undefined) {
+    return endParts.sortKey - startParts.sortKey < 7;
+  }
+  return true;
 }
 
 export function getGitHash(idStr: string): string {
@@ -117,7 +211,9 @@ export function extractRulersFromStore(
   manifest: SyncManifest,
   filesMap: Record<string, TimelineDataFile>,
 ): RulerPeriod[] {
-  const rulersMeta = manifest.mountedFiles.find((m) => m.role === 'trunk' || m.fileId === 'rulers');
+  const rulersMeta = manifest.mountedFiles.find(
+    (m) => m.role === 'trunk' || m.role === 'rulers_branch' || m.fileId === 'rulers',
+  );
   if (!rulersMeta) return [];
   const fileData = filesMap[rulersMeta.path];
   if (isRulersFile(fileData)) {
@@ -136,7 +232,14 @@ export function getEnrichedEvents(
   const macroEras = manifest.macroEras || [];
 
   manifest.mountedFiles.forEach((fileMeta) => {
-    if (!fileMeta.enabled || fileMeta.role === 'trunk') return;
+    if (
+      !fileMeta.enabled ||
+      fileMeta.role === 'trunk' ||
+      fileMeta.role === 'rulers_branch' ||
+      fileMeta.fileId === 'rulers'
+    ) {
+      return;
+    }
     const fileObj = filesMap[fileMeta.path];
     if (!isBranchFile(fileObj)) return;
 
@@ -148,7 +251,10 @@ export function getEnrichedEvents(
 
       const startYear = parsed.startYear;
       const endYear = Math.max(startYear, parsed.endYear);
+      const startPrecision = parsePreciseDate(ev.startDate, startYear, false);
+      const endPrecision = parsePreciseDate(ev.endDate, endYear, true);
       const duration = endYear - startYear;
+      const isAtomic = ev.isAtomic === true || (startYear === endYear && startPrecision.sortKey === endPrecision.sortKey);
 
       const overlappingRulers = rulers.filter((r) => r.startYear <= endYear && r.endYear >= startYear);
       if (overlappingRulers.length === 0 && rulers.length > 0) {
@@ -166,6 +272,9 @@ export function getEnrichedEvents(
         seq: seq++,
         startYear,
         endYear,
+        startPrecision,
+        endPrecision,
+        isAtomic,
         duration,
         eraId: eraObj?.id || 'ERA_1',
         eraRoman: eraObj?.roman || 'I',
@@ -183,7 +292,9 @@ export function getEnrichedEvents(
   });
 
   list.sort((a, b) => {
-    if (a.startYear !== b.startYear) return a.startYear - b.startYear;
+    if (a.startPrecision.sortKey !== b.startPrecision.sortKey) {
+      return a.startPrecision.sortKey - b.startPrecision.sortKey;
+    }
     return a.seq - b.seq;
   });
 
@@ -222,10 +333,17 @@ export function getVisibleLanes(
   militaryBranchMode: MilitaryBranchMode,
 ): BranchDefinition[] {
   const list: BranchDefinition[] = [];
+  const rulersBranch = branches.find((b) => b.id === 'MAIN_RULERS');
+  if (rulersBranch && activeBranches.MAIN_RULERS !== false) {
+    list.push(rulersBranch);
+  }
+
+  // Центральная ось времени (time/main) всегда отделяет зону правителей слева от тематических веток справа
+  list.push(TIME_AXIS_BRANCH);
+
   branches.forEach((b) => {
-    if (b.id === 'MAIN_RULERS') {
-      if (activeBranches.MAIN_RULERS !== false) list.push(b);
-    } else if (b.isMilitary) {
+    if (b.id === 'MAIN_RULERS') return;
+    if (b.isMilitary) {
       if (militaryBranchMode === 'SPLIT' && activeBranches[b.id] !== false) {
         list.push(b);
       }
@@ -237,13 +355,9 @@ export function getVisibleLanes(
   if (militaryBranchMode === 'UNIFIED' && activeBranches.MILITARY_ALL !== false) {
     const hasMilitary = branches.some((b) => b.isMilitary);
     if (hasMilitary) {
-      const insertAt = list.length > 0 && list[0].id === 'MAIN_RULERS' ? 1 : 0;
-      list.splice(insertAt, 0, UNIFIED_MILITARY_BRANCH);
+      const timeIdx = list.findIndex((l) => l.id === 'TIME_AXIS');
+      list.splice(timeIdx + 1, 0, UNIFIED_MILITARY_BRANCH);
     }
-  }
-
-  if (list.length === 0 && branches.length > 0) {
-    list.push(branches[0]);
   }
 
   return list;
@@ -306,6 +420,7 @@ export function buildUnifiedTimelineStream(
   focusedEvent: EnrichedEvent | null;
   effectiveYearFrom: number;
   effectiveYearTo: number;
+  axisResolution: AxisResolution;
 } {
   const q = filters.searchQuery.trim().toLowerCase();
   const focusTarget = filters.focusedEventId
@@ -317,7 +432,9 @@ export function buildUnifiedTimelineStream(
   let effectiveYearFrom = filters.yearFrom;
   let effectiveYearTo = filters.yearTo;
 
-  const rulersFileMeta = manifest.mountedFiles.find((f) => f.role === 'trunk' || f.fileId === 'rulers');
+  const rulersFileMeta = manifest.mountedFiles.find(
+    (f) => f.role === 'trunk' || f.role === 'rulers_branch' || f.fileId === 'rulers',
+  );
   const isRulersFileMounted = rulersFileMeta ? rulersFileMeta.enabled : true;
 
   if (focusTarget) {
@@ -381,6 +498,7 @@ export function buildUnifiedTimelineStream(
     });
   }
 
+  const axisResolution = detectAxisResolution(effectiveYearFrom, effectiveYearTo);
   const stream: StreamRow[] = [];
   const eraStartYears: Record<string, number> = { ERA_1: 1686, ERA_2: 1801, ERA_3: 1917, ERA_4: 1991 };
 
@@ -392,46 +510,115 @@ export function buildUnifiedTimelineStream(
       stream.push({
         rowType: 'ERA_START',
         year: y,
+        sortKey: y * 10000 + 100,
         priority: 1,
         era,
       });
     }
   });
 
+  // В узком окне (месяцы / дни) добавляем опорные хронологические метки на центральной оси времени
+  if (!focusTarget && (axisResolution === 'month' || axisResolution === 'day')) {
+    const stepMonths = axisResolution === 'day' ? 1 : 6;
+    for (let y = effectiveYearFrom; y <= effectiveYearTo; y++) {
+      for (let m = 1; m <= 12; m += stepMonths) {
+        const tickSortKey = y * 10000 + m * 100 + 1;
+        const label =
+          m === 1
+            ? `${y} г. · янв`
+            : `${MONTHS_SHORT_RU[m - 1]} ${y}`;
+        stream.push({
+          rowType: 'TIME_TICK',
+          year: y,
+          month: m,
+          label,
+          sortKey: tickSortKey,
+          priority: 2,
+        });
+      }
+    }
+  }
+
+  const rulerIndexById = new Map(rulers.map((r, i) => [r.id, i]));
+
   matchingRulers.forEach((rulerObj) => {
-    const displayYear = focusTarget ? rulerObj.startYear : Math.max(rulerObj.startYear, effectiveYearFrom);
+    const rIdx = rulerIndexById.get(rulerObj.id) ?? 0;
+    const rulerColor = RULER_ALT_COLORS[rIdx % RULER_ALT_COLORS.length];
+    const startParts = parsePreciseDate(rulerObj.startDate, rulerObj.startYear, false);
+    const endParts = parsePreciseDate(rulerObj.endDate, rulerObj.endYear, true);
+
     const startedBeforeWindow = !focusTarget && rulerObj.startYear < effectiveYearFrom;
+    const displayYear = startedBeforeWindow ? effectiveYearFrom : rulerObj.startYear;
+    const displayParts = startedBeforeWindow
+      ? parsePreciseDate(undefined, effectiveYearFrom, false)
+      : startParts;
+
     stream.push({
       rowType: 'RULER_COMMIT',
       year: displayYear,
-      priority: 2,
+      sortKey: displayParts.sortKey,
+      dateLabel: startedBeforeWindow
+        ? `${effectiveYearFrom} г. (с ${rulerObj.startYear})`
+        : formatDateForResolution(startParts, axisResolution),
+      priority: 4,
       startedBeforeWindow,
+      rulerIndex: rIdx,
+      rulerColor,
       rulerObj,
     });
+
+    if (filters.showEndNodes && (focusTarget || rulerObj.endYear <= effectiveYearTo)) {
+      stream.push({
+        rowType: 'RULER_END',
+        year: rulerObj.endYear,
+        sortKey: endParts.sortKey,
+        dateLabel: formatDateForResolution(endParts, axisResolution),
+        priority: 3,
+        rulerIndex: rIdx,
+        rulerColor,
+        rulerObj,
+      });
+    }
   });
 
   matchingEvents.forEach((eventObj) => {
-    const displayYear = focusTarget ? eventObj.startYear : Math.max(eventObj.startYear, effectiveYearFrom);
+    const isAtomicInView = isAtomicEventNode(
+      eventObj,
+      eventObj.startPrecision,
+      eventObj.endPrecision,
+      axisResolution,
+    );
     const startedBeforeWindow = !focusTarget && eventObj.startYear < effectiveYearFrom;
+    const displayYear = startedBeforeWindow ? effectiveYearFrom : eventObj.startYear;
+    const displayParts = startedBeforeWindow
+      ? parsePreciseDate(undefined, effectiveYearFrom, false)
+      : eventObj.startPrecision;
+
     stream.push({
       rowType: 'EVENT_COMMIT',
       year: displayYear,
-      priority: 3,
+      sortKey: displayParts.sortKey,
+      dateLabel: startedBeforeWindow
+        ? `${effectiveYearFrom} г. (с ${eventObj.startYear})`
+        : formatDateForResolution(eventObj.startPrecision, axisResolution),
+      priority: 5,
       seq: eventObj.seq,
       startedBeforeWindow,
+      isAtomicInView,
       eventObj,
     });
 
     if (
+      !isAtomicInView &&
       filters.showEndNodes &&
-      eventObj.duration >= 3 &&
-      (focusTarget || eventObj.endYear <= effectiveYearTo) &&
-      (eventObj.overlappingRulers.length > 1 || eventObj.duration >= 6)
+      (focusTarget || eventObj.endYear <= effectiveYearTo)
     ) {
       stream.push({
         rowType: 'EVENT_END',
         year: eventObj.endYear,
-        priority: 4,
+        sortKey: eventObj.endPrecision.sortKey,
+        dateLabel: formatDateForResolution(eventObj.endPrecision, axisResolution),
+        priority: 6,
         seq: eventObj.seq,
         eventObj,
       });
@@ -439,7 +626,7 @@ export function buildUnifiedTimelineStream(
   });
 
   stream.sort((a, b) => {
-    if (a.year !== b.year) return a.year - b.year;
+    if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
     if (a.priority !== b.priority) return a.priority - b.priority;
     const seqA = 'seq' in a ? a.seq : 0;
     const seqB = 'seq' in b ? b.seq : 0;
@@ -453,37 +640,6 @@ export function buildUnifiedTimelineStream(
     focusedEvent: focusTarget,
     effectiveYearFrom,
     effectiveYearTo,
+    axisResolution,
   };
-}
-
-export function downloadJsonFile(filename: string, data: unknown): void {
-  const jsonText = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
-  const blob = new Blob([jsonText], { type: 'application/json;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
-
-export function buildRepoSyncScript(
-  manifest: SyncManifest,
-  filesMap: Record<string, TimelineDataFile>,
-): string {
-  const lines = [
-    '#!/usr/bin/env node',
-    '// Скрипт обновления всех модульных JSON-файлов ветвей в public/data/',
-    'const fs = require("fs");',
-    'fs.mkdirSync("public/data", { recursive: true });',
-    `fs.writeFileSync("public/data/sync.manifest.json", ${JSON.stringify(JSON.stringify(manifest, null, 2))});`,
-  ];
-  Object.entries(filesMap).forEach(([filePath, content]) => {
-    const targetPath = filePath.startsWith('public/') ? filePath : `public/${filePath.replace(/^\.?\//, '')}`;
-    lines.push(`fs.writeFileSync(${JSON.stringify(targetPath)}, ${JSON.stringify(JSON.stringify(content, null, 2))});`);
-  });
-  lines.push('console.log("Файлы ветвей в public/data/ успешно обновлены!");');
-  return lines.join('\n');
 }

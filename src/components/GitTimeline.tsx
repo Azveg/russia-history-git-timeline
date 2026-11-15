@@ -1,7 +1,13 @@
-import { ArrowLeft, ArrowRight, Crosshair, Crown, Flag, GitCommitHorizontal, Link2, Rows3, Rows4, X, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Crosshair, Crown, Flag, GitCommitHorizontal, GitMerge, Link2, X, Zap } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { getEventRulerSegments, getGitHash, resolveEventBranch } from '../engine/timelineEngine';
+import {
+  getEventRulerSegments,
+  getGitHash,
+  RULER_ALT_COLORS,
+  resolveEventBranch,
+} from '../engine/timelineEngine';
 import type {
+  AxisResolution,
   BranchDefinition,
   CardDensity,
   EnrichedEvent,
@@ -23,9 +29,9 @@ interface GitTimelineProps {
   militaryBranchMode: MilitaryBranchMode;
   manifest: SyncManifest;
   yearFrom: number;
+  axisResolution: AxisResolution;
   hoveredEventId: string | null;
   cardDensity: CardDensity;
-  onChangeCardDensity: (density: CardDensity) => void;
   focusedEvent: EnrichedEvent | null;
   focusScope: FocusScope;
   onChangeFocusScope: (scope: FocusScope) => void;
@@ -46,6 +52,12 @@ const SEGMENT_TONES = [
   'bg-purple-400/80 hover:bg-purple-300',
 ];
 
+const RESOLUTION_LABELS: Record<AxisResolution, string> = {
+  year: 'Годы',
+  month: 'Месяцы (окно ≤ 12 л.)',
+  day: 'Дни и точные даты (окно ≤ 2 л.)',
+};
+
 export function GitTimeline({
   stream,
   matchingEvents,
@@ -56,9 +68,9 @@ export function GitTimeline({
   militaryBranchMode,
   manifest,
   yearFrom,
+  axisResolution,
   hoveredEventId,
   cardDensity,
-  onChangeCardDensity,
   focusedEvent,
   focusScope,
   onChangeFocusScope,
@@ -150,12 +162,43 @@ export function GitTimeline({
     return matchingEvents.filter((ev) => ev.overlappingRulers.some((r) => r.id === activeStickyRuler.id)).length;
   }, [activeStickyRuler, matchingEvents]);
 
+  // Трёхзонная геометрия графа: [Правители (чередование A/B)] | [Центральная ось времени] | [Тематические ветки]
+  const hasRulersLane = visibleLanes.some((l) => l.id === 'MAIN_RULERS');
+  const thematicLanes = useMemo(
+    () => visibleLanes.filter((l) => l.id !== 'MAIN_RULERS' && l.id !== 'TIME_AXIS'),
+    [visibleLanes],
+  );
+
+  const rulerRailAX = 16;
+  const rulerRailBX = 30;
+  const timeSpineX = hasRulersLane ? 54 : 22;
   const laneSpacing = 22;
-  const leftPad = 18;
-  const svgWidth = Math.max(88, leftPad * 2 + Math.max(0, visibleLanes.length - 1) * laneSpacing);
-  const getLaneX = (laneIdx: number) => leftPad + laneIdx * laneSpacing;
-  const trunkIdx = visibleLanes.findIndex((l) => l.id === 'MAIN_RULERS');
-  const trunkX = getLaneX(trunkIdx >= 0 ? trunkIdx : 0);
+  const firstThematicX = timeSpineX + 28;
+  const getThematicX = (thematicIdx: number) => firstThematicX + thematicIdx * laneSpacing;
+  const svgWidth = Math.max(
+    112,
+    thematicLanes.length > 0 ? getThematicX(thematicLanes.length - 1) + 20 : timeSpineX + 30,
+  );
+
+  const rulerIndexById = useMemo(() => new Map(rulers.map((r, i) => [r.id, i])), [rulers]);
+
+  const rulerSortBounds = useMemo(() => {
+    const map = new Map<string, { startKey: number; endKey: number }>();
+    matchingRulers.forEach((r) => {
+      const sy = r.startDate
+        ? Number(r.startDate.slice(0, 4)) * 10000 +
+          Number(r.startDate.slice(5, 7) || 1) * 100 +
+          Number(r.startDate.slice(8, 10) || 1)
+        : r.startYear * 10000 + 101;
+      const ey = r.endDate
+        ? Number(r.endDate.slice(0, 4)) * 10000 +
+          Number(r.endDate.slice(5, 7) || 12) * 100 +
+          Number(r.endDate.slice(8, 10) || 28)
+        : r.endYear * 10000 + 1228;
+      map.set(r.id, { startKey: sy, endKey: ey });
+    });
+    return map;
+  }, [matchingRulers]);
 
   const alreadyRunningEvents = !focusedEvent ? matchingEvents.filter((ev) => ev.startYear < yearFrom) : [];
 
@@ -168,86 +211,163 @@ export function GitTimeline({
     });
   }
 
-  function renderRailsForYear(year: number, highlightLaneIdx = -1) {
-    return visibleLanes.map((lane, i) => {
-      const x = getLaneX(i);
+  function renderRailsForRow(
+    sortKey: number,
+    options?: {
+      skipRulerId?: string;
+      highlightThematicId?: string;
+      excludeEventIdFromThematic?: string;
+    },
+  ) {
+    const activeA = hasRulersLane
+      ? matchingRulers.find((r) => {
+          if (r.id === options?.skipRulerId) return false;
+          const idx = rulerIndexById.get(r.id) ?? 0;
+          if (idx % 2 !== 0) return false;
+          const b = rulerSortBounds.get(r.id);
+          return b ? b.startKey <= sortKey && b.endKey >= sortKey : false;
+        })
+      : undefined;
 
-      if (lane.id === 'MAIN_RULERS') {
-        return (
-          <line
-            key={lane.id}
-            x1={x}
-            y1={0}
-            x2={x}
-            y2={400}
-            stroke={lane.color}
-            strokeWidth={3.5}
-            strokeOpacity={0.9}
-          />
-        );
-      }
+    const activeB = hasRulersLane
+      ? matchingRulers.find((r) => {
+          if (r.id === options?.skipRulerId) return false;
+          const idx = rulerIndexById.get(r.id) ?? 0;
+          if (idx % 2 === 0) return false;
+          const b = rulerSortBounds.get(r.id);
+          return b ? b.startKey <= sortKey && b.endKey >= sortKey : false;
+        })
+      : undefined;
 
-      const activeCount = matchingEvents.filter(
-        (ev) =>
-          resolveEventBranch(ev, branches, militaryBranchMode).id === lane.id &&
-          ev.startYear <= year &&
-          ev.endYear >= year,
-      ).length;
+    return (
+      <>
+        {hasRulersLane && (
+          <g>
+            {activeA ? (
+              <line
+                x1={rulerRailAX}
+                y1={0}
+                x2={rulerRailAX}
+                y2={420}
+                stroke={RULER_ALT_COLORS[0]}
+                strokeWidth={3}
+                strokeOpacity={0.92}
+              />
+            ) : (
+              <line
+                x1={rulerRailAX}
+                y1={0}
+                x2={rulerRailAX}
+                y2={420}
+                stroke={RULER_ALT_COLORS[0]}
+                strokeWidth={1.2}
+                strokeOpacity={0.18}
+                strokeDasharray="3 4"
+              />
+            )}
 
-      if (activeCount === 0 && i !== highlightLaneIdx) {
-        return (
-          <line
-            key={lane.id}
-            x1={x}
-            y1={0}
-            x2={x}
-            y2={400}
-            stroke={lane.color}
-            strokeWidth={1.5}
-            strokeOpacity={0.22}
-            strokeDasharray="4 4"
-          />
-        );
-      }
-
-      if (activeCount >= 2) {
-        return (
-          <g key={lane.id}>
-            <line
-              x1={x - 3}
-              y1={0}
-              x2={x - 3}
-              y2={400}
-              stroke={lane.color}
-              strokeWidth={2.2}
-              strokeOpacity={0.95}
-            />
-            <line
-              x1={x + 3}
-              y1={0}
-              x2={x + 3}
-              y2={400}
-              stroke={lane.color}
-              strokeWidth={2.2}
-              strokeOpacity={0.95}
-            />
+            {activeB ? (
+              <line
+                x1={rulerRailBX}
+                y1={0}
+                x2={rulerRailBX}
+                y2={420}
+                stroke={RULER_ALT_COLORS[1]}
+                strokeWidth={3}
+                strokeOpacity={0.92}
+              />
+            ) : (
+              <line
+                x1={rulerRailBX}
+                y1={0}
+                x2={rulerRailBX}
+                y2={420}
+                stroke={RULER_ALT_COLORS[1]}
+                strokeWidth={1.2}
+                strokeOpacity={0.18}
+                strokeDasharray="3 4"
+              />
+            )}
           </g>
-        );
-      }
+        )}
 
-      return (
+        {/* Центральный ствол времени (time/main) */}
         <line
-          key={lane.id}
-          x1={x}
+          x1={timeSpineX}
           y1={0}
-          x2={x}
-          y2={400}
-          stroke={lane.color}
-          strokeWidth={3.5}
-          strokeOpacity={0.92}
+          x2={timeSpineX}
+          y2={420}
+          stroke="#cbd5e1"
+          strokeWidth={3.2}
+          strokeOpacity={0.85}
         />
-      );
-    });
+
+        {/* Тематические ветки справа от оси времени */}
+        {thematicLanes.map((lane, tIdx) => {
+          const x = getThematicX(tIdx);
+          const activeCount = matchingEvents.filter((ev) => {
+            if (ev.id === options?.excludeEventIdFromThematic) return false;
+            if (ev.isAtomic) return false;
+            if (resolveEventBranch(ev, branches, militaryBranchMode).id !== lane.id) return false;
+            return ev.startPrecision.sortKey <= sortKey && ev.endPrecision.sortKey >= sortKey;
+          }).length;
+
+          if (activeCount === 0 && lane.id !== options?.highlightThematicId) {
+            return (
+              <line
+                key={lane.id}
+                x1={x}
+                y1={0}
+                x2={x}
+                y2={420}
+                stroke={lane.color}
+                strokeWidth={1.4}
+                strokeOpacity={0.22}
+                strokeDasharray="4 4"
+              />
+            );
+          }
+
+          if (activeCount >= 2) {
+            return (
+              <g key={lane.id}>
+                <line
+                  x1={x - 3}
+                  y1={0}
+                  x2={x - 3}
+                  y2={420}
+                  stroke={lane.color}
+                  strokeWidth={2.2}
+                  strokeOpacity={0.95}
+                />
+                <line
+                  x1={x + 3}
+                  y1={0}
+                  x2={x + 3}
+                  y2={420}
+                  stroke={lane.color}
+                  strokeWidth={2.2}
+                  strokeOpacity={0.95}
+                />
+              </g>
+            );
+          }
+
+          return (
+            <line
+              key={lane.id}
+              x1={x}
+              y1={0}
+              x2={x}
+              y2={420}
+              stroke={lane.color}
+              strokeWidth={3.2}
+              strokeOpacity={0.92}
+            />
+          );
+        })}
+      </>
+    );
   }
 
   return (
@@ -255,54 +375,32 @@ export function GitTimeline({
       <div className="sticky top-[45px] z-20 bg-[#050811]/95 backdrop-blur-md border border-slate-800/90 rounded-t-2xl shadow-md overflow-hidden">
         <div className="px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0">
-            {visibleLanes.map((lane) => (
-              <div
-                key={lane.id}
-                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-900 border border-slate-800 text-[10px] font-mono text-slate-300 shrink-0"
-              >
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: lane.color }} />
-                <span>{lane.short}</span>
-              </div>
-            ))}
+            {visibleLanes.map((lane) => {
+              const isTimeAxis = lane.id === 'TIME_AXIS';
+              return (
+                <div
+                  key={lane.id}
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-mono shrink-0 ${
+                    isTimeAxis
+                      ? 'bg-slate-800/90 border-slate-600 text-white font-bold'
+                      : 'bg-slate-900 border-slate-800 text-slate-300'
+                  }`}
+                >
+                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: lane.color }} />
+                  <span>{lane.short}</span>
+                </div>
+              );
+            })}
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
-            <div
-              className="inline-flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[10px] font-mono"
-              role="group"
-              aria-label="Плотность карточек"
-            >
-              <button
-                type="button"
-                onClick={() => onChangeCardDensity('detailed')}
-                className={`px-2 py-0.5 rounded-md inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                  cardDensity === 'detailed'
-                    ? 'bg-amber-500 text-slate-950 font-bold'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Подробные карточки со шкалой правителей и кнопками переходов"
-              >
-                <Rows3 className="w-3 h-3" />
-                <span>Подробно</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onChangeCardDensity('compact')}
-                className={`px-2 py-0.5 rounded-md inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                  cardDensity === 'compact'
-                    ? 'bg-amber-500 text-slate-950 font-bold'
-                    : 'text-slate-400 hover:text-white'
-                }`}
-                title="Компактные однострочные строки для быстрого обзора"
-              >
-                <Rows4 className="w-3 h-3" />
-                <span>Компактно</span>
-              </button>
-            </div>
-
-            <span className="hidden md:inline text-[11px] font-mono text-amber-300/90 font-semibold">
-              Клик = git show
+          <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
+            <span className="hidden md:inline text-slate-300">
+              Масштаб оси: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
             </span>
+            <span aria-hidden="true" className="hidden md:inline text-slate-600">
+              ·
+            </span>
+            <span className="text-amber-300/90 font-semibold">Клик = git show</span>
           </div>
         </div>
 
@@ -445,45 +543,39 @@ export function GitTimeline({
             return (
               <div
                 key={`era-${era.id}`}
-                className="relative flex items-stretch bg-gradient-to-r from-amber-500/10 via-slate-900/95 to-slate-950 border-y border-amber-500/30"
+                className="relative flex items-stretch bg-gradient-to-r from-slate-900/95 via-slate-900/70 to-slate-950 border-y border-amber-500/30"
               >
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                    {renderRailsForYear(item.year)}
-                    {visibleLanes.map((lane, laneIdx) => {
-                      if (laneIdx === trunkIdx || (trunkIdx < 0 && laneIdx === 0)) return null;
-                      const targetX = getLaneX(laneIdx);
-                      return (
-                        <path
-                          key={lane.id}
-                          d={`M ${trunkX} 36 C ${trunkX} 76, ${targetX} 56, ${targetX} 105`}
-                          fill="none"
-                          stroke={lane.color}
-                          strokeWidth={2.4}
-                          strokeOpacity={0.9}
-                        />
-                      );
-                    })}
-                    <circle cx={trunkX} cy={36} r={11} fill="#050811" stroke="#f59e0b" strokeWidth={4} />
-                    <circle cx={trunkX} cy={36} r={5} fill="#f59e0b" />
+                    {renderRailsForRow(item.sortKey)}
+                    <line
+                      x1={timeSpineX + 8}
+                      y1={36}
+                      x2={svgWidth}
+                      y2={36}
+                      stroke="#f59e0b"
+                      strokeWidth={1.5}
+                      strokeDasharray="3 3"
+                      strokeOpacity={0.7}
+                    />
+                    <circle cx={timeSpineX} cy={36} r={10} fill="#050811" stroke="#cbd5e1" strokeWidth={3} />
+                    <circle cx={timeSpineX} cy={36} r={4.5} fill="#f59e0b" />
                   </svg>
                 </div>
 
                 <div className="flex-1 py-4 pr-4 sm:pr-6">
                   <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
                     <span className="px-2.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black tabular-nums">
-                      НОВАЯ ЭПОХА {era.roman} · {era.period}
+                      ЭПОХА {era.roman} · {era.period}
                     </span>
-                    <span className="text-amber-300/90">
-                      Разветвление направлений этапа {era.roman}
-                    </span>
+                    <span className="text-slate-300">Рубеж на центральной оси времени</span>
                   </div>
                   <h2 className="text-base sm:text-xl font-extrabold text-white mt-1.5 [text-wrap:balance]">
                     {era.title}
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-300 mt-1">{era.thesis}</p>
                   {carryOverWars.length > 0 && (
-                    <div className="mt-2.5 text-[11px] font-mono text-sky-300 bg-sky-500/10 border border-sky-500/30 rounded-lg px-2.5 py-1 inline-block">
+                    <div className="mt-2 text-[11px] font-mono text-sky-300">
                       Сквозь границу эпохи продолжают идти:{' '}
                       {carryOverWars.map((w) => `${w.title} (${w.period})`).join(', ')}
                     </div>
@@ -493,9 +585,44 @@ export function GitTimeline({
             );
           }
 
+          if (item.rowType === 'TIME_TICK') {
+            return (
+              <div
+                key={`tick-${item.sortKey}-${idx}`}
+                className="relative flex items-stretch bg-slate-950/75"
+              >
+                <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
+                  <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
+                    {renderRailsForRow(item.sortKey)}
+                    <line
+                      x1={timeSpineX + 4}
+                      y1={14}
+                      x2={svgWidth}
+                      y2={14}
+                      stroke="#475569"
+                      strokeWidth={1}
+                      strokeDasharray="2 3"
+                      strokeOpacity={0.55}
+                    />
+                    <circle cx={timeSpineX} cy={14} r={3.5} fill="#050811" stroke="#94a3b8" strokeWidth={2} />
+                  </svg>
+                </div>
+
+                <div className="flex-1 py-1 pr-4 sm:pr-6 flex items-center gap-2 text-[11px] font-mono text-slate-400">
+                  <span className="font-bold text-slate-300 tabular-nums">{item.label}</span>
+                  <span aria-hidden="true" className="text-slate-700">
+                    ·
+                  </span>
+                  <span className="text-slate-500">ось time/main</span>
+                </div>
+              </div>
+            );
+          }
+
           if (item.rowType === 'RULER_COMMIT') {
             const r = item.rulerObj;
             const commitHash = getGitHash(r.id);
+            const rx = item.rulerIndex % 2 === 0 ? rulerRailAX : rulerRailBX;
             const ongoingWarsAtAccession = matchingEvents.filter(
               (ev) => ev.startYear < r.startYear && ev.endYear > r.startYear,
             );
@@ -505,43 +632,67 @@ export function GitTimeline({
                 key={`ruler-${r.id}`}
                 id={r.id}
                 data-ruler-context={r.id}
-                className="relative flex items-stretch bg-slate-900/85 hover:bg-slate-900 transition-colors"
+                className="relative flex items-stretch bg-slate-900/70 hover:bg-slate-900/95 transition-colors"
               >
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                    {renderRailsForYear(item.year, Math.max(0, trunkIdx))}
-                    {ongoingWarsAtAccession.map((ev) => {
-                      const bObj = resolveEventBranch(ev, branches, militaryBranchMode);
-                      const lIdx = visibleLanes.findIndex((l) => l.id === bObj.id);
-                      if (lIdx <= 0) return null;
-                      const targetX = getLaneX(lIdx);
-                      return (
-                        <g key={ev.id}>
-                          <line
-                            x1={trunkX + 8}
-                            y1={32}
-                            x2={targetX}
-                            y2={32}
-                            stroke={bObj.color}
-                            strokeWidth={1.8}
-                            strokeDasharray="2 2"
-                            strokeOpacity={0.85}
+                    {renderRailsForRow(item.sortKey, { skipRulerId: r.id })}
+
+                    {hasRulersLane && (
+                      <>
+                        {/* Ветка правления: ответвление (branch) от центральной оси времени влево к rx и продолжение вниз */}
+                        {!item.startedBeforeWindow && (
+                          <path
+                            d={`M ${timeSpineX} 16 C ${timeSpineX - 10} 18, ${rx} 20, ${rx} 36`}
+                            fill="none"
+                            stroke={item.rulerColor}
+                            strokeWidth={2.6}
+                            strokeOpacity={0.95}
                           />
-                          <circle cx={targetX} cy={32} r={3.5} fill={bObj.color} />
-                        </g>
-                      );
-                    })}
-                    <circle cx={trunkX} cy={32} r={8.5} fill="#050811" stroke="#f59e0b" strokeWidth={3.5} />
-                    <circle cx={trunkX} cy={32} r={3.5} fill="#f59e0b" />
+                        )}
+                        <line
+                          x1={rx}
+                          y1={item.startedBeforeWindow ? 0 : 34}
+                          x2={rx}
+                          y2={420}
+                          stroke={item.rulerColor}
+                          strokeWidth={3}
+                          strokeOpacity={0.95}
+                        />
+                        <line
+                          x1={timeSpineX + 6}
+                          y1={28}
+                          x2={svgWidth}
+                          y2={28}
+                          stroke={item.rulerColor}
+                          strokeWidth={1.4}
+                          strokeDasharray="3 3"
+                          strokeOpacity={0.7}
+                        />
+                        <circle cx={timeSpineX} cy={16} r={4} fill="#050811" stroke="#cbd5e1" strokeWidth={2} />
+                        <circle
+                          cx={rx}
+                          cy={34}
+                          r={6.5}
+                          fill="#050811"
+                          stroke={item.rulerColor}
+                          strokeWidth={3}
+                        />
+                        <circle cx={rx} cy={34} r={2.5} fill={item.rulerColor} />
+                      </>
+                    )}
                   </svg>
                 </div>
 
                 <div className="flex-1 py-3.5 pr-4 sm:pr-6">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center gap-1.5 text-amber-300 font-mono text-xs font-black tabular-nums">
+                      <span
+                        className="inline-flex items-center gap-1.5 font-mono text-xs font-black tabular-nums"
+                        style={{ color: item.rulerColor }}
+                      >
                         <Crown className="w-3.5 h-3.5" />
-                        {r.reignPeriod}
+                        {item.dateLabel}
                       </span>
                       <span aria-hidden="true" className="text-slate-600">
                         ·
@@ -550,7 +701,13 @@ export function GitTimeline({
                       <span aria-hidden="true" className="text-slate-600">
                         ·
                       </span>
-                      <span className="text-[11px] font-mono text-slate-500">main #{commitHash}</span>
+                      <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                        ветка {r.reignPeriod}
+                      </span>
+                      <span aria-hidden="true" className="text-slate-600">
+                        ·
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-500">rulers #{commitHash}</span>
                     </div>
 
                     <div className="flex items-center gap-1.5">
@@ -577,14 +734,14 @@ export function GitTimeline({
                   <p className="text-xs text-slate-300 mt-1">{r.reignThesis}</p>
 
                   {ongoingWarsAtAccession.length > 0 && (
-                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-amber-200/90 bg-amber-500/10 border border-amber-500/25 rounded-lg px-2.5 py-1.5">
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-amber-200/90">
                       <span>Смена правителя в ходе идущих кампаний:</span>
                       {ongoingWarsAtAccession.map((w) => (
                         <button
                           key={w.id}
                           type="button"
                           onClick={() => onOpenCardModal(w.id)}
-                          className="px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-700 text-white hover:border-amber-400 cursor-pointer"
+                          className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-white hover:border-amber-400 cursor-pointer"
                         >
                           {w.title} ({w.period})
                         </button>
@@ -596,18 +753,90 @@ export function GitTimeline({
             );
           }
 
+          if (item.rowType === 'RULER_END') {
+            const r = item.rulerObj;
+            const rx = item.rulerIndex % 2 === 0 ? rulerRailAX : rulerRailBX;
+            const mergeY = 22;
+
+            return (
+              <div
+                key={`ruler-end-${r.id}-${idx}`}
+                onClick={() => onOpenPeriodModal(r.id)}
+                className="relative flex items-stretch bg-slate-950/55 hover:bg-slate-900/45 transition-colors cursor-pointer group"
+              >
+                <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
+                  <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
+                    {renderRailsForRow(item.sortKey, { skipRulerId: r.id })}
+
+                    {hasRulersLane && (
+                      <>
+                        {/* Линия правления приходит сверху до mergeY и сливается обратно в timeSpineX */}
+                        <line
+                          x1={rx}
+                          y1={0}
+                          x2={rx}
+                          y2={mergeY - 6}
+                          stroke={item.rulerColor}
+                          strokeWidth={3}
+                          strokeOpacity={0.9}
+                        />
+                        <path
+                          d={`M ${rx} ${mergeY - 6} C ${rx} ${mergeY + 6}, ${timeSpineX - 10} ${mergeY + 2}, ${timeSpineX} ${mergeY + 6}`}
+                          fill="none"
+                          stroke={item.rulerColor}
+                          strokeWidth={2.4}
+                          strokeOpacity={0.9}
+                        />
+                        <circle cx={timeSpineX} cy={mergeY + 6} r={4} fill="#050811" stroke="#cbd5e1" strokeWidth={2} />
+                        <rect
+                          x={rx - 4}
+                          y={mergeY - 10}
+                          width={8}
+                          height={8}
+                          rx={2}
+                          fill="#050811"
+                          stroke={item.rulerColor}
+                          strokeWidth={2.2}
+                        />
+                      </>
+                    )}
+                  </svg>
+                </div>
+
+                <div className="flex-1 py-2 pr-3 sm:pr-6">
+                  <div className="rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                    <div className="flex flex-wrap items-center gap-2 min-w-0 font-mono">
+                      <GitMerge className="w-3.5 h-3.5 shrink-0" style={{ color: item.rulerColor }} />
+                      <span className="font-bold tabular-nums" style={{ color: item.rulerColor }}>
+                        {item.dateLabel}
+                      </span>
+                      <span className="text-slate-400">Слияние ветки правления:</span>
+                      <span className="font-sans font-semibold text-slate-200 group-hover:text-white truncate">
+                        {r.shortRuler} ({r.reignPeriod})
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-400 shrink-0 tabular-nums">
+                      ~{Math.max(1, r.endYear - r.startYear)} л. у власти
+                    </span>
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
           if (item.rowType === 'EVENT_COMMIT') {
             const ev = item.eventObj;
             const branchObj = resolveEventBranch(ev, branches, militaryBranchMode);
             const origBranchObj = branches.find((b) => b.id === ev.task) || branchObj;
-            const laneIdx = Math.max(0, visibleLanes.findIndex((l) => l.id === branchObj.id));
-            const commitX = getLaneX(laneIdx);
+            const thematicIdx = Math.max(0, thematicLanes.findIndex((l) => l.id === branchObj.id));
+            const commitX = getThematicX(thematicIdx);
             const isCompact = cardDensity === 'compact';
             const commitY = isCompact ? 22 : 34;
             const commitHash = getGitHash(ev.id);
             const hasMultipleRulers = ev.overlappingRulers.length > 1;
             const rulerSegments = hasMultipleRulers ? getEventRulerSegments(ev) : [];
             const concurrentPreview = ev.concurrentEvents.slice(0, 3);
+            const isAtomic = item.isAtomicInView;
 
             const isCrossLinked = hoveredEventId !== null && linkedEventIds.has(ev.id);
             const isOverlapping =
@@ -643,16 +872,42 @@ export function GitTimeline({
               >
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                    {renderRailsForYear(item.year, laneIdx)}
-                    {!item.startedBeforeWindow && laneIdx > 0 && (
-                      <path
-                        d={`M ${trunkX} 4 C ${trunkX} 20, ${commitX} 12, ${commitX} ${commitY}`}
-                        fill="none"
-                        stroke={branchObj.color}
-                        strokeWidth={1.6}
-                        strokeOpacity={0.55}
-                      />
+                    {renderRailsForRow(item.sortKey, {
+                      highlightThematicId: branchObj.id,
+                      excludeEventIdFromThematic: isAtomic ? ev.id : undefined,
+                    })}
+
+                    {/* Для длительных процессов: ответвление (fork) от центральной оси времени к ветке события */}
+                    {!isAtomic && !item.startedBeforeWindow && (
+                      <>
+                        <path
+                          d={`M ${timeSpineX} 10 C ${timeSpineX + 12} 10, ${commitX} 16, ${commitX} ${commitY}`}
+                          fill="none"
+                          stroke={branchObj.color}
+                          strokeWidth={2}
+                          strokeOpacity={0.85}
+                        />
+                        <circle cx={timeSpineX} cy={10} r={3.5} fill="#050811" stroke="#cbd5e1" strokeWidth={2} />
+                      </>
                     )}
+
+                    {/* Для атомарных событий: точечный вынос прямо от оси времени к коммиту без fork-merge рельсы */}
+                    {isAtomic && (
+                      <>
+                        <line
+                          x1={timeSpineX + 4}
+                          y1={commitY}
+                          x2={commitX - 6}
+                          y2={commitY}
+                          stroke={branchObj.color}
+                          strokeWidth={1.6}
+                          strokeDasharray="2 2"
+                          strokeOpacity={0.75}
+                        />
+                        <circle cx={timeSpineX} cy={commitY} r={3.2} fill="#cbd5e1" />
+                      </>
+                    )}
+
                     <line
                       x1={commitX + 7}
                       y1={commitY}
@@ -663,23 +918,38 @@ export function GitTimeline({
                       strokeDasharray="3 3"
                       strokeOpacity={0.8}
                     />
-                    <circle
-                      className="commit-node-ring"
-                      cx={commitX}
-                      cy={commitY}
-                      r={isCompact ? 7.5 : 9.5}
-                      fill={branchObj.color}
-                      fillOpacity={0.22}
-                    />
-                    <circle
-                      cx={commitX}
-                      cy={commitY}
-                      r={isCompact ? 4.5 : 5.5}
-                      fill="#050811"
-                      stroke={branchObj.color}
-                      strokeWidth={isCompact ? 2.5 : 3}
-                    />
-                    <circle cx={commitX} cy={commitY} r={isCompact ? 1.8 : 2.2} fill={branchObj.color} />
+
+                    {isAtomic ? (
+                      <g className="commit-node-ring">
+                        <polygon
+                          points={`${commitX},${commitY - 7} ${commitX + 7},${commitY} ${commitX},${commitY + 7} ${commitX - 7},${commitY}`}
+                          fill="#050811"
+                          stroke={branchObj.color}
+                          strokeWidth={2.5}
+                        />
+                        <circle cx={commitX} cy={commitY} r={2} fill={branchObj.color} />
+                      </g>
+                    ) : (
+                      <>
+                        <circle
+                          className="commit-node-ring"
+                          cx={commitX}
+                          cy={commitY}
+                          r={isCompact ? 7.5 : 9.5}
+                          fill={branchObj.color}
+                          fillOpacity={0.22}
+                        />
+                        <circle
+                          cx={commitX}
+                          cy={commitY}
+                          r={isCompact ? 4.5 : 5.5}
+                          fill="#050811"
+                          stroke={branchObj.color}
+                          strokeWidth={isCompact ? 2.5 : 3}
+                        />
+                        <circle cx={commitX} cy={commitY} r={isCompact ? 1.8 : 2.2} fill={branchObj.color} />
+                      </>
+                    )}
                   </svg>
                 </div>
 
@@ -693,7 +963,7 @@ export function GitTimeline({
                           className="font-mono text-xs font-extrabold tabular-nums shrink-0"
                           style={{ color: branchObj.color }}
                         >
-                          {ev.period}
+                          {axisResolution === 'year' ? ev.period : item.dateLabel}
                         </span>
                         <span aria-hidden="true" className="text-slate-600 shrink-0">
                           ·
@@ -704,6 +974,11 @@ export function GitTimeline({
                         <span className="hidden md:inline text-[11px] font-mono text-slate-400 shrink-0">
                           · {origBranchObj.short}
                         </span>
+                        {isAtomic && (
+                          <span className="hidden sm:inline text-[11px] font-mono text-slate-400 shrink-0">
+                            · точка
+                          </span>
+                        )}
                         {hasMultipleRulers && (
                           <span className="hidden sm:inline text-[11px] font-mono text-amber-300 shrink-0 tabular-nums">
                             · {ev.overlappingRulers.length} правл.
@@ -746,17 +1021,28 @@ export function GitTimeline({
                               className="font-mono text-xs font-extrabold tabular-nums"
                               style={{ color: branchObj.color }}
                             >
-                              {ev.period}
+                              {axisResolution === 'year' ? ev.period : `${item.dateLabel} (${ev.period})`}
                             </span>
-                            {item.startedBeforeWindow && (
+                            {isAtomic ? (
                               <>
                                 <span aria-hidden="true" className="text-slate-600">
                                   ·
                                 </span>
-                                <span className="text-[11px] font-mono text-amber-300">
-                                  идет с {ev.startYear} г.
+                                <span className="text-[11px] font-mono text-slate-400">
+                                  атомарный коммит
                                 </span>
                               </>
+                            ) : (
+                              item.startedBeforeWindow && (
+                                <>
+                                  <span aria-hidden="true" className="text-slate-600">
+                                    ·
+                                  </span>
+                                  <span className="text-[11px] font-mono text-amber-300">
+                                    идет с {ev.startYear} г.
+                                  </span>
+                                </>
+                              )
                             )}
                             <span aria-hidden="true" className="text-slate-600">
                               ·
@@ -968,11 +1254,11 @@ export function GitTimeline({
             );
           }
 
-          // EVENT_END: точка завершения длительного процесса / войны
+          // EVENT_END: точка завершения и обратное слияние (merge) длительного процесса с центральной осью времени
           const ev = item.eventObj;
           const branchObj = resolveEventBranch(ev, branches, militaryBranchMode);
-          const laneIdx = Math.max(0, visibleLanes.findIndex((l) => l.id === branchObj.id));
-          const commitX = getLaneX(laneIdx);
+          const thematicIdx = Math.max(0, thematicLanes.findIndex((l) => l.id === branchObj.id));
+          const commitX = getThematicX(thematicIdx);
           const mergeY = 22;
 
           return (
@@ -985,20 +1271,19 @@ export function GitTimeline({
             >
               <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                 <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                  {renderRailsForYear(item.year, laneIdx)}
-                  {laneIdx > 0 && (
-                    <path
-                      d={`M ${commitX} ${mergeY} C ${commitX} ${mergeY + 12}, ${trunkX} ${mergeY + 4}, ${trunkX} ${mergeY + 18}`}
-                      fill="none"
-                      stroke={branchObj.color}
-                      strokeWidth={1.5}
-                      strokeDasharray="3 3"
-                      strokeOpacity={0.65}
-                    />
-                  )}
+                  {renderRailsForRow(item.sortKey, { highlightThematicId: branchObj.id })}
+                  <path
+                    d={`M ${commitX} ${mergeY - 4} C ${commitX} ${mergeY + 10}, ${timeSpineX + 12} ${mergeY + 4}, ${timeSpineX} ${mergeY + 10}`}
+                    fill="none"
+                    stroke={branchObj.color}
+                    strokeWidth={1.8}
+                    strokeDasharray="3 2"
+                    strokeOpacity={0.85}
+                  />
+                  <circle cx={timeSpineX} cy={mergeY + 10} r={3.5} fill="#050811" stroke="#cbd5e1" strokeWidth={2} />
                   <rect
                     x={commitX - 4.5}
-                    y={mergeY - 4.5}
+                    y={mergeY - 8.5}
                     width={9}
                     height={9}
                     rx={2}
@@ -1014,17 +1299,19 @@ export function GitTimeline({
                   <div className="flex flex-wrap items-center gap-2 min-w-0">
                     <Flag className="w-3.5 h-3.5 shrink-0" style={{ color: branchObj.color }} />
                     <span className="font-mono font-bold tabular-nums" style={{ color: branchObj.color }}>
-                      {ev.endYear} г.
+                      {item.dateLabel}
                     </span>
-                    <span className="text-slate-400 font-mono">Завершение кампании:</span>
+                    <span className="text-slate-400 font-mono">Слияние с осью:</span>
                     <span className="font-semibold text-slate-200 group-hover:text-white truncate">
                       {ev.title} ({ev.period})
                     </span>
                   </div>
-                  <span className="text-[11px] font-mono text-slate-400 shrink-0">
+                  <span className="text-[11px] font-mono text-slate-400 shrink-0 tabular-nums">
                     {ev.overlappingRulers.length > 1
                       ? `Сменилось правлений: ${ev.overlappingRulers.length}`
-                      : `Длительность: ${ev.duration} лет`}
+                      : ev.duration > 0
+                        ? `Длительность: ${ev.duration} л.`
+                        : 'Завершение процесса'}
                   </span>
                 </div>
               </div>
