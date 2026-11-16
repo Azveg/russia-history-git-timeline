@@ -7,13 +7,13 @@
 
 ## 1. Сводка состояния базы
 
-- **Модульных JSON-файлов:** 5
-- **Объявленных веток:** 8 (групп: 1, листовых: 7)
-- **Событий (nodes):** 131
+- **Модульных JSON-файлов:** 6
+- **Объявленных веток:** 9 (групп: 1, листовых: 8)
+- **Событий (nodes):** 163
 - **Правлений (rulers):** 70
-- **Фактический диапазон оси времени:** `862–2000`
-- **Активных тегов (`syncTags` / `campaignId` / `referenceTags`):** 4
-- **Явных связей (`crossLinks` + `linksTo`):** 14
+- **Фактический диапазон оси времени:** `862–2008`
+- **Активных тегов (`syncTags` / `campaignId` / `referenceTags`):** 37
+- **Явных связей (`crossLinks` + `linksTo`):** 29
 
 ---
 
@@ -23,6 +23,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: | :---: | :--- |
 | `DIPLOMACY_TREATIES` | `diplomacy/treaties` | Дипломатия и договоры | — | Тематическая | `#2dd4bf` | выкл (по умолч.) | 6 | `data/diplomacy.json` |
 | `REFORMS_ECO` | `feat/reforms-eco` | Экономика и реформы | — | Тематическая | `#10b981` | выкл (по умолч.) | 15 | `data/economics.json` |
+| `WRITERS_BIO` | `culture/writers` | Русские писатели-классики | — | Тематическая | `#e879f9` | выкл (по умолч.) | 32 | `data/public/data/writers.json` |
 | `MAIN_RULERS` | `rulers/reigns` | Правители (ветвления) | — | Тематическая | `#f59e0b` | вкл (по умолч.) | 70 | `data/rulers.json` |
 | `WAR_ALL` | `war/all` | Военные кампании (общая ветка) | — | Группа (`isGroup`) | `#f43f5e` | группа | 0 | `data/wars.json` |
 | `SEAS` | `war/seas` | Войны: Выход к морям | `WAR_ALL` | Военная | `#38bdf8` | выкл (по умолч.) | 20 | `data/wars.json` |
@@ -42,6 +43,39 @@
 | :--- | :---: | :---: | :--- | :--- |
 | `napoleonic` | sync (±3 г.) | 1807–1815 | `DIPLOMACY_TREATIES`, `INTERNAL_BUFFER`, `WORLD_CONTEXT` | `1807-tilsit-treaty` (1807 (июнь)), `1812-patriotic-war` (1812), `1813-foreign-campaigns` (1813–1814 (и 1815)), `1815-world-vienna` (1814–1815) |
 | `northern-war` | sync (±3 г.) | 1700–1721 | `DIPLOMACY_TREATIES`, `SEAS` | `1700-northern-war` (1700–1721), `1721-nystad-treaty` (1721 (август)) |
+| `person-akhmatova-anna` | sync (±3 г.) | 1889–1966 | `WRITERS_BIO` | `1889-akhmatova-anna` (1889–1966) |
+| `person-blok-alexander` | sync (±3 г.) | 1880–1921 | `WRITERS_BIO` | `1880-blok-alexander` (1880–1921) |
+| `person-bulgakov-mikhail` | sync (±3 г.) | 1891–1940 | `WRITERS_BIO` | `1891-bulgakov-mikhail` (1891–1940) |
+| `person-bunin-ivan` | sync (±3 г.) | 1870–1953 | `WRITERS_BIO` | `1870-bunin-ivan` (1870–1953) |
+| `person-chekhov-anton` | sync (±3 г.) | 1860–1904 | `WRITERS_BIO` | `1860-chekhov-anton` (1860–1904) |
+| `person-derzhavin-gavrila` | sync (±3 г.) | 1743–1816 | `WRITERS_BIO` | `1743-derzhavin-gavrila` (1743–1816) |
+| `person-dostoevsky-fyodor` | sync (±3 г.) | 1821–1881 | `WRITERS_BIO` | `1821-dostoevsky-fyodor` (1821–1881) |
+| `person-fet-afanasy` | sync (±3 г.) | 1820–1892 | `WRITERS_BIO` | `1820-fet-afanasy` (1820–1892) |
+| `person-fonvizin-denis` | sync (±3 г.) | 1745–1792 | `WRITERS_BIO` | `1745-fonvizin-denis` (1745–1792) |
+| `person-gogol-nikolay` | sync (±3 г.) | 1809–1852 | `WRITERS_BIO` | `1809-gogol-nikolay` (1809–1852) |
+| `person-goncharov-ivan` | sync (±3 г.) | 1812–1891 | `WRITERS_BIO` | `1812-goncharov-ivan` (1812–1891) |
+| `person-gorky-maxim` | sync (±3 г.) | 1868–1936 | `WRITERS_BIO` | `1868-gorky-maxim` (1868–1936) |
+| `person-griboedov-aleksandr` | sync (±3 г.) | 1795–1829 | `WRITERS_BIO` | `1795-griboedov-aleksandr` (1795–1829) |
+| `person-karamzin-nikolay` | sync (±3 г.) | 1766–1826 | `WRITERS_BIO` | `1766-karamzin-nikolay` (1766–1826) |
+| `person-krylov-ivan` | sync (±3 г.) | 1769–1844 | `WRITERS_BIO` | `1769-krylov-ivan` (1769–1844) |
+| `person-lermontov-mikhail` | sync (±3 г.) | 1814–1841 | `WRITERS_BIO` | `1814-lermontov-mikhail` (1814–1841) |
+| `person-leskov-nikolay` | sync (±3 г.) | 1831–1895 | `WRITERS_BIO` | `1831-leskov-nikolay` (1831–1895) |
+| `person-mayakovsky-vladimir` | sync (±3 г.) | 1893–1930 | `WRITERS_BIO` | `1893-mayakovsky-vladimir` (1893–1930) |
+| `person-nabokov-vladimir` | sync (±3 г.) | 1899–1977 | `WRITERS_BIO` | `1899-nabokov-vladimir` (1899–1977) |
+| `person-nekrasov-nikolay` | sync (±3 г.) | 1821–1878 | `WRITERS_BIO` | `1821-nekrasov-nikolay` (1821–1878) |
+| `person-ostrovsky-aleksandr` | sync (±3 г.) | 1823–1886 | `WRITERS_BIO` | `1823-ostrovsky-aleksandr` (1823–1886) |
+| `person-pasternak-boris` | sync (±3 г.) | 1890–1960 | `WRITERS_BIO` | `1890-pasternak-boris` (1890–1960) |
+| `person-pushkin-alexander` | sync (±3 г.) | 1799–1837 | `WRITERS_BIO` | `1799-pushkin-alexander` (1799–1837) |
+| `person-saltykov-shchedrin-mikhail` | sync (±3 г.) | 1826–1889 | `WRITERS_BIO` | `1826-saltykov-shchedrin-mikhail` (1826–1889) |
+| `person-sholokhov-mikhail` | sync (±3 г.) | 1905–1984 | `WRITERS_BIO` | `1905-sholokhov-mikhail` (1905–1984) |
+| `person-solzhenitsyn-alexander` | sync (±3 г.) | 1918–2008 | `WRITERS_BIO` | `1918-solzhenitsyn-alexander` (1918–2008) |
+| `person-tolstoy-leo` | sync (±3 г.) | 1828–1910 | `WRITERS_BIO` | `1828-tolstoy-leo` (1828–1910) |
+| `person-tsvetaeva-marina` | sync (±3 г.) | 1892–1941 | `WRITERS_BIO` | `1892-tsvetaeva-marina` (1892–1941) |
+| `person-turgenev-ivan` | sync (±3 г.) | 1818–1883 | `WRITERS_BIO` | `1818-turgenev-ivan` (1818–1883) |
+| `person-tyutchev-fyodor` | sync (±3 г.) | 1803–1873 | `WRITERS_BIO` | `1803-tyutchev-fyodor` (1803–1873) |
+| `person-yesenin-sergey` | sync (±3 г.) | 1895–1925 | `WRITERS_BIO` | `1895-yesenin-sergey` (1895–1925) |
+| `person-zhukovsky-vasily` | sync (±3 г.) | 1783–1852 | `WRITERS_BIO` | `1783-zhukovsky-vasily` (1783–1852) |
+| `topic-silver-age` | sync (±3 г.) | 1870–1966 | `WRITERS_BIO` | `1870-bunin-ivan` (1870–1953), `1880-blok-alexander` (1880–1921), `1889-akhmatova-anna` (1889–1966), `1890-pasternak-boris` (1890–1960), `1892-tsvetaeva-marina` (1892–1941), `1893-mayakovsky-vladimir` (1893–1930), `1895-yesenin-sergey` (1895–1925) |
 | `ww1` | sync (±3 г.) | 1914–1918 | `SEAS` | `1914-ww1` (1914–1918) |
 | `ww2` | sync (±3 г.) | 1918–1949 | `DIPLOMACY_TREATIES`, `INTERNAL_BUFFER`, `WORLD_CONTEXT` | `1918-brest-molotov` (1918 / 1939), `1941-ww2` (1941–1945), `1945-world-yalta-nato` (1945–1949) |
 
@@ -56,12 +90,12 @@
 | `ERA_3` | 1462–1605 | Период III: Между Азией и Европой | 0 | 6 |
 | `ERA_4` | 1605–1682 | Период IV: Век Смуты и первых Романовых | 0 | 7 |
 | `ERA_5` | 1682–1725 | Период V: Азиатская европеизация | 14 | 1 |
-| `ERA_6` | 1725–1762 | Период VI: Эпоха цариц | 8 | 4 |
-| `ERA_7` | 1762–1855 | Период VII: Первая сверхдержава | 41 | 4 |
-| `ERA_8` | 1855–1894 | Период VIII: Эпоха Великих реформ | 9 | 2 |
-| `ERA_9` | 1894–1917 | Период IX: Агония и крах империи | 10 | 2 |
-| `ERA_10` | 1917–1992 | Период X: СССР | 51 | 7 |
-| `ERA_11` | 1992–2000 | Период XI: Новая история | 9 | 1 |
+| `ERA_6` | 1725–1762 | Период VI: Эпоха цариц | 10 | 4 |
+| `ERA_7` | 1762–1855 | Период VII: Первая сверхдержава | 60 | 4 |
+| `ERA_8` | 1855–1894 | Период VIII: Эпоха Великих реформ | 28 | 2 |
+| `ERA_9` | 1894–1917 | Период IX: Агония и крах империи | 24 | 2 |
+| `ERA_10` | 1917–1992 | Период X: СССР | 63 | 7 |
+| `ERA_11` | 1992–2000 | Период XI: Новая история | 10 | 1 |
 
 ---
 
@@ -172,6 +206,41 @@
 - `1959-reform-rvsn` (1957–1961) — Создание РВСН, космический прорыв и сокращение обычных вооруженных сил
 - `1973-reform-oil-boom` (1970-е — 1986) — Освоение нефти Западной Сибири, военный паритет и перегрузка ВПК
 - `1992-reform-market-crisis` (1992–1998) — Рыночные реформы, раздел советского военного наследия и дефолт 1998 г.
+
+### `WRITERS_BIO` — Русские писатели-классики (`culture/writers`, 32)
+
+- `1743-derzhavin-gavrila` (1743–1816) — Гаврила Романович Державин — теги: `#person-derzhavin-gavrila`
+- `1745-fonvizin-denis` (1745–1792) — Денис Иванович Фонвизин — теги: `#person-fonvizin-denis`
+- `1766-karamzin-nikolay` (1766–1826) — Николай Михайлович Карамзин — теги: `#person-karamzin-nikolay`
+- `1769-krylov-ivan` (1769–1844) — Иван Андреевич Крылов — теги: `#person-krylov-ivan`
+- `1783-zhukovsky-vasily` (1783–1852) — Василий Андреевич Жуковский — теги: `#person-zhukovsky-vasily`
+- `1795-griboedov-aleksandr` (1795–1829) — Александр Сергеевич Грибоедов — теги: `#person-griboedov-aleksandr`
+- `1799-pushkin-alexander` (1799–1837) — Александр Сергеевич Пушкин — теги: `#person-pushkin-alexander`
+- `1803-tyutchev-fyodor` (1803–1873) — Фёдор Иванович Тютчев — теги: `#person-tyutchev-fyodor`
+- `1809-gogol-nikolay` (1809–1852) — Николай Васильевич Гоголь — теги: `#person-gogol-nikolay`
+- `1812-goncharov-ivan` (1812–1891) — Иван Александрович Гончаров — теги: `#person-goncharov-ivan`
+- `1814-lermontov-mikhail` (1814–1841) — Михаил Юрьевич Лермонтов — теги: `#person-lermontov-mikhail`
+- `1818-turgenev-ivan` (1818–1883) — Иван Сергеевич Тургенев — теги: `#person-turgenev-ivan`
+- `1820-fet-afanasy` (1820–1892) — Афанасий Афанасьевич Фет — теги: `#person-fet-afanasy`
+- `1821-nekrasov-nikolay` (1821–1878) — Николай Алексеевич Некрасов — теги: `#person-nekrasov-nikolay`
+- `1821-dostoevsky-fyodor` (1821–1881) — Фёдор Михайлович Достоевский — теги: `#person-dostoevsky-fyodor`
+- `1823-ostrovsky-aleksandr` (1823–1886) — Александр Николаевич Островский — теги: `#person-ostrovsky-aleksandr`
+- `1826-saltykov-shchedrin-mikhail` (1826–1889) — Михаил Евграфович Салтыков-Щедрин — теги: `#person-saltykov-shchedrin-mikhail`
+- `1828-tolstoy-leo` (1828–1910) — Лев Николаевич Толстой — теги: `#person-tolstoy-leo`
+- `1831-leskov-nikolay` (1831–1895) — Николай Семёнович Лесков — теги: `#person-leskov-nikolay`
+- `1860-chekhov-anton` (1860–1904) — Антон Павлович Чехов — теги: `#person-chekhov-anton`
+- `1868-gorky-maxim` (1868–1936) — Максим Горький (Алексей Максимович Пешков) — теги: `#person-gorky-maxim`
+- `1870-bunin-ivan` (1870–1953) — Иван Алексеевич Бунин — теги: `#person-bunin-ivan` `#topic-silver-age`
+- `1880-blok-alexander` (1880–1921) — Александр Александрович Блок — теги: `#person-blok-alexander` `#topic-silver-age`
+- `1889-akhmatova-anna` (1889–1966) — Анна Андреевна Ахматова — теги: `#person-akhmatova-anna` `#topic-silver-age`
+- `1890-pasternak-boris` (1890–1960) — Борис Леонидович Пастернак — теги: `#person-pasternak-boris` `#topic-silver-age`
+- `1891-bulgakov-mikhail` (1891–1940) — Михаил Афанасьевич Булгаков — теги: `#person-bulgakov-mikhail`
+- `1892-tsvetaeva-marina` (1892–1941) — Марина Ивановна Цветаева — теги: `#person-tsvetaeva-marina` `#topic-silver-age`
+- `1893-mayakovsky-vladimir` (1893–1930) — Владимир Владимирович Маяковский — теги: `#person-mayakovsky-vladimir` `#topic-silver-age`
+- `1895-yesenin-sergey` (1895–1925) — Сергей Александрович Есенин — теги: `#person-yesenin-sergey` `#topic-silver-age`
+- `1899-nabokov-vladimir` (1899–1977) — Владимир Владимирович Набоков — теги: `#person-nabokov-vladimir`
+- `1905-sholokhov-mikhail` (1905–1984) — Михаил Александрович Шолохов — теги: `#person-sholokhov-mikhail`
+- `1918-solzhenitsyn-alexander` (1918–2008) — Александр Исаевич Солженицын — теги: `#person-solzhenitsyn-alexander`
 
 ### `SEAS` — Войны: Выход к морям (`war/seas`, 20)
 
