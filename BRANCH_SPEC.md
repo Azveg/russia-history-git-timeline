@@ -180,9 +180,11 @@
 | **Историческое событие** | `event-<node.id>` | На само событие (опц. в `syncTags`), на отсылки к нему (в `referenceTags`) | `event-1914-ww1`, `event-1812-patriotic-war`, `event-1861-reform-emancipation` |
 | **Крупная кампания из каталога** | `<campaign-slug>` (как в `BRANCH_CATALOG.md`) | В `syncTags` событий эпохи или `referenceTags` поздних книг | `northern-war`, `napoleonic`, `ww1`, `ww2` |
 | **Персонаж / автор / деятель** | `person-<surname>-<name>` (без отчества) | В `syncTags` на узел биографии, в `syncTags`/`referenceTags` на его работы | `person-pushkin-alexander`, `person-tolstoy-leo`, `person-dostoevsky-fyodor`, `person-peter-1` |
+| **Правитель (эпоха правления)** | `ruler-<id>` (как в `rulers.json`) | В `referenceTags` на книги и произведения, повествующие о правителе или его эпохе | `ruler-boris-godunov`, `ruler-peter-1`, `ruler-catherine-2`, `ruler-nicholas-1` |
+| **Макро-период истории** | `era-<n>` (`era-1`..`era-11`) | В `referenceTags` на книги и произведения, осмысляющие исторический макро-период | `era-1`, `era-4`, `era-7`, `era-10` |
 | **Сквозная тема / течение** | `topic-<slug>` | На ключевые опорные узлы темы | `topic-silver-age`, `topic-space-race`, `topic-cold-war` |
 
-> **Запрещено** придумывать произвольные синонимы (`tolstoy`, `l-tolstoy`, `writer-tolstoy`, `leo-tolstoy`) — всегда используйте единый формат `person-<surname>-<name>` или `event-<node.id>`.
+> **Запрещено** придумывать произвольные синонимы (`tolstoy`, `l-tolstoy`, `writer-tolstoy`, `leo-tolstoy`) — всегда используйте единый формат `person-<surname>-<name>`, `event-<node.id>`, `ruler-<id>` или `era-<n>`.
 
 ---
 

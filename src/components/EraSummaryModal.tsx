@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarRange, ChevronLeft, ChevronRight, Crown, RotateCcw, X } from 'lucide-react';
+import { BookOpen, CalendarRange, ChevronLeft, ChevronRight, Crown, Feather, History, RotateCcw, X } from 'lucide-react';
 import { getMacroEraSummaryData, resolveEventBranch, resolveMacroEras } from '../engine/timelineEngine';
 import { useOverlayScrollLock } from '../utils/scrollIsolation';
 import type { BranchDefinition, EnrichedEvent, MacroEra, RulerPeriod } from '../types/timeline';
@@ -149,13 +149,22 @@ export function EraSummaryModal({
               ·
             </span>
             <span>
-              Веток: <strong className="text-slate-100">{summary.branchTags.length}</strong>
+              Писателей эпохи:{' '}
+              <strong className="text-fuchsia-300">{summary.contemporaryWriters.length}</strong>
             </span>
             <span aria-hidden="true" className="text-slate-700">
               ·
             </span>
             <span>
-              Типов событий: <strong className="text-slate-100">{summary.typeTags.length}</strong>
+              Книг периода:{' '}
+              <strong className="text-purple-300">{summary.worksWrittenInPeriod.length}</strong>
+            </span>
+            <span aria-hidden="true" className="text-slate-700">
+              ·
+            </span>
+            <span>
+              Книг об эпохе:{' '}
+              <strong className="text-amber-300">{summary.worksAboutPeriod.length}</strong>
             </span>
           </div>
         </div>
@@ -203,10 +212,127 @@ export function EraSummaryModal({
             )}
           </div>
 
+          {summary.contemporaryWriters.length > 0 && (
+            <div className="pt-4 border-t border-slate-800/80">
+              <div className="flex items-center gap-2 text-xs font-mono font-bold text-fuchsia-300 mb-2.5">
+                <Feather className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Лица эпохи · Писатели и поэты, жившие в этот период ({summary.contemporaryWriters.length}):
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {summary.contemporaryWriters.map((writer) => (
+                  <button
+                    key={writer.id}
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenCardModal(writer.id);
+                    }}
+                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-fuchsia-500/25 hover:border-fuchsia-400/60 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-white group-hover:text-fuchsia-200 truncate">
+                        {writer.title}
+                      </span>
+                      <span className="text-[11px] font-mono text-fuchsia-300 tabular-nums shrink-0">
+                        {writer.period}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-1 line-clamp-2">
+                      {writer.subtitle}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {summary.worksWrittenInPeriod.length > 0 && (
+            <div className="pt-4 border-t border-slate-800/80">
+              <div className="flex items-center gap-2 text-xs font-mono font-bold text-purple-300 mb-2.5">
+                <BookOpen className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Книги и произведения, написанные в этот период ({summary.worksWrittenInPeriod.length}):
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {summary.worksWrittenInPeriod.map((work) => (
+                  <button
+                    key={work.id}
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenCardModal(work.id);
+                    }}
+                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-purple-500/25 hover:border-purple-400/60 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-mono text-purple-300 font-semibold tabular-nums">
+                        {work.period}
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400 truncate max-w-[160px]">
+                        {work.type}
+                      </span>
+                    </div>
+                    <div className="text-xs font-bold text-white group-hover:text-purple-200 mt-1">
+                      {work.title}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-1 line-clamp-2">
+                      {work.subtitle}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {summary.worksAboutPeriod.length > 0 && (
+            <div className="pt-4 border-t border-slate-800/80">
+              <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-300 mb-2.5">
+                <History className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Книги и произведения об этом историческом периоде ({summary.worksAboutPeriod.length}):
+                </span>
+              </div>
+              <div className="space-y-2">
+                {summary.worksAboutPeriod.map(({ work, relationLabel, yearGap }) => (
+                  <button
+                    key={work.id}
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenCardModal(work.id);
+                    }}
+                    className="w-full text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-amber-500/25 hover:border-amber-400/60 transition-colors cursor-pointer group"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-bold text-white group-hover:text-amber-200">
+                        <span className="font-mono text-amber-300 mr-2 tabular-nums">
+                          {work.period}
+                        </span>
+                        {work.title}
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/35 text-[10px] font-mono text-amber-200 tabular-nums shrink-0">
+                        {yearGap > 0 ? `+${yearGap} л. спустя` : 'современник эпохи'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono text-amber-200/85 mt-1">
+                      {relationLabel}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-1 line-clamp-2">
+                      {work.subtitle}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="pt-4 border-t border-slate-800/80 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <div className="text-xs font-mono font-bold text-slate-400">
-                Фильтр событий по ветке и типу:
+                Фильтр исторических событий по ветке и типу:
               </div>
               {hasLocalFilter && (
                 <button
@@ -297,7 +423,7 @@ export function EraSummaryModal({
 
           <div className="space-y-3">
             <div className="text-xs font-mono font-bold text-slate-400 tabular-nums">
-              События периода ({filteredEvents.length}
+              Исторические события периода ({filteredEvents.length}
               {hasLocalFilter ? ` из ${summary.events.length}` : ''}):
             </div>
 
@@ -306,7 +432,7 @@ export function EraSummaryModal({
                 <p className="text-xs text-slate-400">
                   {summary.events.length === 0 && eraObj.endYear < minYear
                     ? `События для этого периода ещё не подключены — текущая база данных начинается с ${minYear} года.`
-                    : 'По выбранному сочетанию ветки и типа событий в этом периоде нет.'}
+                    : 'По выбранному сочетанию ветки и типа исторических событий в этом периоде нет.'}
                 </p>
                 {hasLocalFilter && (
                   <button

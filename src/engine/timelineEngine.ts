@@ -1,4 +1,5 @@
 import type {
+  AboutWorkEntry,
   AxisResolution,
   BranchCategoryKey,
   BranchDefinition,
@@ -2057,10 +2058,64 @@ export function computeDynamicWindowHotspots(
   return deduped.sort((a, b) => a.fromYear - b.fromYear);
 }
 
+export function isBiographyNode(
+  ev: Pick<TimelineNode, 'task' | 'type' | 'syncTags'>,
+  branches?: BranchDefinition[],
+): boolean {
+  const task = ev.task || '';
+  if (
+    task === 'WRITERS_BIO' ||
+    task.endsWith('_BIO') ||
+    task.startsWith('PEOPLE_') ||
+    task.startsWith('PERSONS_')
+  ) {
+    return true;
+  }
+  if (branches) {
+    const b = branches.find((br) => br.id === task);
+    if (b && (b.gitName.endsWith('/writers') || b.gitName.includes('/bio'))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isLiteraryWorkNode(
+  ev: Pick<TimelineNode, 'task' | 'type'>,
+  branches?: BranchDefinition[],
+): boolean {
+  const task = ev.task || '';
+  if (
+    task === 'WRITERS_WORKS' ||
+    task === 'LITERATURE_BOOKS' ||
+    task.endsWith('_WORKS') ||
+    task.endsWith('_BOOKS')
+  ) {
+    return true;
+  }
+  if (branches) {
+    const b = branches.find((br) => br.id === task);
+    if (b && (b.gitName.endsWith('/books') || b.gitName.endsWith('/works'))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function isHistoricalEventNode(
+  ev: Pick<TimelineNode, 'task' | 'type' | 'syncTags'>,
+  branches?: BranchDefinition[],
+): boolean {
+  return !isBiographyNode(ev, branches) && !isLiteraryWorkNode(ev, branches);
+}
+
 export interface MacroEraSummaryData {
   era: ResolvedMacroEra;
   rulers: Array<{ ruler: RulerPeriod; eventCount: number }>;
   events: EnrichedEvent[];
+  contemporaryWriters: EnrichedEvent[];
+  worksWrittenInPeriod: EnrichedEvent[];
+  worksAboutPeriod: AboutWorkEntry[];
   branchTags: Array<{ branch: BranchDefinition; count: number }>;
   typeTags: Array<{ type: string; count: number }>;
   carryOverBeforeIds: Set<string>;
@@ -2073,13 +2128,84 @@ export function getMacroEraSummaryData(
   enrichedEvents: EnrichedEvent[],
   branches: BranchDefinition[],
 ): MacroEraSummaryData {
-  const events = enrichedEvents.filter((ev) =>
+  const allBelongingEvents = enrichedEvents.filter((ev) =>
     doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, era),
+  );
+
+  const events = allBelongingEvents.filter((ev) => isHistoricalEventNode(ev, branches));
+  const contemporaryWriters = enrichedEvents.filter(
+    (ev) =>
+      isBiographyNode(ev, branches) &&
+      intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
+  );
+  const worksWrittenInPeriod = enrichedEvents.filter(
+    (ev) =>
+      isLiteraryWorkNode(ev, branches) &&
+      intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
   );
 
   const eraRulersRaw = rulers.filter((r) =>
     doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, era),
   );
+  const eraRulerById = new Map<string, RulerPeriod>(eraRulersRaw.map((r) => [r.id, r]));
+  const historicalEventIdsInEra = new Set<string>(events.map((ev) => ev.id));
+
+  const allWorkNodes = enrichedEvents.filter((ev) => isLiteraryWorkNode(ev, branches));
+  const worksAboutPeriod: AboutWorkEntry[] = [];
+
+  allWorkNodes.forEach((work) => {
+    const refTags = work.referenceTags || [];
+    const matchingLink = work.explicitLinks.find(
+      (link) =>
+        historicalEventIdsInEra.has(link.targetEvent.id) &&
+        (link.direction === 'outgoing' ||
+          link.isRetrospective ||
+          link.type === 'about_event' ||
+          link.type === 'inspired_by' ||
+          link.type === 'references'),
+    );
+
+    const matchedRulers = refTags
+      .map((tag) => eraRulerById.get(tag))
+      .filter((r): r is RulerPeriod => Boolean(r));
+    const hasEraTag = refTags.includes(era.id);
+
+    if (!matchingLink && matchedRulers.length === 0 && !hasEraTag) {
+      return;
+    }
+
+    let relationLabel = '';
+    let yearGap = 0;
+
+    if (matchingLink) {
+      relationLabel = matchingLink.label || `Связано с событием: ${matchingLink.targetEvent.title}`;
+      yearGap = Math.max(
+        0,
+        matchingLink.yearGap ?? 0,
+        work.startYear - matchingLink.targetEvent.endYear,
+      );
+    } else if (matchedRulers.length > 0) {
+      const names = matchedRulers.map((r) => r.shortRuler).join(', ');
+      const maxRulerEnd = Math.max(...matchedRulers.map((r) => r.endYear));
+      yearGap = Math.max(0, work.startYear - maxRulerEnd);
+      relationLabel =
+        yearGap > 0
+          ? `Ретроспективное осмысление эпохи (${names})`
+          : `Произведение об эпохе правления (${names})`;
+    } else {
+      yearGap = Math.max(0, work.startYear - era.endYear);
+      relationLabel =
+        yearGap > 0
+          ? `Ретроспективное произведение о периоде «${era.displayShortTitle}»`
+          : `Художественное осмысление современности (${era.displayShortTitle})`;
+    }
+
+    worksAboutPeriod.push({
+      work,
+      relationLabel,
+      yearGap,
+    });
+  });
 
   const rulersWithCounts = eraRulersRaw.map((ruler) => ({
     ruler,
@@ -2122,12 +2248,92 @@ export function getMacroEraSummaryData(
     era,
     rulers: rulersWithCounts,
     events,
+    contemporaryWriters,
+    worksWrittenInPeriod,
+    worksAboutPeriod,
     branchTags,
     typeTags,
     carryOverBeforeIds,
     carryOverAfterIds,
   };
 }
+
+export interface RulerPeriodSummaryData {
+  ruler: RulerPeriod;
+  historicalEvents: EnrichedEvent[];
+  contemporaryWriters: EnrichedEvent[];
+  worksWrittenInPeriod: EnrichedEvent[];
+  worksAboutPeriod: AboutWorkEntry[];
+}
+
+export function getRulerPeriodSummaryData(
+  ruler: RulerPeriod,
+  enrichedEvents: EnrichedEvent[],
+  branches: BranchDefinition[],
+): RulerPeriodSummaryData {
+  const overlappingAll = enrichedEvents.filter((ev) =>
+    ev.overlappingRulers.some((or) => or.id === ruler.id),
+  );
+
+  const historicalEvents = overlappingAll.filter((ev) => isHistoricalEventNode(ev, branches));
+  const contemporaryWriters = overlappingAll.filter((ev) => isBiographyNode(ev, branches));
+  const worksWrittenInPeriod = overlappingAll.filter((ev) => isLiteraryWorkNode(ev, branches));
+
+  const historicalEventIdsInReign = new Set<string>(historicalEvents.map((ev) => ev.id));
+  const allWorkNodes = enrichedEvents.filter((ev) => isLiteraryWorkNode(ev, branches));
+  const worksAboutPeriod: AboutWorkEntry[] = [];
+
+  allWorkNodes.forEach((work) => {
+    const refTags = work.referenceTags || [];
+    const hasRulerTag = refTags.includes(ruler.id);
+    const matchingLink = work.explicitLinks.find(
+      (link) =>
+        historicalEventIdsInReign.has(link.targetEvent.id) &&
+        (link.direction === 'outgoing' ||
+          link.isRetrospective ||
+          link.type === 'about_event' ||
+          link.type === 'inspired_by' ||
+          link.type === 'references'),
+    );
+
+    if (!hasRulerTag && !matchingLink) {
+      return;
+    }
+
+    let relationLabel = '';
+    let yearGap = 0;
+
+    if (matchingLink) {
+      relationLabel = matchingLink.label || `Связано с событием: ${matchingLink.targetEvent.title}`;
+      yearGap = Math.max(
+        0,
+        matchingLink.yearGap ?? 0,
+        work.startYear - Math.min(ruler.endYear, matchingLink.targetEvent.endYear),
+      );
+    } else {
+      yearGap = Math.max(0, work.startYear - ruler.endYear);
+      relationLabel =
+        yearGap > 0
+          ? `Ретроспективное произведение об эпохе правления (${ruler.shortRuler})`
+          : `Произведение о современности периода правления (${ruler.shortRuler})`;
+    }
+
+    worksAboutPeriod.push({
+      work,
+      relationLabel,
+      yearGap,
+    });
+  });
+
+  return {
+    ruler,
+    historicalEvents,
+    contemporaryWriters,
+    worksWrittenInPeriod,
+    worksAboutPeriod,
+  };
+}
+
 
 
 

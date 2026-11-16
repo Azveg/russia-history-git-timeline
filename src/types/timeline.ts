@@ -336,3 +336,10 @@ export interface DynamicWindowHotspot {
   previewTitles: string[];
 }
 
+export interface AboutWorkEntry {
+  work: EnrichedEvent;
+  relationLabel: string;
+  yearGap: number;
+}
+
+

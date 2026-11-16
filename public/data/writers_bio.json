@@ -4,19 +4,36 @@
   "path": "data/writers_bio.json",
   "version": "1.0.0",
   "enabled": true,
-  "branch": {
-    "id": "WRITERS_BIO",
-    "gitName": "culture/writers",
-    "label": "Русские писатели-классики",
-    "short": "writers",
-    "category": "other",
-    "sourceFile": "data/writers_bio.json",
-    "description": "Годы жизни, биографии и творческий путь ключевых русских писателей и поэтов XVIII–XX веков",
-    "color": "#e879f9",
-    "badgeClass": "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
-    "isMilitary": false,
-    "defaultEnabled": false
-  },
+  "branches": [
+    {
+      "id": "LITERATURE_ALL",
+      "gitName": "lit/all",
+      "label": "Литература: писатели и произведения (общая)",
+      "short": "lit/all",
+      "category": "other",
+      "sourceFile": "data/writers_bio.json",
+      "description": "Объединённая линия русских писателей-классиков и их ключевых произведений XVIII–XX вв.",
+      "color": "#d946ef",
+      "badgeClass": "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
+      "isMilitary": false,
+      "isGroup": true,
+      "defaultCollapsedOnTimeline": true
+    },
+    {
+      "id": "WRITERS_BIO",
+      "gitName": "culture/writers",
+      "label": "Русские писатели-классики",
+      "short": "writers",
+      "parentBranchId": "LITERATURE_ALL",
+      "category": "other",
+      "sourceFile": "data/writers_bio.json",
+      "description": "Годы жизни, биографии и творческий путь ключевых русских писателей и поэтов XVIII–XX веков",
+      "color": "#e879f9",
+      "badgeClass": "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
+      "isMilitary": false,
+      "defaultEnabled": false
+    }
+  ],
   "nodes": [
     {
       "id": "1743-derzhavin-gavrila",
