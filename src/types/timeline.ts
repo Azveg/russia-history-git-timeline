@@ -10,7 +10,13 @@ export interface PreciseDateParts {
 
 export type BranchCategoryKey = 'rulers' | 'military' | 'economy' | 'world' | 'other';
 
-export type BranchPresetId = 'all' | 'rulers_wars' | 'eco_world' | 'rulers_only';
+export type BranchPresetId =
+  | 'overview'
+  | 'all'
+  | 'rulers_wars'
+  | 'culture_science'
+  | 'eco_world'
+  | 'rulers_only';
 
 export interface BranchDefinition {
   id: string;
@@ -24,6 +30,7 @@ export interface BranchDefinition {
   badgeClass: string;
   isMilitary: boolean;
   alwaysTrunk?: boolean;
+  isTimeAxis?: boolean;
   parentBranchId?: string;
   isGroup?: boolean;
   defaultEnabled?: boolean;
@@ -42,6 +49,7 @@ export interface MacroEra {
 }
 
 export interface ResolvedMacroEra extends MacroEra {
+  index: number;
   startYear: number;
   endYear: number;
   displayShortTitle: string;
@@ -63,13 +71,25 @@ export interface RulerPeriod {
 }
 
 export interface SubEvent {
+  year?: number | string;
+  dateLabel?: string;
   title: string;
   text: string;
+  description?: string;
 }
 
 export interface InlineNodeLink {
   targetId: string;
-  type?: 'triggers' | 'sync_context' | 'enables' | 'references' | 'about_event' | 'inspired_by' | string;
+  type?:
+    | 'triggers'
+    | 'sync_context'
+    | 'enables'
+    | 'references'
+    | 'about_event'
+    | 'inspired_by'
+    | 'causes'
+    | 'consequence'
+    | string;
   label: string;
 }
 
@@ -87,6 +107,9 @@ export interface TimelineNode {
   task: string;
   region: string;
   type: string;
+  eventType?: string;
+  outcome?: string;
+  keyFigures?: string[];
   subEvents?: SubEvent[];
   linksTo?: InlineNodeLink[];
   campaignId?: string;
@@ -98,7 +121,16 @@ export interface CrossLink {
   id: string;
   from: string;
   to: string;
-  type: 'triggers' | 'sync_context' | 'enables' | 'references' | 'about_event' | 'inspired_by' | string;
+  type:
+    | 'triggers'
+    | 'sync_context'
+    | 'enables'
+    | 'references'
+    | 'about_event'
+    | 'inspired_by'
+    | 'causes'
+    | 'consequence'
+    | string;
   label: string;
 }
 
@@ -156,12 +188,21 @@ export interface BranchFile {
 export type TimelineDataFile = RulersFile | BranchFile;
 
 export interface ExplicitLinkInfo extends CrossLink {
-  direction: 'outgoing' | 'incoming';
+  direction: 'outgoing' | 'incoming' | 'out' | 'in';
+  otherId: string;
   targetEvent: EnrichedEvent;
   isAutoSync?: boolean;
   syncTag?: string;
   isRetrospective?: boolean;
   yearGap?: number;
+}
+
+export interface RetrospectiveLinkInfo {
+  id: string;
+  otherId: string;
+  direction: 'depicts' | 'depicted_by';
+  label: string;
+  yearGap: number;
 }
 
 export interface EnrichedEvent extends TimelineNode {
@@ -171,6 +212,7 @@ export interface EnrichedEvent extends TimelineNode {
   endYear: number;
   startPrecision: PreciseDateParts;
   endPrecision: PreciseDateParts;
+  datePrecision?: AxisResolution;
   isAtomic: boolean;
   duration: number;
   eraId: string;
@@ -181,6 +223,7 @@ export interface EnrichedEvent extends TimelineNode {
   reignPeriod: string;
   concurrentEvents: EnrichedEvent[];
   explicitLinks: ExplicitLinkInfo[];
+  retrospectiveLinks: RetrospectiveLinkInfo[];
 }
 
 export type StreamRow =
@@ -300,6 +343,13 @@ export interface OverlapAnalyticsSummary {
   activeLanesCount: number;
 }
 
+export interface DensityBin {
+  startYear: number;
+  endYear: number;
+  totalCount: number;
+  commitCount: number;
+}
+
 export interface YearRangeStep {
   from: number;
   to: number;
@@ -343,10 +393,8 @@ export interface AboutWorkEntry {
 }
 
 export interface ModalHistoryItem {
-  kind: 'card' | 'ruler' | 'era';
+  type: 'card' | 'ruler' | 'era';
+  kind?: 'card' | 'ruler' | 'era';
   id: string;
   label: string;
 }
-
-
-

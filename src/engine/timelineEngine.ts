@@ -1,5 +1,4 @@
 import type {
-  AboutWorkEntry,
   AxisResolution,
   BranchCategoryKey,
   BranchDefinition,
@@ -8,6 +7,7 @@ import type {
   BranchPresetId,
   BranchSubLaneLayout,
   CrossLink,
+  DensityBin,
   DynamicWindowHotspot,
   EnrichedEvent,
   ExplicitLinkInfo,
@@ -20,6 +20,7 @@ import type {
   OverlapYearBucket,
   PreciseDateParts,
   ResolvedMacroEra,
+  RetrospectiveLinkInfo,
   RulerBoundaryTick,
   RulerPeriod,
   RulerSpanSegment,
@@ -41,6 +42,7 @@ export const TIME_AXIS_BRANCH: BranchDefinition = {
   badgeClass: 'bg-slate-500/15 text-slate-200 border-slate-500/40',
   isMilitary: false,
   alwaysTrunk: true,
+  isTimeAxis: true,
 };
 
 export const RULER_ALT_COLORS = [
@@ -139,7 +141,7 @@ export function detectAxisResolution(yearFrom: number, yearTo: number): AxisReso
   return 'year';
 }
 
-export function resolveMacroEra(era: MacroEra): ResolvedMacroEra {
+export function resolveMacroEra(era: MacroEra, idx = 0): ResolvedMacroEra {
   const parsed = parseEventYears(era.period || '862–2000');
   const startYear = typeof era.startYear === 'number' ? era.startYear : parsed.startYear;
   const endYear = typeof era.endYear === 'number' ? era.endYear : parsed.endYear;
@@ -163,11 +165,17 @@ export function resolveMacroEra(era: MacroEra): ResolvedMacroEra {
     startYear,
     endYear: Math.max(startYear, endYear),
     displayShortTitle,
+    index: idx + 1,
   };
 }
 
 export function resolveMacroEras(macroEras: MacroEra[]): ResolvedMacroEra[] {
-  return macroEras.map(resolveMacroEra).sort((a, b) => a.startYear - b.startYear);
+  const sorted = [...macroEras].sort((a, b) => {
+    const aStart = typeof a.startYear === 'number' ? a.startYear : parseEventYears(a.period || '862').startYear;
+    const bStart = typeof b.startYear === 'number' ? b.startYear : parseEventYears(b.period || '862').startYear;
+    return aStart - bStart;
+  });
+  return sorted.map((era, idx) => resolveMacroEra(era, idx));
 }
 
 export function findMacroEraForYear(
@@ -428,10 +436,27 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
   const subEvents = Array.isArray(raw.subEvents)
     ? raw.subEvents
         .filter((se): se is Record<string, unknown> => isPlainRecord(se) && typeof se.title === 'string')
-        .map((se) => ({
-          title: (se.title as string).trim(),
-          text: typeof se.text === 'string' ? se.text : '',
-        }))
+        .map((se) => {
+          const textVal =
+            typeof se.text === 'string' && se.text.trim()
+              ? se.text.trim()
+              : typeof se.description === 'string'
+                ? se.description.trim()
+                : '';
+          const yearVal =
+            typeof se.year === 'number' || typeof se.year === 'string'
+              ? se.year
+              : typeof se.dateLabel === 'string'
+                ? se.dateLabel
+                : undefined;
+          return {
+            year: yearVal,
+            dateLabel: typeof se.dateLabel === 'string' ? se.dateLabel : undefined,
+            title: (se.title as string).trim(),
+            text: textVal,
+            description: typeof se.description === 'string' ? se.description : undefined,
+          };
+        })
     : undefined;
 
   const linksTo = Array.isArray(raw.linksTo)
@@ -455,6 +480,18 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
     ? raw.referenceTags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
     : undefined;
 
+  const outcome =
+    typeof raw.outcome === 'string' && raw.outcome.trim().length > 0 ? raw.outcome.trim() : undefined;
+
+  const keyFigures = Array.isArray(raw.keyFigures)
+    ? raw.keyFigures.filter((k): k is string => typeof k === 'string' && k.trim().length > 0)
+    : typeof raw.keyFigures === 'string' && raw.keyFigures.trim().length > 0
+      ? raw.keyFigures
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : undefined;
+
   return {
     id,
     startYear: hasStartYear ? (raw.startYear as number) : undefined,
@@ -466,6 +503,9 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
     title,
     subtitle: typeof raw.subtitle === 'string' ? raw.subtitle : '',
     details: typeof raw.details === 'string' ? raw.details : '',
+    outcome,
+    keyFigures,
+    eventType: typeof raw.eventType === 'string' ? raw.eventType : undefined,
     task,
     region: typeof raw.region === 'string' ? raw.region : '',
     type: typeof raw.type === 'string' ? raw.type : 'Событие',
@@ -799,11 +839,14 @@ export function getEnrichedEvents(
       if (Array.isArray(ev.linksTo)) {
         ev.linksTo.forEach((lnk, idx) => {
           if (!lnk?.targetId) return;
+          const rawType = lnk.type || 'sync_context';
+          const normalizedType =
+            rawType === 'consequence' ? 'triggers' : rawType === 'causes' ? 'triggers' : rawType;
           inlineCrossLinks.push({
             id: `inline-${ev.id}-${lnk.targetId}-${idx}`,
             from: ev.id,
             to: lnk.targetId,
-            type: lnk.type || 'sync_context',
+            type: normalizedType,
             label: lnk.label || 'Связанное событие',
           });
         });
@@ -833,6 +876,7 @@ export function getEnrichedEvents(
         endYear,
         startPrecision,
         endPrecision,
+        datePrecision: startPrecision.precision,
         isAtomic,
         duration,
         eraId: eraObj?.id || 'ERA_1',
@@ -846,6 +890,7 @@ export function getEnrichedEvents(
             : overlappingRulers[0]?.reignPeriod || '',
         concurrentEvents: [],
         explicitLinks: [],
+        retrospectiveLinks: [],
       });
     });
   });
@@ -1044,12 +1089,24 @@ export function getEnrichedEvents(
     );
 
     const links: ExplicitLinkInfo[] = [];
+    const retroLinks: RetrospectiveLinkInfo[] = [];
+    const seenRetroOtherIds = new Set<string>();
+
     allLinks.forEach((lnk) => {
       if (lnk.from === ev.id || lnk.to === ev.id) {
-        const isOutgoing = lnk.from === ev.id;
+        let isOutgoing = lnk.from === ev.id;
         const targetId = isOutgoing ? lnk.to : lnk.from;
         const targetEvent = byId.get(targetId);
         if (targetEvent) {
+          // Если причинная связь (triggers/enables) записана от более позднего события к более раннему, нормализуем направление по хронологии
+          if (lnk.type === 'triggers' || lnk.type === 'enables') {
+            if (isOutgoing && ev.startYear > targetEvent.startYear) {
+              isOutgoing = false;
+            } else if (!isOutgoing && targetEvent.startYear > ev.startYear) {
+              isOutgoing = true;
+            }
+          }
+
           const maxStart = Math.max(ev.startYear, targetEvent.startYear);
           const minEnd = Math.min(ev.endYear, targetEvent.endYear);
           const yearGap = maxStart > minEnd ? maxStart - minEnd : 0;
@@ -1060,15 +1117,34 @@ export function getEnrichedEvents(
 
           links.push({
             ...lnk,
+            otherId: targetId,
             direction: isOutgoing ? 'outgoing' : 'incoming',
             targetEvent,
             isRetrospective,
             yearGap,
           });
+
+          if (
+            (isRetrospective ||
+              isLiteraryWorkNode(targetEvent) ||
+              isScienceDiscoveryNode(targetEvent) ||
+              isBiographyNode(targetEvent)) &&
+            !seenRetroOtherIds.has(targetId)
+          ) {
+            seenRetroOtherIds.add(targetId);
+            retroLinks.push({
+              id: lnk.id,
+              otherId: targetId,
+              direction: targetEvent.startYear >= ev.startYear ? 'depicted_by' : 'depicts',
+              label: lnk.label,
+              yearGap,
+            });
+          }
         }
       }
     });
     ev.explicitLinks = links;
+    ev.retrospectiveLinks = retroLinks;
   });
 
   return list;
@@ -1108,6 +1184,10 @@ export function hasChildBranches(
   branches: BranchDefinition[],
 ): boolean {
   return branches.some((b) => b.parentBranchId === branchId);
+}
+
+export function getLeafBranches(branches: BranchDefinition[]): BranchDefinition[] {
+  return branches.filter((b) => !b.isGroup && !hasChildBranches(b.id, branches) && b.id !== 'MAIN_RULERS');
 }
 
 function getBranchAncestorChain(
@@ -1603,15 +1683,68 @@ export function computeBranchPresetMap(
     const cat = resolveBranchCategory(b).key;
     if (presetId === 'all') {
       next[b.id] = true;
+    } else if (presetId === 'overview') {
+      next[b.id] =
+        b.id === 'MAIN_RULERS' ||
+        b.id === 'WAR_CONTINENTAL' ||
+        b.id === 'REFORMS_ECO' ||
+        b.id === 'DIPLOMACY_TREATIES';
     } else if (presetId === 'rulers_wars') {
-      next[b.id] = cat === 'rulers' || cat === 'military';
+      next[b.id] = cat === 'rulers' || cat === 'military' || b.id === 'DIPLOMACY_TREATIES';
+    } else if (presetId === 'culture_science') {
+      next[b.id] =
+        b.id === 'MAIN_RULERS' ||
+        b.id === 'WRITERS_BIO' ||
+        b.id === 'WRITERS_WORKS' ||
+        b.id === 'SCIENTISTS_BIO' ||
+        b.id === 'SCIENCE_DISCOVERIES';
     } else if (presetId === 'eco_world') {
-      next[b.id] = cat === 'economy' || cat === 'world';
+      next[b.id] = cat === 'economy' || cat === 'world' || b.id === 'MAIN_RULERS';
     } else if (presetId === 'rulers_only') {
       next[b.id] = cat === 'rulers';
     }
   });
   return next;
+}
+
+export function computeDensityBins(
+  events: EnrichedEvent[],
+  yearFrom: number,
+  yearTo: number,
+  binCount = 28,
+): DensityBin[] {
+  const safeFrom = Math.min(yearFrom, yearTo);
+  const safeTo = Math.max(safeFrom + 1, yearTo);
+  const span = safeTo - safeFrom;
+  const count = Math.max(4, Math.min(60, binCount));
+  const step = span / count;
+
+  const bins: DensityBin[] = [];
+  for (let i = 0; i < count; i++) {
+    const startYear = Math.round(safeFrom + i * step);
+    const endYear = i === count - 1 ? safeTo : Math.max(startYear, Math.round(safeFrom + (i + 1) * step) - 1);
+    let totalCount = 0;
+    let commitCount = 0;
+
+    for (let j = 0; j < events.length; j++) {
+      const ev = events[j];
+      if (ev.startYear <= endYear && ev.endYear >= startYear) {
+        totalCount++;
+        if (ev.startYear >= startYear && ev.startYear <= endYear) {
+          commitCount++;
+        }
+      }
+    }
+
+    bins.push({
+      startYear,
+      endYear,
+      totalCount,
+      commitCount,
+    });
+  }
+
+  return bins;
 }
 
 export function computeOverlapAnalytics(
@@ -2058,13 +2191,39 @@ export function computeDynamicWindowHotspots(
   return deduped.sort((a, b) => a.fromYear - b.fromYear);
 }
 
-export function isBiographyNode(
+export function isWriterBioNode(
   ev: Pick<TimelineNode, 'task' | 'type' | 'syncTags'>,
   branches?: BranchDefinition[],
 ): boolean {
   const task = ev.task || '';
+  if (task === 'WRITERS_BIO') return true;
+  if (branches) {
+    const b = branches.find((br) => br.id === task);
+    if (b && b.gitName.endsWith('/writers')) return true;
+  }
+  return false;
+}
+
+export function isScientistBioNode(
+  ev: Pick<TimelineNode, 'task' | 'type' | 'syncTags'>,
+  branches?: BranchDefinition[],
+): boolean {
+  const task = ev.task || '';
+  if (task === 'SCIENTISTS_BIO') return true;
+  if (branches) {
+    const b = branches.find((br) => br.id === task);
+    if (b && b.gitName.endsWith('/scientists')) return true;
+  }
+  return false;
+}
+
+export function isBiographyNode(
+  ev: Pick<TimelineNode, 'task' | 'type' | 'syncTags'>,
+  branches?: BranchDefinition[],
+): boolean {
+  if (isWriterBioNode(ev, branches) || isScientistBioNode(ev, branches)) return true;
+  const task = ev.task || '';
   if (
-    task === 'WRITERS_BIO' ||
     task.endsWith('_BIO') ||
     task.startsWith('PEOPLE_') ||
     task.startsWith('PERSONS_')
@@ -2073,7 +2232,7 @@ export function isBiographyNode(
   }
   if (branches) {
     const b = branches.find((br) => br.id === task);
-    if (b && (b.gitName.endsWith('/writers') || b.gitName.includes('/bio'))) {
+    if (b && b.gitName.includes('/bio')) {
       return true;
     }
   }
@@ -2102,6 +2261,23 @@ export function isLiteraryWorkNode(
   return false;
 }
 
+export function isScienceDiscoveryNode(
+  ev: Pick<TimelineNode, 'task' | 'type'>,
+  branches?: BranchDefinition[],
+): boolean {
+  const task = ev.task || '';
+  if (task === 'SCIENCE_DISCOVERIES' || task.endsWith('_DISCOVERIES')) {
+    return true;
+  }
+  if (branches) {
+    const b = branches.find((br) => br.id === task);
+    if (b && b.gitName.endsWith('/discoveries')) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function isHistoricalEventNode(
   ev: Pick<TimelineNode, 'task' | 'type' | 'syncTags'>,
   branches?: BranchDefinition[],
@@ -2115,15 +2291,21 @@ export function isHistoricalEventNode(
 
 export interface MacroEraSummaryData {
   era: ResolvedMacroEra;
-  rulers: Array<{ ruler: RulerPeriod; eventCount: number }>;
-  events: EnrichedEvent[];
+  eraRulers: RulerPeriod[];
+  eraEvents: EnrichedEvent[];
   contemporaryWriters: EnrichedEvent[];
+  contemporaryScientists: EnrichedEvent[];
   worksWrittenInPeriod: EnrichedEvent[];
-  worksAboutPeriod: AboutWorkEntry[];
-  branchTags: Array<{ branch: BranchDefinition; count: number }>;
-  typeTags: Array<{ type: string; count: number }>;
-  carryOverBeforeIds: Set<string>;
-  carryOverAfterIds: Set<string>;
+  discoveriesInPeriod: EnrichedEvent[];
+  worksAboutPeriod: EnrichedEvent[];
+  carryOverInEvents: EnrichedEvent[];
+  carryOverOutEvents: EnrichedEvent[];
+  branchBreakdown: Array<{ branch: BranchDefinition; count: number }>;
+  centers: string[];
+  peakInterval: { label: string; count: number } | null;
+  topConnectedEvents: EnrichedEvent[];
+  totalDurationYears: number;
+  totalSyncLinks: number;
 }
 
 export function getMacroEraSummaryData(
@@ -2136,26 +2318,40 @@ export function getMacroEraSummaryData(
     doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, era),
   );
 
-  const events = allBelongingEvents.filter((ev) => isHistoricalEventNode(ev, branches));
+  const eraEvents = allBelongingEvents.filter((ev) => isHistoricalEventNode(ev, branches));
+
   const contemporaryWriters = enrichedEvents.filter(
     (ev) =>
-      isBiographyNode(ev, branches) &&
+      isWriterBioNode(ev, branches) &&
       intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
   );
+
+  const contemporaryScientists = enrichedEvents.filter(
+    (ev) =>
+      isScientistBioNode(ev, branches) &&
+      intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
+  );
+
   const worksWrittenInPeriod = enrichedEvents.filter(
     (ev) =>
       isLiteraryWorkNode(ev, branches) &&
       intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
   );
 
-  const eraRulersRaw = rulers.filter((r) =>
+  const discoveriesInPeriod = enrichedEvents.filter(
+    (ev) =>
+      isScienceDiscoveryNode(ev, branches) &&
+      intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
+  );
+
+  const eraRulers = rulers.filter((r) =>
     doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, era),
   );
-  const eraRulerById = new Map<string, RulerPeriod>(eraRulersRaw.map((r) => [r.id, r]));
-  const historicalEventIdsInEra = new Set<string>(events.map((ev) => ev.id));
+  const eraRulerIds = new Set<string>(eraRulers.map((r) => r.id));
+  const historicalEventIdsInEra = new Set<string>(eraEvents.map((ev) => ev.id));
 
   const allWorkNodes = enrichedEvents.filter((ev) => isLiteraryWorkNode(ev, branches));
-  const worksAboutPeriod: AboutWorkEntry[] = [];
+  const worksAboutPeriod: EnrichedEvent[] = [];
 
   allWorkNodes.forEach((work) => {
     const refTags = work.referenceTags || [];
@@ -2169,123 +2365,113 @@ export function getMacroEraSummaryData(
           link.type === 'references'),
     );
 
-    const matchedRulers = refTags
-      .map((tag) => eraRulerById.get(tag))
-      .filter((r): r is RulerPeriod => Boolean(r));
+    const hasRulerTag = refTags.some((tag) => eraRulerIds.has(tag));
     const hasEraTag = refTags.includes(era.id);
 
-    if (!matchingLink && matchedRulers.length === 0 && !hasEraTag) {
-      return;
+    if (matchingLink || hasRulerTag || hasEraTag) {
+      worksAboutPeriod.push(work);
     }
-
-    let relationLabel = '';
-    let yearGap = 0;
-
-    if (matchingLink) {
-      relationLabel = matchingLink.label || `Связано с событием: ${matchingLink.targetEvent.title}`;
-      yearGap = Math.max(
-        0,
-        matchingLink.yearGap ?? 0,
-        work.startYear - matchingLink.targetEvent.endYear,
-      );
-    } else if (matchedRulers.length > 0) {
-      const names = matchedRulers.map((r) => r.shortRuler).join(', ');
-      const maxRulerEnd = Math.max(...matchedRulers.map((r) => r.endYear));
-      yearGap = Math.max(0, work.startYear - maxRulerEnd);
-      relationLabel =
-        yearGap > 0
-          ? `Ретроспективное осмысление эпохи (${names})`
-          : `Произведение об эпохе правления (${names})`;
-    } else {
-      yearGap = Math.max(0, work.startYear - era.endYear);
-      relationLabel =
-        yearGap > 0
-          ? `Ретроспективное произведение о периоде «${era.displayShortTitle}»`
-          : `Художественное осмысление современности (${era.displayShortTitle})`;
-    }
-
-    worksAboutPeriod.push({
-      work,
-      relationLabel,
-      yearGap,
-    });
   });
 
-  const rulersWithCounts = eraRulersRaw.map((ruler) => ({
-    ruler,
-    eventCount: events.filter((ev) => ev.overlappingRulers.some((or) => or.id === ruler.id)).length,
-  }));
+  const carryOverInEvents = eraEvents.filter((ev) => ev.startYear < era.startYear);
+  const carryOverOutEvents = eraEvents.filter((ev) => ev.endYear > era.endYear);
 
   const branchCountMap = new Map<string, number>();
-  const typeCountMap = new Map<string, number>();
-  const carryOverBeforeIds = new Set<string>();
-  const carryOverAfterIds = new Set<string>();
+  let totalSyncLinks = 0;
 
-  events.forEach((ev) => {
+  allBelongingEvents.forEach((ev) => {
     const resolvedBranch = resolveEventBranch(ev, branches);
     branchCountMap.set(resolvedBranch.id, (branchCountMap.get(resolvedBranch.id) || 0) + 1);
-
-    const typeLabel = (ev.type || 'Событие').trim();
-    typeCountMap.set(typeLabel, (typeCountMap.get(typeLabel) || 0) + 1);
-
-    if (ev.startYear < era.startYear) {
-      carryOverBeforeIds.add(ev.id);
-    }
-    if (ev.endYear > era.endYear) {
-      carryOverAfterIds.add(ev.id);
-    }
+    totalSyncLinks += ev.explicitLinks.length;
   });
 
-  const branchTags: Array<{ branch: BranchDefinition; count: number }> = [];
+  const branchBreakdown: Array<{ branch: BranchDefinition; count: number }> = [];
   branches.forEach((b) => {
+    if (b.isGroup) return;
     const count = branchCountMap.get(b.id) || 0;
     if (count > 0) {
-      branchTags.push({ branch: b, count });
+      branchBreakdown.push({ branch: b, count });
     }
   });
 
-  const typeTags = Array.from(typeCountMap.entries())
-    .map(([type, count]) => ({ type, count }))
-    .sort((a, b) => (b.count !== a.count ? b.count - a.count : a.type.localeCompare(b.type, 'ru')));
+  const centers = Array.from(
+    new Set(eraRulers.map((r) => r.center).filter((c): c is string => Boolean(c && c.trim()))),
+  );
+
+  const bins = computeDensityBins(allBelongingEvents, era.startYear, era.endYear, 12);
+  let bestBin: DensityBin | null = null;
+  for (const bin of bins) {
+    if (!bestBin || bin.totalCount > bestBin.totalCount) {
+      bestBin = bin;
+    }
+  }
+  const peakInterval =
+    bestBin && bestBin.totalCount > 0
+      ? {
+          label:
+            bestBin.startYear === bestBin.endYear
+              ? `${bestBin.startYear} г.`
+              : `${bestBin.startYear}–${bestBin.endYear} гг.`,
+          count: bestBin.totalCount,
+        }
+      : null;
+
+  const topConnectedEvents = [...eraEvents]
+    .filter((ev) => ev.explicitLinks.length > 0)
+    .sort((a, b) => b.explicitLinks.length - a.explicitLinks.length)
+    .slice(0, 6);
 
   return {
     era,
-    rulers: rulersWithCounts,
-    events,
+    eraRulers,
+    eraEvents,
     contemporaryWriters,
+    contemporaryScientists,
     worksWrittenInPeriod,
+    discoveriesInPeriod,
     worksAboutPeriod,
-    branchTags,
-    typeTags,
-    carryOverBeforeIds,
-    carryOverAfterIds,
+    carryOverInEvents,
+    carryOverOutEvents,
+    branchBreakdown,
+    centers,
+    peakInterval,
+    topConnectedEvents,
+    totalDurationYears: Math.max(1, era.endYear - era.startYear),
+    totalSyncLinks,
   };
 }
 
 export interface RulerPeriodSummaryData {
   ruler: RulerPeriod;
-  historicalEvents: EnrichedEvent[];
+  reignEvents: EnrichedEvent[];
   contemporaryWriters: EnrichedEvent[];
+  contemporaryScientists: EnrichedEvent[];
   worksWrittenInPeriod: EnrichedEvent[];
-  worksAboutPeriod: AboutWorkEntry[];
+  discoveriesInPeriod: EnrichedEvent[];
+  worksAboutPeriod: EnrichedEvent[];
+  startedInReign: EnrichedEvent[];
+  inheritedEvents: EnrichedEvent[];
+  carryOverEvents: EnrichedEvent[];
 }
 
 export function getRulerPeriodSummaryData(
   ruler: RulerPeriod,
   enrichedEvents: EnrichedEvent[],
-  branches: BranchDefinition[],
+  branches?: BranchDefinition[],
 ): RulerPeriodSummaryData {
   const overlappingAll = enrichedEvents.filter((ev) =>
     ev.overlappingRulers.some((or) => or.id === ruler.id),
   );
 
-  const historicalEvents = overlappingAll.filter((ev) => isHistoricalEventNode(ev, branches));
-  const contemporaryWriters = overlappingAll.filter((ev) => isBiographyNode(ev, branches));
+  const reignEvents = overlappingAll.filter((ev) => isHistoricalEventNode(ev, branches));
+  const contemporaryWriters = overlappingAll.filter((ev) => isWriterBioNode(ev, branches));
+  const contemporaryScientists = overlappingAll.filter((ev) => isScientistBioNode(ev, branches));
   const worksWrittenInPeriod = overlappingAll.filter((ev) => isLiteraryWorkNode(ev, branches));
+  const discoveriesInPeriod = overlappingAll.filter((ev) => isScienceDiscoveryNode(ev, branches));
 
-  const historicalEventIdsInReign = new Set<string>(historicalEvents.map((ev) => ev.id));
+  const historicalEventIdsInReign = new Set<string>(reignEvents.map((ev) => ev.id));
   const allWorkNodes = enrichedEvents.filter((ev) => isLiteraryWorkNode(ev, branches));
-  const worksAboutPeriod: AboutWorkEntry[] = [];
+  const worksAboutPeriod: EnrichedEvent[] = [];
 
   allWorkNodes.forEach((work) => {
     const refTags = work.referenceTags || [];
@@ -2300,41 +2486,28 @@ export function getRulerPeriodSummaryData(
           link.type === 'references'),
     );
 
-    if (!hasRulerTag && !matchingLink) {
-      return;
+    if (hasRulerTag || matchingLink) {
+      worksAboutPeriod.push(work);
     }
-
-    let relationLabel = '';
-    let yearGap = 0;
-
-    if (matchingLink) {
-      relationLabel = matchingLink.label || `Связано с событием: ${matchingLink.targetEvent.title}`;
-      yearGap = Math.max(
-        0,
-        matchingLink.yearGap ?? 0,
-        work.startYear - Math.min(ruler.endYear, matchingLink.targetEvent.endYear),
-      );
-    } else {
-      yearGap = Math.max(0, work.startYear - ruler.endYear);
-      relationLabel =
-        yearGap > 0
-          ? `Ретроспективное произведение об эпохе правления (${ruler.shortRuler})`
-          : `Произведение о современности периода правления (${ruler.shortRuler})`;
-    }
-
-    worksAboutPeriod.push({
-      work,
-      relationLabel,
-      yearGap,
-    });
   });
+
+  const startedInReign = reignEvents.filter(
+    (ev) => ev.startYear >= ruler.startYear && ev.startYear <= ruler.endYear,
+  );
+  const inheritedEvents = reignEvents.filter((ev) => ev.startYear < ruler.startYear);
+  const carryOverEvents = reignEvents.filter((ev) => ev.endYear > ruler.endYear);
 
   return {
     ruler,
-    historicalEvents,
+    reignEvents,
     contemporaryWriters,
+    contemporaryScientists,
     worksWrittenInPeriod,
+    discoveriesInPeriod,
     worksAboutPeriod,
+    startedInReign,
+    inheritedEvents,
+    carryOverEvents,
   };
 }
 
