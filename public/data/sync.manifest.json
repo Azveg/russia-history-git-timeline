@@ -1,9 +1,9 @@
 {
   "$schema": "https://git-timeline.schema.org/v2/sync-manifest.json",
-  "project": "Военная и геополитическая история России: модульный Git-таймлайн (1686–2000)",
+  "project": "История России и мира: модульный Git-таймлайн (862–2000)",
   "schemaVersion": "2.0.0",
   "timeAxis": {
-    "minYear": 1686,
+    "minYear": 862,
     "maxYear": 2000,
     "resolution": "adaptive_year_month_day",
     "overlapRule": "inclusive_interval"
@@ -14,7 +14,7 @@
       "path": "data/rulers.json",
       "role": "rulers_branch",
       "branchIds": ["MAIN_RULERS"],
-      "title": "Ветка правителей России (1686–1999)",
+      "title": "Ветка правителей Руси и России (862–1999)",
       "enabled": true
     },
     {

@@ -69,7 +69,7 @@ function generateCatalogMarkdown() {
 
   const macroEras = Array.isArray(manifest.macroEras) ? manifest.macroEras : [];
   const manifestLinks = Array.isArray(manifest.crossLinks) ? manifest.crossLinks : [];
-  const baseMinYear = typeof manifest?.timeAxis?.minYear === 'number' ? manifest.timeAxis.minYear : 1686;
+  const baseMinYear = typeof manifest?.timeAxis?.minYear === 'number' ? manifest.timeAxis.minYear : 862;
   const baseMaxYear = typeof manifest?.timeAxis?.maxYear === 'number' ? manifest.timeAxis.maxYear : 2000;
 
   let minYear = baseMinYear;
@@ -130,6 +130,7 @@ function generateCatalogMarkdown() {
         rulers.push({
           id: r.id.trim(),
           eraId: r.eraId || '—',
+          center: typeof r.center === 'string' && r.center.trim() ? r.center.trim() : '—',
           ruler: r.ruler || r.shortRuler || r.id,
           reignPeriod: r.reignPeriod || `${startYear ?? '?'}–${endYear ?? '?'}`,
           startYear,
@@ -328,10 +329,10 @@ function generateCatalogMarkdown() {
     lines.push('');
     lines.push('## 5. Справочник ID правителей (`rulers.json`)');
     lines.push('');
-    lines.push('| `id` | Годы | Правитель | Период |');
-    lines.push('| :--- | :--- | :--- | :---: |');
+    lines.push('| `id` | Годы | Центр | Правитель | Период |');
+    lines.push('| :--- | :--- | :--- | :--- | :---: |');
     for (const r of rulers) {
-      lines.push(`| \`${r.id}\` | ${escapeMd(r.reignPeriod)} | ${escapeMd(r.ruler)} | \`${r.eraId}\` |`);
+      lines.push(`| \`${r.id}\` | ${escapeMd(r.reignPeriod)} | ${escapeMd(r.center)} | ${escapeMd(r.ruler)} | \`${r.eraId}\` |`);
     }
     lines.push('');
   }

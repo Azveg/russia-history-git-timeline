@@ -63,7 +63,7 @@ export function PeriodSummaryModal({
             <X className="w-4 h-4" />
           </button>
 
-          <div className="inline-flex items-center gap-2 mb-2 text-xs font-mono">
+          <div className="inline-flex flex-wrap items-center gap-2 mb-2 text-xs font-mono">
             <span className="px-2.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black tabular-nums">
               {rulerObj.reignPeriod}
             </span>
@@ -71,6 +71,11 @@ export function PeriodSummaryModal({
               <Crown className="w-3.5 h-3.5" />
               {rulerObj.ruler}
             </span>
+            {rulerObj.center && (
+              <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200 font-semibold">
+                {rulerObj.center}
+              </span>
+            )}
           </div>
 
           <h2 className="text-xl sm:text-2xl font-extrabold text-white [text-wrap:balance]">

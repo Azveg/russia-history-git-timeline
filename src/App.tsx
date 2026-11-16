@@ -46,7 +46,7 @@ export default function App() {
   const [activeBranches, setActiveBranches] = useState<Record<string, boolean>>({});
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
 
-  const [yearFrom, setYearFrom] = useState(1686);
+  const [yearFrom, setYearFrom] = useState(862);
   const [yearTo, setYearTo] = useState(2000);
   const [zoomHistory, setZoomHistory] = useState<YearRangeStep[]>([]);
   const [selectedEra, setSelectedEra] = useState('ALL');
@@ -174,7 +174,7 @@ export default function App() {
   // Расширяем дефолтное окно лет, если подключённые модули охватывают более ранние или поздние годы
   useEffect(() => {
     if (!manifest) return;
-    setYearFrom((prev) => (prev === 1686 ? timelineBounds.minYear : Math.max(timelineBounds.minYear, prev)));
+    setYearFrom((prev) => (prev === 862 ? timelineBounds.minYear : Math.max(timelineBounds.minYear, prev)));
     setYearTo((prev) => (prev === 2000 ? timelineBounds.maxYear : Math.min(timelineBounds.maxYear, prev)));
   }, [manifest, timelineBounds.minYear, timelineBounds.maxYear]);
 

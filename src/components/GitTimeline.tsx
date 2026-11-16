@@ -2,13 +2,14 @@ import { Crosshair, Crown, Flag, GitBranch, GitCommitHorizontal, GitMerge, Link2
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   computeBranchSubLaneLayout,
+  computeRulerSubLaneLayout,
   findMacroEraForYear,
   formatAxisGutterDate,
   getDirectChildBranches,
   getGitHash,
   hasChildBranches,
   isBranchOrDescendantActive,
-  RULER_ALT_COLORS,
+  parsePreciseDate,
   resolveEventBranch,
   resolveMacroEra,
   resolveMacroEras,
@@ -80,7 +81,7 @@ export function GitTimeline({
   collapsedParents,
   manifest,
   yearFrom,
-  minYear = 1686,
+  minYear = 862,
   axisResolution,
   hoveredEventId,
   cardDensity,
@@ -195,16 +196,19 @@ export function GitTimeline({
     return matchingEvents.filter((ev) => ev.overlappingRulers.some((r) => r.id === activeStickyRuler.id)).length;
   }, [activeStickyRuler, matchingEvents]);
 
-  // Трёхзонная геометрия графа: [Правители (чередование A/B)] | [Центральная ось времени] | [Тематические ветки]
+  // Трёхзонная геометрия графа: [Правители (динамические рельсы)] | [Центральная ось времени] | [Тематические ветки]
   const hasRulersLane = visibleLanes.some((l) => l.id === 'MAIN_RULERS');
   const thematicLanes = useMemo(
     () => visibleLanes.filter((l) => l.id !== 'MAIN_RULERS' && l.id !== 'TIME_AXIS'),
     [visibleLanes],
   );
 
-  const rulerRailAX = 16;
-  const rulerRailBX = 30;
-  const timeSpineX = hasRulersLane ? 54 : 22;
+  const rulerLayout = useMemo(
+    () => computeRulerSubLaneLayout(matchingRulers, hasRulersLane),
+    [matchingRulers, hasRulersLane],
+  );
+
+  const timeSpineX = rulerLayout.timeSpineX;
 
   const subLaneLayout = useMemo(
     () =>
@@ -261,22 +265,12 @@ export function GitTimeline({
     [branches, activeBranches, collapsedParents],
   );
 
-  const rulerIndexById = useMemo(() => new Map(rulers.map((r, i) => [r.id, i])), [rulers]);
-
   const rulerSortBounds = useMemo(() => {
     const map = new Map<string, { startKey: number; endKey: number }>();
     matchingRulers.forEach((r) => {
-      const sy = r.startDate
-        ? Number(r.startDate.slice(0, 4)) * 10000 +
-          Number(r.startDate.slice(5, 7) || 1) * 100 +
-          Number(r.startDate.slice(8, 10) || 1)
-        : r.startYear * 10000 + 101;
-      const ey = r.endDate
-        ? Number(r.endDate.slice(0, 4)) * 10000 +
-          Number(r.endDate.slice(5, 7) || 12) * 100 +
-          Number(r.endDate.slice(8, 10) || 28)
-        : r.endYear * 10000 + 1228;
-      map.set(r.id, { startKey: sy, endKey: ey });
+      const startParts = parsePreciseDate(r.startDate, r.startYear, false);
+      const endParts = parsePreciseDate(r.endDate, r.endYear, true);
+      map.set(r.id, { startKey: startParts.sortKey, endKey: endParts.sortKey });
     });
     return map;
   }, [matchingRulers]);
@@ -320,75 +314,48 @@ export function GitTimeline({
       skipRulerId?: string;
     },
   ) {
-    const activeA = hasRulersLane
-      ? matchingRulers.find((r) => {
-          if (r.id === options?.skipRulerId) return false;
-          const idx = rulerIndexById.get(r.id) ?? 0;
-          if (idx % 2 !== 0) return false;
-          const b = rulerSortBounds.get(r.id);
-          return b ? b.startKey <= sortKey && b.endKey >= sortKey : false;
-        })
-      : undefined;
-
-    const activeB = hasRulersLane
-      ? matchingRulers.find((r) => {
-          if (r.id === options?.skipRulerId) return false;
-          const idx = rulerIndexById.get(r.id) ?? 0;
-          if (idx % 2 === 0) return false;
-          const b = rulerSortBounds.get(r.id);
-          return b ? b.startKey <= sortKey && b.endKey >= sortKey : false;
-        })
-      : undefined;
-
     return (
       <>
         {hasRulersLane && (
           <g>
-            {activeA ? (
-              <line
-                x1={rulerRailAX}
-                y1={0}
-                x2={rulerRailAX}
-                y2={420}
-                stroke={RULER_ALT_COLORS[0]}
-                strokeWidth={3}
-                strokeOpacity={0.92}
-              />
-            ) : (
-              <line
-                x1={rulerRailAX}
-                y1={0}
-                x2={rulerRailAX}
-                y2={420}
-                stroke={RULER_ALT_COLORS[0]}
-                strokeWidth={1.2}
-                strokeOpacity={0.18}
-                strokeDasharray="3 4"
-              />
-            )}
+            {rulerLayout.railXs.map((rx, slotIdx) => {
+              const activeInSlot = matchingRulers.find((r) => {
+                if (r.id === options?.skipRulerId) return false;
+                if ((rulerLayout.slotByRulerId.get(r.id) ?? 0) !== slotIdx) return false;
+                const b = rulerSortBounds.get(r.id);
+                return b ? b.startKey <= sortKey && b.endKey >= sortKey : false;
+              });
 
-            {activeB ? (
-              <line
-                x1={rulerRailBX}
-                y1={0}
-                x2={rulerRailBX}
-                y2={420}
-                stroke={RULER_ALT_COLORS[1]}
-                strokeWidth={3}
-                strokeOpacity={0.92}
-              />
-            ) : (
-              <line
-                x1={rulerRailBX}
-                y1={0}
-                x2={rulerRailBX}
-                y2={420}
-                stroke={RULER_ALT_COLORS[1]}
-                strokeWidth={1.2}
-                strokeOpacity={0.18}
-                strokeDasharray="3 4"
-              />
-            )}
+              if (activeInSlot) {
+                const slotColor = rulerLayout.colorByRulerId.get(activeInSlot.id) ?? '#f59e0b';
+                return (
+                  <line
+                    key={`ruler-rail-${slotIdx}`}
+                    x1={rx}
+                    y1={0}
+                    x2={rx}
+                    y2={420}
+                    stroke={slotColor}
+                    strokeWidth={3}
+                    strokeOpacity={0.92}
+                  />
+                );
+              }
+
+              return (
+                <line
+                  key={`ruler-rail-${slotIdx}`}
+                  x1={rx}
+                  y1={0}
+                  x2={rx}
+                  y2={420}
+                  stroke="#f59e0b"
+                  strokeWidth={1.1}
+                  strokeOpacity={0.14}
+                  strokeDasharray="3 4"
+                />
+              );
+            })}
           </g>
         )}
 
@@ -480,7 +447,10 @@ export function GitTimeline({
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0">
             {visibleLanes.map((lane) => {
               const isTimeAxis = lane.id === 'TIME_AXIS';
-              const subCount = subLaneLayout.branchLayouts.get(lane.id)?.subLaneCount ?? 1;
+              const subCount =
+                lane.id === 'MAIN_RULERS'
+                  ? rulerLayout.laneCount
+                  : (subLaneLayout.branchLayouts.get(lane.id)?.subLaneCount ?? 1);
               const isCollapsedParentLane =
                 hasChildBranches(lane.id, branches) && Boolean(collapsedParents[lane.id]);
 
@@ -813,7 +783,9 @@ export function GitTimeline({
           if (item.rowType === 'RULER_COMMIT') {
             const r = item.rulerObj;
             const commitHash = getGitHash(r.id);
-            const rx = item.rulerIndex % 2 === 0 ? rulerRailAX : rulerRailBX;
+            const rSlot = rulerLayout.slotByRulerId.get(r.id) ?? 0;
+            const rx = rulerLayout.railXs[rSlot] ?? 16;
+            const rColor = rulerLayout.colorByRulerId.get(r.id) ?? item.rulerColor;
             const ongoingWarsAtAccession = matchingEvents.filter(
               (ev) => ev.startYear < r.startYear && ev.endYear > r.startYear,
             );
@@ -847,7 +819,7 @@ export function GitTimeline({
                           <path
                             d={`M ${timeSpineX} 16 C ${timeSpineX - 10} 18, ${rx} 20, ${rx} 36`}
                             fill="none"
-                            stroke={item.rulerColor}
+                            stroke={rColor}
                             strokeWidth={2.6}
                             strokeOpacity={0.95}
                           />
@@ -857,7 +829,7 @@ export function GitTimeline({
                           y1={item.startedBeforeWindow ? 0 : 34}
                           x2={rx}
                           y2={420}
-                          stroke={item.rulerColor}
+                          stroke={rColor}
                           strokeWidth={3}
                           strokeOpacity={0.95}
                         />
@@ -866,7 +838,7 @@ export function GitTimeline({
                           y1={28}
                           x2={svgWidth}
                           y2={28}
-                          stroke={item.rulerColor}
+                          stroke={rColor}
                           strokeWidth={1.4}
                           strokeDasharray="3 3"
                           strokeOpacity={0.7}
@@ -877,10 +849,10 @@ export function GitTimeline({
                           cy={34}
                           r={6.5}
                           fill="#050811"
-                          stroke={item.rulerColor}
+                          stroke={rColor}
                           strokeWidth={3}
                         />
-                        <circle cx={rx} cy={34} r={2.5} fill={item.rulerColor} />
+                        <circle cx={rx} cy={34} r={2.5} fill={rColor} />
                       </>
                     )}
                   </svg>
@@ -888,14 +860,22 @@ export function GitTimeline({
 
                 <div className="flex-1 min-w-0 overflow-hidden py-3.5 pr-4 sm:pr-6">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2 min-w-0">
                       <span
-                        className="inline-flex items-center gap-1.5 font-mono text-xs font-black tabular-nums"
-                        style={{ color: item.rulerColor }}
+                        className="inline-flex items-center gap-1.5 font-mono text-xs font-black tabular-nums shrink-0"
+                        style={{ color: rColor }}
                       >
                         <Crown className="w-3.5 h-3.5" />
                         {item.dateLabel}
                       </span>
+                      {r.center && (
+                        <span
+                          className="px-1.5 py-0.5 rounded bg-slate-950/90 border border-slate-700/80 text-[10px] font-mono font-semibold shrink-0"
+                          style={{ color: rColor }}
+                        >
+                          {r.center}
+                        </span>
+                      )}
                       <span aria-hidden="true" className="text-slate-600">
                         ·
                       </span>
@@ -957,7 +937,9 @@ export function GitTimeline({
 
           if (item.rowType === 'RULER_END') {
             const r = item.rulerObj;
-            const rx = item.rulerIndex % 2 === 0 ? rulerRailAX : rulerRailBX;
+            const rSlot = rulerLayout.slotByRulerId.get(r.id) ?? 0;
+            const rx = rulerLayout.railXs[rSlot] ?? 16;
+            const rColor = rulerLayout.colorByRulerId.get(r.id) ?? item.rulerColor;
             const mergeY = 22;
 
             return (
@@ -992,14 +974,14 @@ export function GitTimeline({
                           y1={0}
                           x2={rx}
                           y2={mergeY - 6}
-                          stroke={item.rulerColor}
+                          stroke={rColor}
                           strokeWidth={3}
                           strokeOpacity={0.9}
                         />
                         <path
                           d={`M ${rx} ${mergeY - 6} C ${rx} ${mergeY + 6}, ${timeSpineX - 10} ${mergeY + 2}, ${timeSpineX} ${mergeY + 6}`}
                           fill="none"
-                          stroke={item.rulerColor}
+                          stroke={rColor}
                           strokeWidth={2.4}
                           strokeOpacity={0.9}
                         />
@@ -1011,7 +993,7 @@ export function GitTimeline({
                           height={8}
                           rx={2}
                           fill="#050811"
-                          stroke={item.rulerColor}
+                          stroke={rColor}
                           strokeWidth={2.2}
                         />
                       </>
@@ -1022,11 +1004,19 @@ export function GitTimeline({
                 <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
                   <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 h-[36px] flex items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden font-mono">
-                      <GitMerge className="w-3.5 h-3.5 shrink-0" style={{ color: item.rulerColor }} />
-                      <span className="font-bold tabular-nums shrink-0" style={{ color: item.rulerColor }}>
+                      <GitMerge className="w-3.5 h-3.5 shrink-0" style={{ color: rColor }} />
+                      <span className="font-bold tabular-nums shrink-0" style={{ color: rColor }}>
                         {item.dateLabel}
                       </span>
-                      <span className="text-slate-400 shrink-0 hidden sm:inline">Слияние ветки правления:</span>
+                      {r.center && (
+                        <span
+                          className="hidden md:inline px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-[10px] shrink-0"
+                          style={{ color: rColor }}
+                        >
+                          {r.center}
+                        </span>
+                      )}
+                      <span className="text-slate-400 shrink-0 hidden sm:inline">Слияние ветки:</span>
                       <span className="font-sans font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
                         {r.shortRuler} ({r.reignPeriod})
                       </span>

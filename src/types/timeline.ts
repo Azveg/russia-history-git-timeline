@@ -50,6 +50,7 @@ export interface ResolvedMacroEra extends MacroEra {
 export interface RulerPeriod {
   id: string;
   eraId: string;
+  center?: string;
   ruler: string;
   shortRuler: string;
   reignPeriod: string;
@@ -315,6 +316,14 @@ export interface BranchSubLaneLayout {
   slotByEventId: Map<string, number>;
   branchLayouts: Map<string, BranchLaneLayout>;
   totalSvgWidth: number;
+}
+
+export interface RulerSubLaneLayout {
+  slotByRulerId: Map<string, number>;
+  colorByRulerId: Map<string, string>;
+  laneCount: number;
+  railXs: number[];
+  timeSpineX: number;
 }
 
 export interface DynamicWindowHotspot {

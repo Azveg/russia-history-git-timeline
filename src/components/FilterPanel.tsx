@@ -34,7 +34,7 @@ interface FilterPanelProps {
 export function FilterPanel({
   yearFrom,
   yearTo,
-  minYear = 1686,
+  minYear = 862,
   maxYear = 2000,
   onYearRangeChange,
   onRecordZoomStep,
@@ -60,6 +60,8 @@ export function FilterPanel({
 }: FilterPanelProps) {
   const centuryWindows = [
     { label: 'Весь период', from: minYear, to: maxYear },
+    { label: 'IX–XIII вв.', from: Math.max(minYear, 862), to: 1300 },
+    { label: 'XIV–XVII вв.', from: 1301, to: 1699 },
     { label: 'XVIII в.', from: 1700, to: 1800 },
     { label: 'XIX в.', from: 1801, to: 1900 },
     { label: 'XX в.', from: 1901, to: Math.min(2000, maxYear) },
@@ -150,7 +152,7 @@ export function FilterPanel({
                 <option value="ALL">Все правители ({rulers.length})</option>
                 {rulers.map((r) => (
                   <option key={r.id} value={r.id}>
-                    {r.reignPeriod} — {r.shortRuler}
+                    {r.reignPeriod} — {r.shortRuler}{r.center ? ` [${r.center}]` : ''}
                   </option>
                 ))}
               </select>

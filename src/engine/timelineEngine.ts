@@ -22,6 +22,7 @@ import type {
   RulerBoundaryTick,
   RulerPeriod,
   RulerSpanSegment,
+  RulerSubLaneLayout,
   RulersFile,
   StreamRow,
   SyncManifest,
@@ -41,7 +42,26 @@ export const TIME_AXIS_BRANCH: BranchDefinition = {
   alwaysTrunk: true,
 };
 
-export const RULER_ALT_COLORS = ['#f59e0b', '#fcd34d'] as const;
+export const RULER_ALT_COLORS = [
+  '#f59e0b',
+  '#fcd34d',
+  '#fb923c',
+  '#38bdf8',
+  '#a78bfa',
+  '#34d399',
+  '#f43f5e',
+] as const;
+
+export function resolveRulerColor(ruler: RulerPeriod, slot: number): string {
+  const centerLower = (ruler.center || '').toLowerCase();
+  if (centerLower.includes('тушино')) return '#f43f5e';
+  if (centerLower.includes('чернигов')) return '#f43f5e';
+  if (centerLower.includes('киев')) return '#fb923c';
+  if (centerLower === 'новгород') return '#38bdf8';
+  if (centerLower.includes('галич')) return '#a78bfa';
+  if (centerLower.includes('твер')) return '#34d399';
+  return slot % 2 === 0 ? '#f59e0b' : '#fcd34d';
+}
 
 const MONTHS_SHORT_RU = [
   'янв',
@@ -86,7 +106,7 @@ export function parseEventYears(periodStr: string, eventId?: string): { startYea
 
 export function parsePreciseDate(rawDate: string | undefined, fallbackYear: number, isEnd = false): PreciseDateParts {
   if (rawDate) {
-    const match = rawDate.trim().match(/^(\d{4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/);
+    const match = rawDate.trim().match(/^(\d{3,4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/);
     if (match) {
       const year = Number(match[1]);
       const month = match[2] ? Math.max(1, Math.min(12, Number(match[2]))) : undefined;
@@ -119,7 +139,7 @@ export function detectAxisResolution(yearFrom: number, yearTo: number): AxisReso
 }
 
 export function resolveMacroEra(era: MacroEra): ResolvedMacroEra {
-  const parsed = parseEventYears(era.period || '1686–2000');
+  const parsed = parseEventYears(era.period || '862–2000');
   const startYear = typeof era.startYear === 'number' ? era.startYear : parsed.startYear;
   const endYear = typeof era.endYear === 'number' ? era.endYear : parsed.endYear;
 
@@ -470,6 +490,7 @@ function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
   return {
     id,
     eraId: typeof raw.eraId === 'string' && raw.eraId.trim() ? raw.eraId.trim() : 'ERA_1',
+    center: typeof raw.center === 'string' && raw.center.trim() ? raw.center.trim() : undefined,
     ruler,
     shortRuler,
     reignPeriod:
@@ -528,7 +549,7 @@ export async function fetchTimelineRepository(): Promise<{
     project: rawManifest.project || 'Git-таймлайн',
     schemaVersion: rawManifest.schemaVersion || '2.0.0',
     timeAxis: rawManifest.timeAxis || {
-      minYear: 1686,
+      minYear: 862,
       maxYear: 2000,
       resolution: 'adaptive_year_month_day',
       overlapRule: 'inclusive_interval',
@@ -1227,7 +1248,7 @@ export function computeTimelineYearBounds(
   rulers: RulerPeriod[],
   enrichedEvents: EnrichedEvent[],
 ): { minYear: number; maxYear: number } {
-  const baseMin = typeof manifest?.timeAxis?.minYear === 'number' ? manifest.timeAxis.minYear : 1686;
+  const baseMin = typeof manifest?.timeAxis?.minYear === 'number' ? manifest.timeAxis.minYear : 862;
   const baseMax = typeof manifest?.timeAxis?.maxYear === 'number' ? manifest.timeAxis.maxYear : 2000;
 
   let minYear = baseMin;
@@ -1401,10 +1422,13 @@ export function buildUnifiedTimelineStream(
   }
 
   const rulerIndexById = new Map(rulers.map((r, i) => [r.id, i]));
+  const rulerStreamLayout = computeRulerSubLaneLayout(matchingRulers, true);
 
   matchingRulers.forEach((rulerObj) => {
     const rIdx = rulerIndexById.get(rulerObj.id) ?? 0;
-    const rulerColor = RULER_ALT_COLORS[rIdx % RULER_ALT_COLORS.length];
+    const rulerColor =
+      rulerStreamLayout.colorByRulerId.get(rulerObj.id) ??
+      RULER_ALT_COLORS[rIdx % RULER_ALT_COLORS.length];
     const startParts = parsePreciseDate(rulerObj.startDate, rulerObj.startYear, false);
     const endParts = parsePreciseDate(rulerObj.endDate, rulerObj.endYear, true);
 
@@ -1772,10 +1796,75 @@ export function computeBranchSubLaneLayout(
   };
 }
 
+export function computeRulerSubLaneLayout(
+  matchingRulers: RulerPeriod[],
+  hasRulersLane: boolean,
+): RulerSubLaneLayout {
+  const slotByRulerId = new Map<string, number>();
+  const colorByRulerId = new Map<string, string>();
+
+  if (!hasRulersLane) {
+    return {
+      slotByRulerId,
+      colorByRulerId,
+      laneCount: 0,
+      railXs: [],
+      timeSpineX: 22,
+    };
+  }
+
+  const ordered = matchingRulers
+    .map((r, idx) => ({
+      ruler: r,
+      idx,
+      startKey: parsePreciseDate(r.startDate, r.startYear, false).sortKey,
+      endKey: parsePreciseDate(r.endDate, r.endYear, true).sortKey,
+    }))
+    .sort((a, b) => {
+      if (a.startKey !== b.startKey) return a.startKey - b.startKey;
+      if (a.endKey !== b.endKey) return a.endKey - b.endKey;
+      return a.idx - b.idx;
+    });
+
+  const slotEndKeys: number[] = [];
+
+  ordered.forEach(({ ruler, startKey, endKey }) => {
+    let assigned = -1;
+    for (let s = 0; s < slotEndKeys.length; s++) {
+      if (slotEndKeys[s] < startKey) {
+        assigned = s;
+        break;
+      }
+    }
+    if (assigned === -1) {
+      assigned = slotEndKeys.length;
+      slotEndKeys.push(endKey);
+    } else {
+      slotEndKeys[assigned] = endKey;
+    }
+    slotByRulerId.set(ruler.id, assigned);
+    colorByRulerId.set(ruler.id, resolveRulerColor(ruler, assigned));
+  });
+
+  const laneCount = Math.max(2, slotEndKeys.length);
+  const leftPad = 16;
+  const railStep = 13;
+  const railXs = Array.from({ length: laneCount }, (_, idx) => leftPad + idx * railStep);
+  const timeSpineX = leftPad + (laneCount - 1) * railStep + 24;
+
+  return {
+    slotByRulerId,
+    colorByRulerId,
+    laneCount,
+    railXs,
+    timeSpineX,
+  };
+}
+
 export function computeDynamicWindowHotspots(
   enrichedEvents: EnrichedEvent[],
   activeBranches: Record<string, boolean>,
-  minYear = 1686,
+  minYear = 862,
   maxYear = 2000,
   maxHotspots = 4,
 ): DynamicWindowHotspot[] {

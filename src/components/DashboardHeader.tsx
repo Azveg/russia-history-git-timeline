@@ -16,7 +16,7 @@ export function DashboardHeader({
   matchingRulersCount,
   streamCount,
   crossLinksCount,
-  minYear = 1686,
+  minYear = 862,
   maxYear = 2000,
   showEndNodes,
   onToggleShowEndNodes,

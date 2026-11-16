@@ -10,7 +10,7 @@ const STRICT_MODE = process.argv.includes('--strict');
 
 const VALID_CATEGORIES = new Set(['rulers', 'military', 'economy', 'world', 'other']);
 const VALID_LINK_TYPES = new Set(['triggers', 'sync_context', 'enables', 'references', 'about_event', 'inspired_by']);
-const DATE_REGEX = /^\d{4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
+const DATE_REGEX = /^\d{3,4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{3,8}$/;
 const TAG_FORMAT_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -231,6 +231,10 @@ function main() {
           if (r[df] !== undefined && (typeof r[df] !== 'string' || !DATE_REGEX.test(r[df].trim()))) {
             addError(relFromPublic, `Правитель "${rId}": неверный формат ${df} ("${r[df]}"). Ожидается YYYY, YYYY-MM или YYYY-MM-DD.`);
           }
+        }
+
+        if (r.center !== undefined && (typeof r.center !== 'string' || !r.center.trim())) {
+          addError(relFromPublic, `Правитель "${rId}": поле "center" должно быть непустой строкой.`);
         }
       });
     }

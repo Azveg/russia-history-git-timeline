@@ -22,7 +22,7 @@ interface EraSummaryModalProps {
 export function EraSummaryModal({
   eraId,
   macroEras,
-  minYear = 1686,
+  minYear = 862,
   maxYear = 2000,
   rulers,
   enrichedEvents,

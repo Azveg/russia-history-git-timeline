@@ -65,8 +65,15 @@ export function SidebarLegend({
               }`}
             >
               <div className="min-w-0">
-                <div className="text-[11px] font-mono font-bold tabular-nums text-amber-300">
-                  {r.reignPeriod}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="text-[11px] font-mono font-bold tabular-nums text-amber-300">
+                    {r.reignPeriod}
+                  </span>
+                  {r.center && (
+                    <span className="text-[10px] font-mono text-slate-400 bg-slate-800/90 px-1.5 py-0.2 rounded truncate max-w-[130px]">
+                      {r.center}
+                    </span>
+                  )}
                 </div>
                 <div className="text-xs font-semibold group-hover:text-amber-300 truncate mt-0.5">
                   {r.ruler}
@@ -95,7 +102,7 @@ export function SidebarLegend({
           <div className="flex items-center gap-2">
             <span className="w-4 h-1 bg-amber-400 rounded shrink-0" />
             <span>
-              <strong className="text-slate-200">Сплошная рельса</strong> — длительность правления или процесса от ответвления до слияния.
+              <strong className="text-slate-200">Сплошная рельса / ветвление</strong> — длительность правления или процесса (при раздробленности параллельные князья идут по отдельным рельсам).
             </span>
           </div>
           <div className="flex items-center gap-2">

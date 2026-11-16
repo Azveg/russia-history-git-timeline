@@ -35,7 +35,7 @@ export function TopControlBar({
   onToggleCollapseParent,
   yearFrom,
   yearTo,
-  minYear = 1686,
+  minYear = 862,
   maxYear = 2000,
   onYearRangeChange,
   cardDensity,
