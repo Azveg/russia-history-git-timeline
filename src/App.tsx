@@ -6,7 +6,6 @@ import { FilterPanel } from './components/FilterPanel';
 import { GitTimeline } from './components/GitTimeline';
 import { OverlapMapSection } from './components/OverlapMapSection';
 import { PeriodSummaryModal } from './components/PeriodSummaryModal';
-import { SidebarLegend } from './components/SidebarLegend';
 import { TopControlBar } from './components/TopControlBar';
 import {
   buildUnifiedTimelineStream,
@@ -26,6 +25,7 @@ import {
   resolveEventBranch,
   resolveMacroEras,
 } from './engine/timelineEngine';
+import { preserveViewportScrollAnchor } from './utils/scrollIsolation';
 import type {
   BranchDefinition,
   BranchPresetId,
@@ -62,7 +62,6 @@ export default function App() {
   const [showEndNodes, setShowEndNodes] = useState(true);
   const [showOverlapMatrix] = useState(true);
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(false);
-  const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
@@ -552,102 +551,157 @@ export default function App() {
     }, 80);
   }
 
+  function handleJumpToRuler(rulerId: string) {
+    const target = rulers.find((r) => r.id === rulerId);
+    if (!target) return;
+
+    const adjustments: string[] = [];
+
+    if (activeBranches.MAIN_RULERS === false) {
+      setActiveBranches((prev) => ({ ...prev, MAIN_RULERS: true }));
+      adjustments.push('включена ветка правителей');
+    }
+
+    if (target.endYear < effectiveYearFrom || target.startYear > effectiveYearTo) {
+      const nextFrom = Math.min(effectiveYearFrom, target.startYear);
+      const nextTo = Math.max(effectiveYearTo, target.endYear);
+      handleYearRangeChange(nextFrom, nextTo);
+      adjustments.push(`окно расширено до ${nextFrom}–${nextTo}`);
+    }
+
+    if (selectedEra !== 'ALL' && target.eraId !== selectedEra) {
+      setSelectedEra('ALL');
+    }
+    if (selectedReign !== 'ALL' && selectedReign !== target.id) {
+      setSelectedReign('ALL');
+    }
+    if (searchQuery.trim() !== '') {
+      setSearchQuery('');
+    }
+    if (focusedEventId) {
+      setFocusedEventId(null);
+      adjustments.push('снят фокус связей');
+    }
+
+    setHighlightedJumpId(target.id);
+    if (adjustments.length > 0) {
+      showToast(`Переход к правлению: «${target.ruler}» (${adjustments.join(', ')}).`);
+    } else {
+      showToast(`Переход к правлению: «${target.ruler}» (${target.reignPeriod}).`);
+    }
+
+    window.setTimeout(() => {
+      const el = document.getElementById(target.id);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 80);
+  }
+
   function handleToggleBranch(branchId: string) {
     const target = branches.find((b) => b.id === branchId);
     if (!target) return;
 
-    const descendants = getDescendantBranchIds(branchId, branches);
-    if (descendants.length > 0) {
-      const currentlyActive = isBranchOrDescendantActive(target, branches, activeBranches);
-      const nextEnable = !currentlyActive;
-      setActiveBranches((prev) => {
-        const next = { ...prev };
-        if (!target.isGroup) {
-          next[target.id] = nextEnable;
-        }
-        descendants.forEach((dId) => {
-          const d = branches.find((item) => item.id === dId);
-          if (d && !d.isGroup) {
-            next[dId] = nextEnable;
+    preserveViewportScrollAnchor(() => {
+      const descendants = getDescendantBranchIds(branchId, branches);
+      if (descendants.length > 0) {
+        const currentlyActive = isBranchOrDescendantActive(target, branches, activeBranches);
+        const nextEnable = !currentlyActive;
+        setActiveBranches((prev) => {
+          const next = { ...prev };
+          if (!target.isGroup) {
+            next[target.id] = nextEnable;
           }
+          descendants.forEach((dId) => {
+            const d = branches.find((item) => item.id === dId);
+            if (d && !d.isGroup) {
+              next[dId] = nextEnable;
+            }
+          });
+          return next;
         });
-        return next;
-      });
-      return;
-    }
+        return;
+      }
 
-    setActiveBranches((prev) => ({
-      ...prev,
-      [branchId]: prev[branchId] === false,
-    }));
+      setActiveBranches((prev) => ({
+        ...prev,
+        [branchId]: prev[branchId] === false,
+      }));
+    });
   }
 
   function handleToggleBranchCategory(branchIds: string[], enable: boolean) {
-    setActiveBranches((prev) => {
-      const next = { ...prev };
-      branchIds.forEach((id) => {
-        const b = branches.find((item) => item.id === id);
-        if (b && !b.isGroup) {
-          next[id] = enable;
-        }
-        getDescendantBranchIds(id, branches).forEach((dId) => {
-          const d = branches.find((item) => item.id === dId);
-          if (d && !d.isGroup) {
-            next[dId] = enable;
+    preserveViewportScrollAnchor(() => {
+      setActiveBranches((prev) => {
+        const next = { ...prev };
+        branchIds.forEach((id) => {
+          const b = branches.find((item) => item.id === id);
+          if (b && !b.isGroup) {
+            next[id] = enable;
           }
+          getDescendantBranchIds(id, branches).forEach((dId) => {
+            const d = branches.find((item) => item.id === dId);
+            if (d && !d.isGroup) {
+              next[dId] = enable;
+            }
+          });
         });
+        return next;
       });
-      return next;
     });
   }
 
   function handleApplyBranchPreset(presetId: BranchPresetId) {
-    setActiveBranches((prev) => ({
-      ...prev,
-      ...computeBranchPresetMap(branches, presetId),
-    }));
+    preserveViewportScrollAnchor(() => {
+      setActiveBranches((prev) => ({
+        ...prev,
+        ...computeBranchPresetMap(branches, presetId),
+      }));
+    });
   }
 
   function handleIsolateBranch(branchId: string) {
-    const target = branches.find((b) => b.id === branchId);
-    const descendants = getDescendantBranchIds(branchId, branches);
-    const keepSet = new Set<string>([branchId, ...descendants]);
+    preserveViewportScrollAnchor(() => {
+      const target = branches.find((b) => b.id === branchId);
+      const descendants = getDescendantBranchIds(branchId, branches);
+      const keepSet = new Set<string>([branchId, ...descendants]);
 
-    const next: Record<string, boolean> = {};
-    branches.forEach((b) => {
-      if (!b.isGroup) {
-        next[b.id] = keepSet.has(b.id);
+      const next: Record<string, boolean> = {};
+      branches.forEach((b) => {
+        if (!b.isGroup) {
+          next[b.id] = keepSet.has(b.id);
+        }
+      });
+      setActiveBranches(next);
+
+      if (target?.parentBranchId) {
+        setCollapsedParents((prev) => {
+          const updated = { ...prev };
+          let cur: BranchDefinition | undefined = target;
+          while (cur?.parentBranchId) {
+            updated[cur.parentBranchId] = false;
+            cur = branches.find((item) => item.id === cur!.parentBranchId);
+          }
+          return updated;
+        });
       }
     });
-    setActiveBranches(next);
-
-    if (target?.parentBranchId) {
-      setCollapsedParents((prev) => {
-        const updated = { ...prev };
-        let cur: BranchDefinition | undefined = target;
-        while (cur?.parentBranchId) {
-          updated[cur.parentBranchId] = false;
-          cur = branches.find((item) => item.id === cur!.parentBranchId);
-        }
-        return updated;
-      });
-    }
   }
 
   function handleToggleCollapseParent(parentId: string) {
     if (!hasChildBranches(parentId, branches)) return;
-    setCollapsedParents((prev) => ({
-      ...prev,
-      [parentId]: !prev[parentId],
-    }));
+    preserveViewportScrollAnchor(() => {
+      setCollapsedParents((prev) => ({
+        ...prev,
+        [parentId]: !prev[parentId],
+      }));
+    });
   }
 
   function handleToggleFilters() {
-    setIsFiltersCollapsed((prev) => !prev);
-  }
-
-  function handleToggleLegend() {
-    setIsLegendCollapsed((prev) => !prev);
+    preserveViewportScrollAnchor(() => {
+      setIsFiltersCollapsed((prev) => !prev);
+    });
   }
 
   if (loading) {
@@ -655,10 +709,7 @@ export default function App() {
       <div className="min-h-screen bg-[#050811] text-slate-100 p-6 sm:p-10 max-w-7xl mx-auto space-y-6">
         <div className="h-12 bg-slate-900/80 border border-slate-800 rounded-xl animate-pulse" />
         <div className="h-44 bg-slate-900/60 border border-slate-800 rounded-2xl animate-pulse" />
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="hidden lg:block lg:col-span-3 h-96 bg-slate-900/50 border border-slate-800 rounded-2xl animate-pulse" />
-          <div className="lg:col-span-9 h-96 bg-slate-900/50 border border-slate-800 rounded-2xl animate-pulse" />
-        </div>
+        <div className="h-96 bg-slate-900/50 border border-slate-800 rounded-2xl animate-pulse" />
       </div>
     );
   }
@@ -681,8 +732,6 @@ export default function App() {
     );
   }
 
-  const hideSidebar = isLegendCollapsed;
-
   return (
     <div className="min-h-screen bg-[#050811] text-slate-100">
       {toastMessage && (
@@ -701,17 +750,23 @@ export default function App() {
         onApplyPreset={handleApplyBranchPreset}
         onIsolateBranch={handleIsolateBranch}
         onToggleCollapseParent={handleToggleCollapseParent}
+        rulers={rulers}
+        matchingEvents={matchingEvents}
+        selectedRulerId={selectedReign === 'ALL' ? '' : selectedReign}
+        onJumpToRuler={handleJumpToRuler}
+        onFilterByRuler={handleSelectReign}
+        onOpenRulerModal={handleOpenPeriodModal}
         yearFrom={yearFrom}
         yearTo={yearTo}
         minYear={timelineBounds.minYear}
         maxYear={timelineBounds.maxYear}
         onYearRangeChange={handleYearRangeChange}
         cardDensity={cardDensity}
-        onChangeCardDensity={setCardDensity}
+        onChangeCardDensity={(density) =>
+          preserveViewportScrollAnchor(() => setCardDensity(density))
+        }
         isFiltersCollapsed={isFiltersCollapsed}
-        isLegendCollapsed={isLegendCollapsed}
         onToggleFilters={handleToggleFilters}
-        onToggleLegend={handleToggleLegend}
       />
 
       <DashboardHeader
@@ -735,7 +790,6 @@ export default function App() {
             selectedRulerId={selectedReign === 'ALL' ? '' : selectedReign}
             searchQuery={searchQuery}
             onlySynced={onlyWithSyncLinks}
-            rulers={rulers}
             eras={manifest.macroEras}
             onChangeYearFrom={(y) => handleYearRangeChange(y, effectiveYearTo)}
             onChangeYearTo={(y) => handleYearRangeChange(effectiveYearFrom, y)}
@@ -744,7 +798,6 @@ export default function App() {
               setSelectedReign('ALL');
               handleYearRangeChange(fromVal, toVal);
             }}
-            onChangeRuler={handleSelectReign}
             onChangeSearch={setSearchQuery}
             onToggleOnlySynced={() => setOnlyWithSyncLinks((prev) => !prev)}
             onOpenEraModal={handleOpenEraModal}
@@ -791,51 +844,35 @@ export default function App() {
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {!hideSidebar && (
-              <SidebarLegend
-                rulers={rulers}
-                matchingEvents={matchingEvents}
-                visibleLanes={displayLanes}
-                yearFrom={effectiveYearFrom}
-                yearTo={effectiveYearTo}
-                onSelectYearRange={handleYearRangeChange}
-                onHideSidebar={() => setIsLegendCollapsed(true)}
-              />
-            )}
-
-            <div className={hideSidebar ? 'lg:col-span-12' : 'lg:col-span-9'}>
-              <GitTimeline
-                stream={stream}
-                matchingEvents={matchingEvents}
-                matchingRulers={matchingRulers}
-                rulers={rulers}
-                visibleLanes={displayLanes}
-                branches={branches}
-                activeBranches={activeBranches}
-                collapsedParents={collapsedParents}
-                manifest={manifest}
-                yearFrom={effectiveYearFrom}
-                minYear={timelineBounds.minYear}
-                axisResolution={axisResolution}
-                hoveredEventId={hoveredEventId}
-                cardDensity={cardDensity}
-                focusedEvent={focusedEvent}
-                focusScope={focusScope}
-                onChangeFocusScope={setFocusScope}
-                onToggleFocusEvent={handleToggleFocusEvent}
-                onToggleCollapseParent={handleToggleCollapseParent}
-                onExitFocusMode={() => setFocusedEventId(null)}
-                highlightedJumpId={highlightedJumpId}
-                onJumpToEvent={handleJumpToEvent}
-                onHoverEvent={setHoveredEventId}
-                onOpenCardModal={handleOpenCardModal}
-                onOpenPeriodModal={handleOpenPeriodModal}
-                onOpenEraModal={handleOpenEraModal}
-                onSelectYearRange={handleYearRangeChange}
-              />
-            </div>
-          </div>
+          <GitTimeline
+            stream={stream}
+            matchingEvents={matchingEvents}
+            matchingRulers={matchingRulers}
+            rulers={rulers}
+            visibleLanes={displayLanes}
+            branches={branches}
+            activeBranches={activeBranches}
+            collapsedParents={collapsedParents}
+            manifest={manifest}
+            yearFrom={effectiveYearFrom}
+            minYear={timelineBounds.minYear}
+            axisResolution={axisResolution}
+            hoveredEventId={hoveredEventId}
+            cardDensity={cardDensity}
+            focusedEvent={focusedEvent}
+            focusScope={focusScope}
+            onChangeFocusScope={setFocusScope}
+            onToggleFocusEvent={handleToggleFocusEvent}
+            onToggleCollapseParent={handleToggleCollapseParent}
+            onExitFocusMode={() => setFocusedEventId(null)}
+            highlightedJumpId={highlightedJumpId}
+            onJumpToEvent={handleJumpToEvent}
+            onHoverEvent={setHoveredEventId}
+            onOpenCardModal={handleOpenCardModal}
+            onOpenPeriodModal={handleOpenPeriodModal}
+            onOpenEraModal={handleOpenEraModal}
+            onSelectYearRange={handleYearRangeChange}
+          />
         )}
       </main>
 

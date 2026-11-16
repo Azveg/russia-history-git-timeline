@@ -53,7 +53,7 @@ export function useWheelScrollContainment(
 
 /**
  * Блокирует прокрутку фоновой страницы и ограничивает колесо мыши строго перечисленными
- * прокручиваемыми зонами внутри активного модального или выпадающего окна.
+ * прокручиваемыми зонами внутри активного модального или выпадающего окна без сброса позиции скролла документа.
  * Более вложенные зоны следует передавать в массиве раньше родительских.
  */
 export function useOverlayScrollLock(
@@ -66,18 +66,8 @@ export function useOverlayScrollLock(
   useEffect(() => {
     if (!isOpen) return;
 
-    const html = document.documentElement;
-    const body = document.body;
-    const prevHtmlOverflow = html.style.overflow;
-    const prevBodyOverflow = body.style.overflow;
-    const prevBodyPaddingRight = body.style.paddingRight;
-
-    const scrollbarWidth = window.innerWidth - html.clientWidth;
-    html.style.overflow = 'hidden';
-    body.style.overflow = 'hidden';
-    if (scrollbarWidth > 0) {
-      body.style.paddingRight = `${scrollbarWidth}px`;
-    }
+    const lockedScrollY = window.scrollY;
+    const lockedScrollX = window.scrollX;
 
     function handleWindowWheel(e: WheelEvent) {
       if (e.deltaY === 0) return;
@@ -87,12 +77,61 @@ export function useOverlayScrollLock(
       }
     }
 
+    function handleWindowScroll() {
+      if (Math.abs(window.scrollY - lockedScrollY) > 1) {
+        window.scrollTo(lockedScrollX, lockedScrollY);
+      }
+    }
+
     window.addEventListener('wheel', handleWindowWheel, { passive: false, capture: true });
+    window.addEventListener('scroll', handleWindowScroll, { passive: true });
     return () => {
-      html.style.overflow = prevHtmlOverflow;
-      body.style.overflow = prevBodyOverflow;
-      body.style.paddingRight = prevBodyPaddingRight;
       window.removeEventListener('wheel', handleWindowWheel, true);
+      window.removeEventListener('scroll', handleWindowScroll);
     };
   }, [isOpen]);
 }
+
+/**
+ * Сохраняет визуальную позицию пользователя на странице при клике по закрепленным фильтрам или переключении веток.
+ * Если пользователь прокрутил таймлайн вниз, находит опорный видимый элемент таймлайна (или сохраняет scrollY)
+ * и компенсирует смещение высоты документа после обновления состояния.
+ */
+export function preserveViewportScrollAnchor(action: () => void) {
+  const initialScrollY = window.scrollY;
+  const stickyOffset = 72;
+
+  let anchorEl: HTMLElement | null = null;
+  let anchorInitialTop = 0;
+
+  if (initialScrollY > 40) {
+    const candidates = document.querySelectorAll<HTMLElement>(
+      '[data-ruler-context], .commit-row[id]',
+    );
+    for (let i = 0; i < candidates.length; i += 1) {
+      const rect = candidates[i].getBoundingClientRect();
+      if (rect.bottom > stickyOffset + 8 && rect.top < window.innerHeight) {
+        anchorEl = candidates[i];
+        anchorInitialTop = rect.top;
+        break;
+      }
+    }
+  }
+
+  action();
+
+  if (initialScrollY <= 0) return;
+
+  window.requestAnimationFrame(() => {
+    if (anchorEl && document.body.contains(anchorEl)) {
+      const nextRect = anchorEl.getBoundingClientRect();
+      const delta = nextRect.top - anchorInitialTop;
+      if (Math.abs(delta) > 1) {
+        window.scrollBy({ top: delta, left: 0, behavior: 'instant' as ScrollBehavior });
+      }
+    } else if (Math.abs(window.scrollY - initialScrollY) > 2) {
+      window.scrollTo({ top: initialScrollY, left: 0, behavior: 'instant' as ScrollBehavior });
+    }
+  });
+}
+

@@ -1,4 +1,4 @@
-import { Crosshair, Crown, Flag, GitBranch, GitCommitHorizontal, GitMerge, Link2, X, Zap } from 'lucide-react';
+import { Crosshair, Crown, Flag, GitBranch, GitCommitHorizontal, GitMerge, HelpCircle, Link2, X, Zap } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   computeBranchSubLaneLayout,
@@ -104,6 +104,7 @@ export function GitTimeline({
   const streamContainerRef = useRef<HTMLDivElement | null>(null);
   const [activeStickyRulerId, setActiveStickyRulerId] = useState<string | null>(null);
   const [hoveredCardTooltip, setHoveredCardTooltip] = useState<HoveredCardTooltipState | null>(null);
+  const [isGraphHelpOpen, setIsGraphHelpOpen] = useState(false);
 
   const defaultStickyRulerId = useMemo(() => {
     if (matchingRulers.length > 0) return matchingRulers[0].id;
@@ -526,14 +527,69 @@ export function GitTimeline({
             })}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
+          <div className="relative flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
             <span className="hidden md:inline text-slate-300">
               Масштаб оси: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
             </span>
             <span aria-hidden="true" className="hidden md:inline text-slate-600">
               ·
             </span>
-            <span className="text-amber-300/90 font-semibold">Клик — паспорт события</span>
+            <span className="hidden sm:inline text-amber-300/90 font-semibold">Клик — паспорт события</span>
+            <button
+              type="button"
+              onClick={() => setIsGraphHelpOpen((prev) => !prev)}
+              className={`px-2 py-0.5 rounded-md border text-[10px] font-mono inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                isGraphHelpOpen
+                  ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-bold'
+                  : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-slate-500 hover:text-white'
+              }`}
+              title="Памятка: как читать линии, узлы и связи графа"
+            >
+              <HelpCircle className="w-3 h-3 text-amber-400" />
+              <span>Как читать граф</span>
+            </button>
+
+            {isGraphHelpOpen && (
+              <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl p-3.5 z-50 text-left space-y-2.5">
+                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                  <span className="text-xs font-bold text-white">Обозначения на хронографе</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsGraphHelpOpen(false)}
+                    className="text-slate-400 hover:text-white cursor-pointer"
+                    aria-label="Закрыть памятку"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                <div className="text-[11px] font-sans text-slate-300 space-y-2 leading-snug">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-4 h-1 bg-slate-300 rounded shrink-0" />
+                    <span>
+                      <strong className="text-white">Ось времени (центр)</strong> — главный хронологический ствол (годы → месяцы → дни).
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-4 h-1 bg-amber-400 rounded shrink-0" />
+                    <span>
+                      <strong className="text-white">Сплошная линия</strong> — длительность правления или исторического процесса (параллельные центры власти и одновременные войны идут по соседним нитям).
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-2.5 h-2.5 rotate-45 border-2 border-sky-400 bg-slate-950 shrink-0 ml-0.5 mr-1" />
+                    <span>
+                      <strong className="text-white">Ромб на ветке</strong> — точечное историческое событие, публикация книги, открытие или биография.
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-4 h-2 rounded border border-emerald-400 bg-emerald-950/60 shrink-0" />
+                    <span>
+                      <strong className="text-emerald-300">Изумрудный контур</strong> — причинно-следственная или культурная связь при наведении.
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -801,12 +857,18 @@ export function GitTimeline({
                 isMajorCampaignOrConflictNode(ev, branches),
             );
 
+            const isJumpedRuler = highlightedJumpId === r.id;
+
             return (
               <div
                 key={`ruler-${r.id}`}
                 id={r.id}
                 data-ruler-context={r.id}
-                className="relative flex items-stretch bg-slate-900/70 hover:bg-slate-900/95 transition-colors group"
+                className={`relative flex items-stretch transition-colors group ${
+                  isJumpedRuler
+                    ? 'bg-amber-500/20 ring-2 ring-inset ring-amber-400'
+                    : 'bg-slate-900/70 hover:bg-slate-900/95'
+                }`}
               >
                 <div
                   title={gutter.title}

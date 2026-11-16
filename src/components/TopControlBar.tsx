@@ -1,7 +1,14 @@
-import { Compass, PanelLeftClose, PanelLeftOpen, Rows3, Rows4, SlidersHorizontal } from 'lucide-react';
+import { Compass, Rows3, Rows4, SlidersHorizontal } from 'lucide-react';
 import { computeBranchPresetMap } from '../engine/timelineEngine';
-import type { BranchDefinition, BranchPresetId, CardDensity } from '../types/timeline';
+import type {
+  BranchDefinition,
+  BranchPresetId,
+  CardDensity,
+  EnrichedEvent,
+  RulerPeriod,
+} from '../types/timeline';
 import { BranchSelectorPopover } from './BranchSelectorPopover';
+import { RulerSelectorPopover } from './RulerSelectorPopover';
 
 interface TopControlBarProps {
   branchControls: Array<BranchDefinition & { count: number }>;
@@ -12,6 +19,12 @@ interface TopControlBarProps {
   onApplyPreset: (presetId: BranchPresetId) => void;
   onIsolateBranch: (branchId: string) => void;
   onToggleCollapseParent: (parentId: string) => void;
+  rulers: RulerPeriod[];
+  matchingEvents: EnrichedEvent[];
+  selectedRulerId: string;
+  onJumpToRuler: (rulerId: string) => void;
+  onFilterByRuler: (rulerId: string) => void;
+  onOpenRulerModal: (rulerId: string) => void;
   yearFrom: number;
   yearTo: number;
   minYear?: number;
@@ -20,9 +33,7 @@ interface TopControlBarProps {
   cardDensity: CardDensity;
   onChangeCardDensity: (density: CardDensity) => void;
   isFiltersCollapsed: boolean;
-  isLegendCollapsed: boolean;
   onToggleFilters: () => void;
-  onToggleLegend: () => void;
 }
 
 const QUICK_PRESETS: Array<{ id: BranchPresetId; label: string; title: string }> = [
@@ -57,6 +68,12 @@ export function TopControlBar({
   onApplyPreset,
   onIsolateBranch,
   onToggleCollapseParent,
+  rulers,
+  matchingEvents,
+  selectedRulerId,
+  onJumpToRuler,
+  onFilterByRuler,
+  onOpenRulerModal,
   yearFrom,
   yearTo,
   minYear = 862,
@@ -65,9 +82,7 @@ export function TopControlBar({
   cardDensity,
   onChangeCardDensity,
   isFiltersCollapsed,
-  isLegendCollapsed,
   onToggleFilters,
-  onToggleLegend,
 }: TopControlBarProps) {
   const leafBranches = branchControls.filter((b) => !b.isGroup);
 
@@ -90,6 +105,19 @@ export function TopControlBar({
             onApplyPreset={onApplyPreset}
             onIsolateBranch={onIsolateBranch}
             onToggleCollapseParent={onToggleCollapseParent}
+          />
+
+          <RulerSelectorPopover
+            rulers={rulers}
+            matchingEvents={matchingEvents}
+            selectedRulerId={selectedRulerId}
+            yearFrom={yearFrom}
+            yearTo={yearTo}
+            minYear={minYear}
+            maxYear={maxYear}
+            onJumpToRuler={onJumpToRuler}
+            onFilterByRuler={onFilterByRuler}
+            onOpenRulerModal={onOpenRulerModal}
           />
 
           <div
@@ -188,22 +216,9 @@ export function TopControlBar({
             <SlidersHorizontal className="w-3.5 h-3.5 text-slate-400" />
             <span>{isFiltersCollapsed ? '+ Фильтры' : '− Фильтры'}</span>
           </button>
-
-          <button
-            type="button"
-            onClick={onToggleLegend}
-            className="hidden lg:flex px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 text-[11px] font-mono font-semibold items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-            title="Скрыть или показать боковой навигатор по правлениям"
-          >
-            {isLegendCollapsed ? (
-              <PanelLeftOpen className="w-3.5 h-3.5 text-slate-400" />
-            ) : (
-              <PanelLeftClose className="w-3.5 h-3.5 text-slate-400" />
-            )}
-            <span>{isLegendCollapsed ? '+ Правители' : '− Правители'}</span>
-          </button>
         </div>
       </div>
     </div>
   );
 }
+

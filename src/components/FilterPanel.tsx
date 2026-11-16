@@ -1,7 +1,7 @@
-import { CalendarRange, Crown, Link2, RotateCcw, Search, Sparkles, X } from 'lucide-react';
+import { CalendarRange, Link2, RotateCcw, Search, Sparkles, X } from 'lucide-react';
 import { useMemo } from 'react';
 import { resolveMacroEras } from '../engine/timelineEngine';
-import type { MacroEra, RulerPeriod } from '../types/timeline';
+import type { MacroEra } from '../types/timeline';
 
 interface FilterPanelProps {
   yearFrom: number;
@@ -11,12 +11,10 @@ interface FilterPanelProps {
   selectedRulerId: string;
   searchQuery: string;
   onlySynced: boolean;
-  rulers: RulerPeriod[];
   eras: MacroEra[];
   onChangeYearFrom: (year: number) => void;
   onChangeYearTo: (year: number) => void;
   onSelectYearRange: (from: number, to: number) => void;
-  onChangeRuler: (rulerId: string) => void;
   onChangeSearch: (query: string) => void;
   onToggleOnlySynced: () => void;
   onOpenEraModal: (eraId: string) => void;
@@ -44,10 +42,8 @@ export function FilterPanel({
   selectedRulerId,
   searchQuery,
   onlySynced,
-  rulers,
   eras,
   onSelectYearRange,
-  onChangeRuler,
   onChangeSearch,
   onToggleOnlySynced,
   onOpenEraModal,
@@ -61,9 +57,9 @@ export function FilterPanel({
       aria-label="Консоль поиска, эпох и исторических срезов"
       className="rounded-2xl bg-slate-900/65 border border-slate-800/80 p-3.5 sm:p-4 space-y-3"
     >
-      {/* Первая строка: Поиск + Выбор правителя + Фильтр причинно-следственных связей + Сброс */}
+      {/* Первая строка: Поиск + Фильтр причинно-следственных связей + Сброс */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center">
-        <div className="lg:col-span-5 relative">
+        <div className="lg:col-span-9 relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
@@ -82,26 +78,6 @@ export function FilterPanel({
               <X className="w-4 h-4" />
             </button>
           )}
-        </div>
-
-        <div className="lg:col-span-4 flex items-center gap-2">
-          <div className="relative flex-1 min-w-0">
-            <Crown className="w-3.5 h-3.5 text-amber-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <select
-              aria-label="Фильтр по периоду правления"
-              value={selectedRulerId}
-              onChange={(e) => onChangeRuler(e.target.value)}
-              className="w-full rounded-xl bg-slate-950/90 border border-slate-700/80 pl-8 pr-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400 transition-colors truncate cursor-pointer"
-            >
-              <option value="">Все правители ({minYear}–{maxYear}, {rulers.length} узлов)</option>
-              {rulers.map((r) => (
-                <option key={r.id} value={r.id}>
-                  {r.reignPeriod} — {r.ruler}
-                  {r.center ? ` [${r.center}]` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
         </div>
 
         <div className="lg:col-span-3 flex items-center justify-end gap-2">

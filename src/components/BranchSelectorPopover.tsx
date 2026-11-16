@@ -5,7 +5,7 @@ import {
   groupBranchesByCategory,
   isBranchOrDescendantActive,
 } from '../engine/timelineEngine';
-import { useOverlayScrollLock } from '../utils/scrollIsolation';
+import { useWheelScrollContainment } from '../utils/scrollIsolation';
 import type {
   BranchCategoryKey,
   BranchDefinition,
@@ -42,7 +42,7 @@ export function BranchSelectorPopover({
   const listRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  useOverlayScrollLock(isOpen, [listRef]);
+  useWheelScrollContainment(listRef, isOpen);
 
   const leafControls = useMemo(
     () => branchControls.filter((b) => !b.isGroup),
@@ -93,7 +93,7 @@ export function BranchSelectorPopover({
   useEffect(() => {
     if (!isOpen) return;
     const timer = window.setTimeout(() => {
-      searchInputRef.current?.focus();
+      searchInputRef.current?.focus({ preventScroll: true });
     }, 30);
 
     function handlePointerDown(e: PointerEvent) {
@@ -197,8 +197,8 @@ export function BranchSelectorPopover({
               <div className="flex items-center gap-1.5 min-w-0">
                 <span className="text-xs font-semibold text-white truncate">{b.label}</span>
               </div>
-              <div className="text-[10px] font-mono text-slate-400 truncate">
-                {b.gitName}
+              <div className="text-[10px] text-slate-400 truncate">
+                {b.description}
                 {depth > 0 && (
                   <span className="text-slate-600 ml-1.5">· подветка</span>
                 )}
@@ -359,8 +359,8 @@ export function BranchSelectorPopover({
           <div className="px-3 py-2 border-b border-slate-800/80 bg-slate-900/50 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2.5 h-2.5 rounded-full bg-slate-300 shrink-0" />
-              <span className="font-bold text-slate-200">time/main</span>
-              <span className="text-slate-400 truncate hidden sm:inline">Центральная ось</span>
+              <span className="font-bold text-slate-200">Ось времени</span>
+              <span className="text-slate-400 truncate hidden sm:inline">Центральная шкала правлений</span>
               <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 shrink-0">
                 <Lock className="w-3 h-3 text-slate-500" />
                 всегда
