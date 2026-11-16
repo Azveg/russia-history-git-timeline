@@ -266,8 +266,8 @@ export function FilterPanel({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button
               type="button"
               onClick={() => onSelectEra('ALL')}
@@ -277,35 +277,43 @@ export function FilterPanel({
                   : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
               }`}
             >
-              Все периоды (1686–2000)
+              Все периоды · 1686–2000
             </button>
             {resolveMacroEras(macroEras).map((era) => {
               const active = selectedEra === era.id;
+              const count = eraCounts[era.id] || 0;
+              const isOutsideLoadedData = count === 0 && era.endYear < 1686;
               return (
                 <div
                   key={era.id}
                   className={`inline-flex items-stretch rounded-lg border shrink-0 overflow-hidden transition-colors ${
                     active
                       ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
-                      : 'bg-slate-900 text-slate-300 border-slate-800'
+                      : isOutsideLoadedData
+                        ? 'bg-slate-900/50 text-slate-400 border-slate-800/70'
+                        : 'bg-slate-900 text-slate-300 border-slate-800'
                   }`}
                 >
                   <button
                     type="button"
-                    onClick={() => onSelectEra(active ? 'ALL' : era.id)}
-                    title={era.title}
-                    className={`px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
+                    onClick={() => (isOutsideLoadedData ? onOpenEraModal(era.id) : onSelectEra(active ? 'ALL' : era.id))}
+                    title={
+                      isOutsideLoadedData
+                        ? `${era.title} · ${era.period} (модули до 1686 г. пока не подключены — откроется карточка периода)`
+                        : `${era.title} · ${era.period}`
+                    }
+                    className={`px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
                       active ? 'hover:bg-amber-400/40' : 'hover:bg-slate-800'
                     }`}
                   >
-                    <span className="font-bold max-w-[200px] truncate">{era.displayShortTitle}</span>
-                    <span className="text-[11px] opacity-80 tabular-nums">({era.period})</span>
+                    <span className="font-bold max-w-[220px] truncate">{era.displayShortTitle}</span>
+                    <span className="text-[11px] opacity-65 tabular-nums">{era.period}</span>
                     <span
                       className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums ${
-                        active ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800 text-slate-400'
+                        active ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800/90 text-slate-400'
                       }`}
                     >
-                      {eraCounts[era.id] || 0}
+                      {count}
                     </span>
                   </button>
                   <button
@@ -329,7 +337,7 @@ export function FilterPanel({
           <button
             type="button"
             onClick={onToggleOnlyWithSyncLinks}
-            className={`text-[11px] font-mono px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors ${
+            className={`text-[11px] font-mono px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 self-start transition-colors ${
               onlyWithSyncLinks
                 ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-bold'
                 : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300'

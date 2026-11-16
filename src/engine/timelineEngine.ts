@@ -146,15 +146,46 @@ export function resolveMacroEras(macroEras: MacroEra[]): ResolvedMacroEra[] {
   return macroEras.map(resolveMacroEra).sort((a, b) => a.startYear - b.startYear);
 }
 
-export function findMacroEraForYear(year: number, eras: ResolvedMacroEra[]): ResolvedMacroEra | undefined {
+export function findMacroEraForYear(
+  year: number,
+  eras: ResolvedMacroEra[],
+  month?: number,
+): ResolvedMacroEra | undefined {
   if (eras.length === 0) return undefined;
-  const exact = eras.find((e) => year >= e.startYear && year <= e.endYear);
-  if (exact) return exact;
+  const matches = eras.filter((e) => year >= e.startYear && year <= e.endYear);
+  if (matches.length === 1) return matches[0];
+  if (matches.length > 1) {
+    if (month !== undefined && month <= 6) {
+      return matches[0];
+    }
+    if (year === 1917 && month !== undefined && month <= 9) {
+      return matches[0];
+    }
+    return matches[matches.length - 1];
+  }
   if (year < eras[0].startYear) return eras[0];
   for (let i = eras.length - 1; i >= 0; i--) {
     if (year >= eras[i].startYear) return eras[i];
   }
   return eras[eras.length - 1];
+}
+
+export function doesIntervalBelongToEra(
+  itemStart: number,
+  itemEnd: number,
+  itemEraId: string,
+  era: ResolvedMacroEra,
+): boolean {
+  if (itemEnd > itemStart) {
+    return Math.min(itemEnd, era.endYear) - Math.max(itemStart, era.startYear) > 0;
+  }
+  if (itemStart > era.startYear && itemStart < era.endYear) {
+    return true;
+  }
+  if (itemStart === era.startYear || itemStart === era.endYear) {
+    return itemEraId === era.id;
+  }
+  return false;
 }
 
 export function formatDateForResolution(parts: PreciseDateParts, resolution: AxisResolution): string {
@@ -300,7 +331,7 @@ export function getEnrichedEvents(
         overlappingRulers.push(rulers[0]);
       }
 
-      const eraObj = findMacroEraForYear(startYear, resolvedEras);
+      const eraObj = findMacroEraForYear(startYear, resolvedEras, startPrecision.month);
 
       list.push({
         ...ev,
@@ -487,10 +518,9 @@ export function buildUnifiedTimelineStream(
       if (!isEventBranchActive(ev, filters.activeBranches)) return false;
       if (!intersectsTimeWindow(ev.startYear, ev.endYear, filters.yearFrom, filters.yearTo)) return false;
       if (selectedEraObj) {
-        const inEra =
-          ev.eraId === selectedEraObj.id ||
-          intersectsTimeWindow(ev.startYear, ev.endYear, selectedEraObj.startYear, selectedEraObj.endYear);
-        if (!inEra) return false;
+        if (!doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, selectedEraObj)) {
+          return false;
+        }
       }
       if (filters.onlyWithSyncLinks && ev.explicitLinks.length === 0) return false;
       if (filters.selectedReign !== 'ALL') {
@@ -513,10 +543,9 @@ export function buildUnifiedTimelineStream(
       if (!isRulersFileMounted || filters.activeBranches.MAIN_RULERS === false) return false;
       if (!intersectsTimeWindow(r.startYear, r.endYear, filters.yearFrom, filters.yearTo)) return false;
       if (selectedEraObj) {
-        const inEra =
-          r.eraId === selectedEraObj.id ||
-          intersectsTimeWindow(r.startYear, r.endYear, selectedEraObj.startYear, selectedEraObj.endYear);
-        if (!inEra) return false;
+        if (!doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, selectedEraObj)) {
+          return false;
+        }
       }
       if (filters.selectedReign !== 'ALL' && r.id !== filters.selectedReign) return false;
       if (!q && !filters.onlyWithSyncLinks) return true;
@@ -530,19 +559,17 @@ export function buildUnifiedTimelineStream(
   const stream: StreamRow[] = [];
 
   resolvedEras.forEach((era) => {
-    const y = era.startYear;
     const hasItemsInEra =
-      matchingEvents.some(
-        (e) => e.eraId === era.id || intersectsTimeWindow(e.startYear, e.endYear, era.startYear, era.endYear),
-      ) ||
-      matchingRulers.some(
-        (r) => r.eraId === era.id || intersectsTimeWindow(r.startYear, r.endYear, era.startYear, era.endYear),
-      );
-    if (hasItemsInEra && y >= effectiveYearFrom && y <= effectiveYearTo) {
+      matchingEvents.some((e) => doesIntervalBelongToEra(e.startYear, e.endYear, e.eraId, era)) ||
+      matchingRulers.some((r) => doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, era));
+    if (!hasItemsInEra) return;
+
+    const milestoneYear = Math.max(effectiveYearFrom, era.startYear);
+    if (milestoneYear >= effectiveYearFrom && milestoneYear <= effectiveYearTo && era.endYear >= effectiveYearFrom) {
       stream.push({
         rowType: 'ERA_START',
-        year: y,
-        sortKey: y * 10000 + 100,
+        year: milestoneYear,
+        sortKey: milestoneYear * 10000 + 50,
         priority: 1,
         era,
       });
@@ -1152,13 +1179,12 @@ export function getMacroEraSummaryData(
   enrichedEvents: EnrichedEvent[],
   branches: BranchDefinition[],
 ): MacroEraSummaryData {
-  const events = enrichedEvents.filter(
-    (ev) =>
-      ev.eraId === era.id || intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
+  const events = enrichedEvents.filter((ev) =>
+    doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, era),
   );
 
-  const eraRulersRaw = rulers.filter(
-    (r) => r.eraId === era.id || intersectsTimeWindow(r.startYear, r.endYear, era.startYear, era.endYear),
+  const eraRulersRaw = rulers.filter((r) =>
+    doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, era),
   );
 
   const rulersWithCounts = eraRulersRaw.map((ruler) => ({

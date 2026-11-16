@@ -160,7 +160,9 @@ export function GitTimeline({
   const activeStickyEra: ResolvedMacroEra | null = useMemo(() => {
     if (!activeStickyRuler) return null;
     const byId = resolvedEras.find((e) => e.id === activeStickyRuler.eraId);
-    return byId ?? findMacroEraForYear(activeStickyRuler.startYear, resolvedEras) ?? null;
+    if (byId) return byId;
+    const midYear = Math.round((activeStickyRuler.startYear + activeStickyRuler.endYear) / 2);
+    return findMacroEraForYear(midYear, resolvedEras) ?? null;
   }, [activeStickyRuler, resolvedEras]);
 
   const activeStickyRulerEventCount = useMemo(() => {

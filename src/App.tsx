@@ -12,6 +12,7 @@ import {
   buildUnifiedTimelineStream,
   computeBranchPresetMap,
   computeDynamicWindowHotspots,
+  doesIntervalBelongToEra,
   extractBranchesFromStore,
   extractRulersFromStore,
   fetchTimelineRepository,
@@ -238,7 +239,7 @@ export default function App() {
       counts[era.id] = enrichedEvents.filter(
         (ev) =>
           isEventBranchActive(ev, activeBranches) &&
-          (ev.eraId === era.id || intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear)),
+          doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, era),
       ).length;
     });
     return counts;
@@ -294,15 +295,21 @@ export default function App() {
   }
 
   function handleSelectEra(eraId: string) {
-    setSelectedEra(eraId);
-    setSelectedReign('ALL');
     if (eraId === 'ALL') {
+      setSelectedEra('ALL');
+      setSelectedReign('ALL');
       handleYearRangeChange(1686, 2000);
       return;
     }
     const targetEra = resolvedMacroEras.find((e) => e.id === eraId);
+    if (targetEra && targetEra.endYear < 1686) {
+      setActiveEraModalId(targetEra.id);
+      return;
+    }
+    setSelectedEra(eraId);
+    setSelectedReign('ALL');
     if (targetEra) {
-      handleYearRangeChange(targetEra.startYear, targetEra.endYear);
+      handleYearRangeChange(Math.max(1686, targetEra.startYear), Math.min(2000, targetEra.endYear));
     } else {
       handleYearRangeChange(1686, 2000);
     }

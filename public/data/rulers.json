@@ -18,7 +18,7 @@
   "rulers": [
     {
       "id": "ruler-peter-1",
-      "eraId": "ERA_1",
+      "eraId": "ERA_5",
       "ruler": "Петр I (и регентство Софьи в 1682–1689)",
       "shortRuler": "Петр I",
       "reignPeriod": "1686–1725",
@@ -31,7 +31,7 @@
     },
     {
       "id": "ruler-catherine1-peter2",
-      "eraId": "ERA_1",
+      "eraId": "ERA_6",
       "ruler": "Екатерина I и Петр II",
       "shortRuler": "Екатерина I / Петр II",
       "reignPeriod": "1725–1730",
@@ -44,7 +44,7 @@
     },
     {
       "id": "ruler-anna",
-      "eraId": "ERA_1",
+      "eraId": "ERA_6",
       "ruler": "Анна Иоанновна (и Иван VI)",
       "shortRuler": "Анна Иоанновна",
       "reignPeriod": "1730–1741",
@@ -57,7 +57,7 @@
     },
     {
       "id": "ruler-elizabeth",
-      "eraId": "ERA_1",
+      "eraId": "ERA_6",
       "ruler": "Елизавета Петровна",
       "shortRuler": "Елизавета Петровна",
       "reignPeriod": "1741–1761",
@@ -70,7 +70,7 @@
     },
     {
       "id": "ruler-peter-3",
-      "eraId": "ERA_1",
+      "eraId": "ERA_6",
       "ruler": "Петр III",
       "shortRuler": "Петр III",
       "reignPeriod": "1761–1762",
@@ -83,7 +83,7 @@
     },
     {
       "id": "ruler-catherine-2",
-      "eraId": "ERA_1",
+      "eraId": "ERA_7",
       "ruler": "Екатерина II",
       "shortRuler": "Екатерина II",
       "reignPeriod": "1762–1796",
@@ -96,7 +96,7 @@
     },
     {
       "id": "ruler-paul-1",
-      "eraId": "ERA_1",
+      "eraId": "ERA_7",
       "ruler": "Павел I",
       "shortRuler": "Павел I",
       "reignPeriod": "1796–1801",
@@ -109,7 +109,7 @@
     },
     {
       "id": "ruler-alexander-1",
-      "eraId": "ERA_2",
+      "eraId": "ERA_7",
       "ruler": "Александр I",
       "shortRuler": "Александр I",
       "reignPeriod": "1801–1825",
@@ -122,7 +122,7 @@
     },
     {
       "id": "ruler-nicholas-1",
-      "eraId": "ERA_2",
+      "eraId": "ERA_7",
       "ruler": "Николай I",
       "shortRuler": "Николай I",
       "reignPeriod": "1825–1855",
@@ -135,7 +135,7 @@
     },
     {
       "id": "ruler-alexander-2",
-      "eraId": "ERA_2",
+      "eraId": "ERA_8",
       "ruler": "Александр II",
       "shortRuler": "Александр II",
       "reignPeriod": "1855–1881",
@@ -148,7 +148,7 @@
     },
     {
       "id": "ruler-alexander-3",
-      "eraId": "ERA_2",
+      "eraId": "ERA_8",
       "ruler": "Александр III",
       "shortRuler": "Александр III",
       "reignPeriod": "1881–1894",
@@ -161,7 +161,7 @@
     },
     {
       "id": "ruler-nicholas-2",
-      "eraId": "ERA_2",
+      "eraId": "ERA_9",
       "ruler": "Николай II",
       "shortRuler": "Николай II",
       "reignPeriod": "1894–1917",
@@ -174,7 +174,7 @@
     },
     {
       "id": "ruler-lenin",
-      "eraId": "ERA_3",
+      "eraId": "ERA_10",
       "ruler": "Владимир Ленин (Совнарком / РКП(б))",
       "shortRuler": "В. Ленин",
       "reignPeriod": "1917–1924",
@@ -187,7 +187,7 @@
     },
     {
       "id": "ruler-stalin",
-      "eraId": "ERA_3",
+      "eraId": "ERA_10",
       "ruler": "Иосиф Сталин",
       "shortRuler": "И. Сталин",
       "reignPeriod": "1924–1953",
@@ -200,7 +200,7 @@
     },
     {
       "id": "ruler-khrushchev",
-      "eraId": "ERA_3",
+      "eraId": "ERA_10",
       "ruler": "Никита Хрущев",
       "shortRuler": "Н. Хрущев",
       "reignPeriod": "1953–1964",
@@ -213,7 +213,7 @@
     },
     {
       "id": "ruler-brezhnev",
-      "eraId": "ERA_3",
+      "eraId": "ERA_10",
       "ruler": "Леонид Брежнев (и Ю. Андропов, К. Черненко)",
       "shortRuler": "Л. Брежнев / Андропов / Черненко",
       "reignPeriod": "1964–1985",
@@ -226,7 +226,7 @@
     },
     {
       "id": "ruler-gorbachev",
-      "eraId": "ERA_3",
+      "eraId": "ERA_10",
       "ruler": "Михаил Горбачев",
       "shortRuler": "М. Горбачев",
       "reignPeriod": "1985–1991",
@@ -239,7 +239,7 @@
     },
     {
       "id": "ruler-yeltsin",
-      "eraId": "ERA_4",
+      "eraId": "ERA_11",
       "ruler": "Борис Ельцин",
       "shortRuler": "Б. Ельцин",
       "reignPeriod": "1991–1999",

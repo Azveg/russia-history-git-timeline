@@ -107,17 +107,23 @@ export function EraSummaryModal({
               </span>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                onFilterByEraOnTimeline(eraObj.id);
-                onClose();
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 text-xs font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-            >
-              <CalendarRange className="w-3.5 h-3.5" />
-              <span>Показать период на графике</span>
-            </button>
+            {eraObj.endYear >= 1686 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  onFilterByEraOnTimeline(eraObj.id);
+                  onClose();
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 text-xs font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+              >
+                <CalendarRange className="w-3.5 h-3.5" />
+                <span>Показать период на графике</span>
+              </button>
+            ) : (
+              <span className="text-[11px] font-mono text-slate-400 whitespace-nowrap shrink-0">
+                График сейчас охватывает 1686–2000 гг.
+              </span>
+            )}
           </div>
 
           <h2 className="text-xl sm:text-2xl font-extrabold text-white [text-wrap:balance]">
@@ -158,7 +164,9 @@ export function EraSummaryModal({
 
             {summary.rulers.length === 0 ? (
               <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400">
-                В этом макро-периоде не найдено пересекающихся правлений.
+                {eraObj.endYear < 1686
+                  ? 'Данные о правителях этого периода появятся после подключения модулей до 1686 г.'
+                  : 'В этом макро-периоде не найдено пересекающихся правлений.'}
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
@@ -292,7 +300,9 @@ export function EraSummaryModal({
             {filteredEvents.length === 0 ? (
               <div className="p-6 rounded-xl bg-slate-950/70 border border-slate-800 text-center space-y-2">
                 <p className="text-xs text-slate-400">
-                  По выбранному сочетанию ветки и типа событий в этом периоде нет.
+                  {summary.events.length === 0 && eraObj.endYear < 1686
+                    ? 'События для этого периода ещё не подключены — текущая база данных начинается с 1686 года.'
+                    : 'По выбранному сочетанию ветки и типа событий в этом периоде нет.'}
                 </p>
                 {hasLocalFilter && (
                   <button
