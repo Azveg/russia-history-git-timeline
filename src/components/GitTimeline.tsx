@@ -1,10 +1,14 @@
-import { ArrowLeft, ArrowRight, Crosshair, Crown, Flag, GitCommitHorizontal, GitMerge, Link2, X, Zap } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Crosshair, Crown, Flag, GitBranch, GitCommitHorizontal, GitMerge, Link2, X, Zap } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   computeBranchSubLaneLayout,
   findMacroEraForYear,
+  formatAxisGutterDate,
+  getDirectChildBranches,
   getEventRulerSegments,
   getGitHash,
+  hasChildBranches,
+  isBranchOrDescendantActive,
   RULER_ALT_COLORS,
   resolveEventBranch,
   resolveMacroEra,
@@ -29,8 +33,11 @@ interface GitTimelineProps {
   rulers: RulerPeriod[];
   visibleLanes: BranchDefinition[];
   branches: BranchDefinition[];
+  activeBranches: Record<string, boolean>;
+  collapsedParents: Record<string, boolean>;
   manifest: SyncManifest;
   yearFrom: number;
+  minYear?: number;
   axisResolution: AxisResolution;
   hoveredEventId: string | null;
   cardDensity: CardDensity;
@@ -38,6 +45,7 @@ interface GitTimelineProps {
   focusScope: FocusScope;
   onChangeFocusScope: (scope: FocusScope) => void;
   onToggleFocusEvent: (eventId: string) => void;
+  onToggleCollapseParent: (parentId: string) => void;
   onExitFocusMode: () => void;
   highlightedJumpId: string | null;
   onJumpToEvent: (targetEventId: string) => void;
@@ -68,8 +76,11 @@ export function GitTimeline({
   rulers,
   visibleLanes,
   branches,
+  activeBranches,
+  collapsedParents,
   manifest,
   yearFrom,
+  minYear = 1686,
   axisResolution,
   hoveredEventId,
   cardDensity,
@@ -77,6 +88,7 @@ export function GitTimeline({
   focusScope,
   onChangeFocusScope,
   onToggleFocusEvent,
+  onToggleCollapseParent,
   onExitFocusMode,
   highlightedJumpId,
   onJumpToEvent,
@@ -189,8 +201,9 @@ export function GitTimeline({
         branches,
         axisResolution,
         timeSpineX,
+        { collapsedParents },
       ),
-    [matchingEvents, thematicLanes, branches, axisResolution, timeSpineX],
+    [matchingEvents, thematicLanes, branches, axisResolution, timeSpineX, collapsedParents],
   );
 
   const svgWidth = subLaneLayout.totalSvgWidth;
@@ -215,13 +228,25 @@ export function GitTimeline({
   }, [stream]);
 
   const getEventX = (ev: EnrichedEvent, isAtomic = false) => {
-    const branchObj = resolveEventBranch(ev, branches);
+    const branchObj = resolveEventBranch(ev, branches, collapsedParents);
     const laneInfo = subLaneLayout.branchLayouts.get(branchObj.id);
     const baseX = laneInfo?.baseX ?? timeSpineX + 28;
     if (isAtomic) return baseX;
     const slot = subLaneLayout.slotByEventId.get(ev.id) ?? 0;
     return laneInfo?.subXs[slot] ?? baseX + slot * 10;
   };
+
+  const expandedCollapsibleParents = useMemo(
+    () =>
+      branches.filter((p) => {
+        if (!hasChildBranches(p.id, branches) || collapsedParents[p.id]) return false;
+        const activeChildren = getDirectChildBranches(p.id, branches).filter((child) =>
+          isBranchOrDescendantActive(child, branches, activeBranches),
+        );
+        return activeChildren.length >= 2;
+      }),
+    [branches, activeBranches, collapsedParents],
+  );
 
   const rulerIndexById = useMemo(() => new Map(rulers.map((r, i) => [r.id, i])), [rulers]);
 
@@ -245,9 +270,30 @@ export function GitTimeline({
 
   const alreadyRunningEvents = !focusedEvent ? matchingEvents.filter((ev) => ev.startYear < yearFrom) : [];
 
+  const gutterWidthClass =
+    axisResolution === 'day'
+      ? 'w-[92px] sm:w-[104px]'
+      : axisResolution === 'month'
+        ? 'w-[74px] sm:w-[86px]'
+        : 'w-[56px] sm:w-[68px]';
+
+  const gutterMeta = useMemo(() => {
+    let prevLabel = '';
+    return stream.map((item) => {
+      const info = formatAxisGutterDate(item, axisResolution);
+      const isDuplicate = info.label === prevLabel && item.rowType !== 'ERA_START';
+      prevLabel = info.label;
+      return { ...info, isDuplicate };
+    });
+  }, [stream, axisResolution]);
+
   const hoveredEvent = hoveredEventId ? (matchingEvents.find((e) => e.id === hoveredEventId) ?? null) : null;
   const linkedEventIds = new Set<string>();
-  if (hoveredEventId) {
+  if (hoveredEvent) {
+    hoveredEvent.explicitLinks.forEach((lnk) => {
+      linkedEventIds.add(lnk.targetEvent.id);
+    });
+  } else if (hoveredEventId) {
     (manifest.crossLinks || []).forEach((lnk) => {
       if (lnk.from === hoveredEventId) linkedEventIds.add(lnk.to);
       if (lnk.to === hoveredEventId) linkedEventIds.add(lnk.from);
@@ -351,7 +397,7 @@ export function GitTimeline({
 
           const passingEvents = eventStreamBounds.filter(
             (entry) =>
-              resolveEventBranch(entry.ev, branches).id === lane.id &&
+              resolveEventBranch(entry.ev, branches, collapsedParents).id === lane.id &&
               entry.commitIdx < rowIdx &&
               rowIdx < entry.endIdx,
           );
@@ -422,6 +468,33 @@ export function GitTimeline({
             {visibleLanes.map((lane) => {
               const isTimeAxis = lane.id === 'TIME_AXIS';
               const subCount = subLaneLayout.branchLayouts.get(lane.id)?.subLaneCount ?? 1;
+              const isCollapsedParentLane =
+                hasChildBranches(lane.id, branches) && Boolean(collapsedParents[lane.id]);
+
+              if (isCollapsedParentLane) {
+                const activeChildCount = getDirectChildBranches(lane.id, branches).filter((child) =>
+                  isBranchOrDescendantActive(child, branches, activeBranches),
+                ).length;
+
+                return (
+                  <button
+                    key={lane.id}
+                    type="button"
+                    onClick={() => onToggleCollapseParent(lane.id)}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-[10px] font-mono text-amber-100 shrink-0 cursor-pointer transition-colors"
+                    title={`${lane.label}: свёрнуто веток (${activeChildCount}). Нажмите, чтобы развернуть в отдельные линии.`}
+                  >
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: lane.color }} />
+                    <span className="font-semibold">{lane.short}</span>
+                    {subCount > 1 && (
+                      <span className="text-amber-300 font-bold tabular-nums">×{subCount}</span>
+                    )}
+                    <GitBranch className="w-3 h-3 text-amber-300 ml-0.5" />
+                    <span className="text-amber-300 font-bold">Развернуть ({activeChildCount})</span>
+                  </button>
+                );
+              }
+
               return (
                 <div
                   key={lane.id}
@@ -442,6 +515,24 @@ export function GitTimeline({
                     <span className="text-amber-300 font-bold tabular-nums">×{subCount}</span>
                   )}
                 </div>
+              );
+            })}
+
+            {expandedCollapsibleParents.map((parent) => {
+              const activeChildCount = getDirectChildBranches(parent.id, branches).filter((child) =>
+                isBranchOrDescendantActive(child, branches, activeBranches),
+              ).length;
+              return (
+                <button
+                  key={`collapse-${parent.id}`}
+                  type="button"
+                  onClick={() => onToggleCollapseParent(parent.id)}
+                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 hover:border-amber-400/50 text-[10px] font-mono text-slate-300 hover:text-amber-200 shrink-0 cursor-pointer transition-colors whitespace-nowrap"
+                  title={`Свернуть ${activeChildCount} веток группы «${parent.label}» в одну линию (${parent.short})`}
+                >
+                  <GitMerge className="w-3 h-3 text-amber-400" />
+                  <span>Свернуть {parent.short} ({activeChildCount} → 1)</span>
+                </button>
               );
             })}
           </div>
@@ -572,7 +663,7 @@ export function GitTimeline({
           </div>
         )}
 
-        {yearFrom > 1686 && alreadyRunningEvents.length > 0 && (
+        {yearFrom > minYear && alreadyRunningEvents.length > 0 && (
           <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 flex flex-wrap items-center gap-2">
             <span className="text-xs font-mono font-semibold text-amber-200 flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
@@ -594,6 +685,8 @@ export function GitTimeline({
         )}
 
         {stream.map((item, idx) => {
+          const gutter = gutterMeta[idx];
+
           if (item.rowType === 'ERA_START') {
             const resolvedEra = resolveMacroEra(item.era);
             const carryOverWars = matchingEvents.filter(
@@ -605,6 +698,13 @@ export function GitTimeline({
                 key={`era-${resolvedEra.id}`}
                 className="relative flex items-stretch bg-gradient-to-r from-slate-900/95 via-slate-900/70 to-slate-950 border-y border-amber-500/30"
               >
+                <div
+                  title={gutter.title}
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/70 bg-slate-950/60 px-2 sm:px-2.5 pt-[27px] pb-2 flex items-start justify-end font-mono text-[11px] font-bold text-amber-300 tabular-nums whitespace-nowrap select-none`}
+                >
+                  {gutter.label}
+                </div>
+
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey)}
@@ -660,6 +760,15 @@ export function GitTimeline({
                 key={`tick-${item.sortKey}-${idx}`}
                 className="relative flex items-stretch bg-slate-950/75"
               >
+                <div
+                  title={gutter.title}
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/40 px-2 sm:px-2.5 py-1 flex items-center justify-end font-mono text-[10px] tabular-nums whitespace-nowrap select-none ${
+                    gutter.isDuplicate ? 'text-slate-600' : 'text-slate-400'
+                  }`}
+                >
+                  {gutter.label}
+                </div>
+
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey)}
@@ -701,8 +810,19 @@ export function GitTimeline({
                 key={`ruler-${r.id}`}
                 id={r.id}
                 data-ruler-context={r.id}
-                className="relative flex items-stretch bg-slate-900/70 hover:bg-slate-900/95 transition-colors"
+                className="relative flex items-stretch bg-slate-900/70 hover:bg-slate-900/95 transition-colors group"
               >
+                <div
+                  title={gutter.title}
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/40 px-2 sm:px-2.5 pt-[24px] pb-2 flex items-start justify-end font-mono text-[11px] font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
+                    gutter.isDuplicate
+                      ? 'text-amber-300/45 group-hover:text-amber-200'
+                      : 'text-amber-200 group-hover:text-amber-100'
+                  }`}
+                >
+                  {gutter.label}
+                </div>
+
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey, { skipRulerId: r.id })}
@@ -833,6 +953,20 @@ export function GitTimeline({
                 onClick={() => onOpenPeriodModal(r.id)}
                 className="relative flex items-stretch bg-slate-950/55 hover:bg-slate-900/45 transition-colors cursor-pointer group"
               >
+                <div
+                  title={gutter.title}
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/30 px-2 sm:px-2.5 py-2 flex items-center justify-end gap-1 font-mono text-[10px] tabular-nums whitespace-nowrap select-none transition-colors ${
+                    gutter.isDuplicate
+                      ? 'text-slate-600 group-hover:text-slate-300'
+                      : 'text-slate-400 group-hover:text-slate-200'
+                  }`}
+                >
+                  <span aria-hidden="true" className="text-[9px] text-slate-600 group-hover:text-slate-400">
+                    ↵
+                  </span>
+                  <span>{gutter.label}</span>
+                </div>
+
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey, { skipRulerId: r.id })}
@@ -895,7 +1029,7 @@ export function GitTimeline({
 
           if (item.rowType === 'EVENT_COMMIT') {
             const ev = item.eventObj;
-            const branchObj = resolveEventBranch(ev, branches);
+            const branchObj = resolveEventBranch(ev, branches, collapsedParents);
             const origBranchObj = branches.find((b) => b.id === ev.task) || branchObj;
             const isAtomic = item.isAtomicInView;
             const laneInfo = subLaneLayout.branchLayouts.get(branchObj.id);
@@ -907,7 +1041,7 @@ export function GitTimeline({
               eventStreamBounds.some(
                 (entry) =>
                   entry.ev.id !== ev.id &&
-                  resolveEventBranch(entry.ev, branches).id === branchObj.id &&
+                  resolveEventBranch(entry.ev, branches, collapsedParents).id === branchObj.id &&
                   (subLaneLayout.slotByEventId.get(entry.ev.id) ?? 0) === 0 &&
                   entry.commitIdx < idx &&
                   idx < entry.endIdx,
@@ -952,6 +1086,21 @@ export function GitTimeline({
                 onMouseLeave={() => onHoverEvent(null)}
                 className="commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group"
               >
+                <div
+                  title={gutter.title}
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/35 px-2 sm:px-2.5 ${
+                    isCompact ? 'py-1 flex items-center' : 'pt-[25px] pb-2 flex items-start'
+                  } justify-end font-mono text-[11px] font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
+                    isSelfHovered || isFocusedTarget
+                      ? 'text-white'
+                      : gutter.isDuplicate
+                        ? 'text-slate-500 group-hover:text-slate-200'
+                        : 'text-slate-200 group-hover:text-white'
+                  }`}
+                >
+                  {gutter.label}
+                </div>
+
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey)}
@@ -1238,6 +1387,8 @@ export function GitTimeline({
                             const target = lnk.targetEvent;
                             const targetBranch = branches.find((b) => b.id === target.task);
                             const isOutgoing = lnk.direction === 'outgoing';
+                            const isLaterTarget = target.startYear >= ev.startYear;
+                            const retroGap = lnk.yearGap && lnk.yearGap > 0 ? ` (${isLaterTarget ? '+' : '−'}${lnk.yearGap} л.)` : '';
                             return (
                               <button
                                 key={lnk.id}
@@ -1246,16 +1397,28 @@ export function GitTimeline({
                                   e.stopPropagation();
                                   onJumpToEvent(target.id);
                                 }}
-                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-950/45 hover:bg-emerald-900/60 border border-emerald-500/35 hover:border-emerald-400 text-[11px] font-mono text-emerald-100 transition-colors cursor-pointer text-left max-w-full"
+                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-mono transition-colors cursor-pointer text-left max-w-full ${
+                                  lnk.isRetrospective
+                                    ? 'bg-violet-950/45 hover:bg-violet-900/60 border-violet-500/35 hover:border-violet-400 text-violet-100'
+                                    : 'bg-emerald-950/45 hover:bg-emerald-900/60 border-emerald-500/35 hover:border-emerald-400 text-emerald-100'
+                                }`}
                                 title={`${lnk.label} — Нажмите для перехода к узлу в ленте`}
                               >
                                 {isOutgoing ? (
-                                  <ArrowRight className="w-3 h-3 text-emerald-400 shrink-0" />
+                                  <ArrowRight className={`w-3 h-3 shrink-0 ${lnk.isRetrospective ? 'text-violet-400' : 'text-emerald-400'}`} />
                                 ) : (
-                                  <ArrowLeft className="w-3 h-3 text-sky-400 shrink-0" />
+                                  <ArrowLeft className={`w-3 h-3 shrink-0 ${lnk.isRetrospective ? 'text-violet-300' : 'text-sky-400'}`} />
                                 )}
-                                <span className="text-emerald-300 shrink-0">
-                                  {isOutgoing ? 'Следствие:' : 'Причина:'}
+                                <span className={`shrink-0 ${lnk.isRetrospective ? 'text-violet-300' : 'text-emerald-300'}`}>
+                                  {lnk.isRetrospective
+                                    ? isLaterTarget
+                                      ? `Отражение${retroGap}:`
+                                      : `О событии${retroGap}:`
+                                    : lnk.isAutoSync
+                                      ? `#${lnk.syncTag || 'тег'}:`
+                                      : isOutgoing
+                                        ? 'Следствие:'
+                                        : 'Причина:'}
                                 </span>
                                 <span className="truncate font-semibold text-white">{target.title}</span>
                                 <span className="text-slate-400 tabular-nums shrink-0">({target.period})</span>
@@ -1275,19 +1438,23 @@ export function GitTimeline({
 
                       <div className="mt-2.5 pt-2 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
                         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono">
-                          <span
-                            className={`inline-flex items-center gap-1 ${
-                              hasMultipleRulers ? 'text-amber-300 font-semibold' : 'text-slate-300'
-                            }`}
-                          >
-                            <Crown className="w-3 h-3" />
-                            {hasMultipleRulers ? `${ev.overlappingRulers.length} правл.: ` : ''}
-                            {ev.ruler}
-                          </span>
+                          {ev.ruler && (
+                            <>
+                              <span
+                                className={`inline-flex items-center gap-1 ${
+                                  hasMultipleRulers ? 'text-amber-300 font-semibold' : 'text-slate-300'
+                                }`}
+                              >
+                                <Crown className="w-3 h-3" />
+                                {hasMultipleRulers ? `${ev.overlappingRulers.length} правл.: ` : ''}
+                                {ev.ruler}
+                              </span>
 
-                          <span aria-hidden="true" className="text-slate-600">
-                            ·
-                          </span>
+                              <span aria-hidden="true" className="text-slate-600">
+                                ·
+                              </span>
+                            </>
+                          )}
 
                           <span className="text-slate-500" title="Исходный модульный JSON-файл">
                             {ev.sourceFile}
@@ -1365,7 +1532,7 @@ export function GitTimeline({
 
           // EVENT_END: точка завершения и обратное слияние (merge) под-нити обратно в ветку или ось времени
           const ev = item.eventObj;
-          const branchObj = resolveEventBranch(ev, branches);
+          const branchObj = resolveEventBranch(ev, branches, collapsedParents);
           const laneInfo = subLaneLayout.branchLayouts.get(branchObj.id);
           const baseX = laneInfo?.baseX ?? timeSpineX + 28;
           const slot = subLaneLayout.slotByEventId.get(ev.id) ?? 0;
@@ -1375,7 +1542,7 @@ export function GitTimeline({
             eventStreamBounds.some(
               (entry) =>
                 entry.ev.id !== ev.id &&
-                resolveEventBranch(entry.ev, branches).id === branchObj.id &&
+                resolveEventBranch(entry.ev, branches, collapsedParents).id === branchObj.id &&
                 (subLaneLayout.slotByEventId.get(entry.ev.id) ?? 0) === 0 &&
                 entry.commitIdx < idx &&
                 idx < entry.endIdx,
@@ -1392,6 +1559,22 @@ export function GitTimeline({
               onMouseLeave={() => onHoverEvent(null)}
               className="relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group"
             >
+              <div
+                title={gutter.title}
+                className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/25 px-2 sm:px-2.5 py-2 flex items-center justify-end gap-1 font-mono text-[10px] tabular-nums whitespace-nowrap select-none transition-colors ${
+                  isEndSelfHovered
+                    ? 'text-slate-100'
+                    : gutter.isDuplicate
+                      ? 'text-slate-600 group-hover:text-slate-300'
+                      : 'text-slate-400 group-hover:text-slate-200'
+                }`}
+              >
+                <span aria-hidden="true" className="text-[9px] text-slate-600 group-hover:text-slate-400">
+                  ↵
+                </span>
+                <span>{gutter.label}</span>
+              </div>
+
               <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                 <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                   {renderRailsForRow(idx, item.sortKey)}

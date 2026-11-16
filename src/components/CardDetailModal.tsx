@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { ChevronLeft, ChevronRight, Crosshair, Crown, FileJson, GitBranch, Link2, X, Zap } from 'lucide-react';
+import { BookOpen, ChevronLeft, ChevronRight, Crosshair, Crown, FileJson, GitBranch, Link2, X, Zap } from 'lucide-react';
 import { getGitHash } from '../engine/timelineEngine';
 import { useOverlayScrollLock } from '../utils/scrollIsolation';
 import type { BranchDefinition, EnrichedEvent } from '../types/timeline';
@@ -39,6 +39,8 @@ export function CardDetailModal({
   const commitHash = getGitHash(card.id);
   const prevEvent = idx > 0 ? enrichedEvents[idx - 1] : null;
   const nextEvent = idx < enrichedEvents.length - 1 ? enrichedEvents[idx + 1] : null;
+  const directSyncLinks = card.explicitLinks.filter((lnk) => !lnk.isRetrospective);
+  const retrospectiveLinks = card.explicitLinks.filter((lnk) => lnk.isRetrospective);
 
   return (
     <div
@@ -112,44 +114,49 @@ export function CardDetailModal({
         </div>
 
         <div ref={bodyRef} className="p-6 space-y-4 flex-1 overflow-y-auto overscroll-contain">
-          <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
-            <div className="text-[11px] font-mono text-amber-400 font-bold mb-2 flex items-center gap-1.5">
-              <Crown className="w-3.5 h-3.5" />
-              Синхронизация с data/rulers.json — правители в период события ({card.overlappingRulers.length}):
+          {card.overlappingRulers.length > 0 && (
+            <div className="bg-slate-950/80 border border-slate-800 rounded-xl p-3.5">
+              <div className="text-[11px] font-mono text-amber-400 font-bold mb-2 flex items-center gap-1.5">
+                <Crown className="w-3.5 h-3.5" />
+                Синхронизация с data/rulers.json — правители в период события ({card.overlappingRulers.length}):
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {card.overlappingRulers.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onSelectYearRange(r.startYear, r.endYear);
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-left transition-colors cursor-pointer"
+                  >
+                    <div className="text-[10px] font-mono text-amber-400 tabular-nums">{r.reignPeriod}</div>
+                    <div className="text-xs font-bold text-white">{r.ruler}</div>
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              {card.overlappingRulers.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => {
-                    onClose();
-                    onSelectYearRange(r.startYear, r.endYear);
-                  }}
-                  className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-amber-500/30 text-left transition-colors cursor-pointer"
-                >
-                  <div className="text-[10px] font-mono text-amber-400 tabular-nums">{r.reignPeriod}</div>
-                  <div className="text-xs font-bold text-white">{r.ruler}</div>
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
 
-          {card.explicitLinks.length > 0 && (
+          {directSyncLinks.length > 0 && (
             <div className="bg-emerald-950/30 border border-emerald-500/40 rounded-xl p-4 space-y-2.5">
               <div className="text-xs font-mono font-bold text-emerald-300 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <Link2 className="w-3.5 h-3.5" />
-                  Межветочные связи из data/sync.manifest.json:
+                  Синхронизированные межветочные связи (ручные и по тегам):
                 </span>
-                <span className="text-[11px] text-emerald-400 tabular-nums">{card.explicitLinks.length}</span>
+                <span className="text-[11px] text-emerald-400 tabular-nums">{directSyncLinks.length}</span>
               </div>
               <div className="space-y-2">
-                {card.explicitLinks.map((lnk) => {
+                {directSyncLinks.map((lnk) => {
                   const target = lnk.targetEvent;
                   const tb = branches.find((b) => b.id === target.task) || branches[0];
-                  const dirLabel =
-                    lnk.direction === 'outgoing' ? '→ Причина / триггер для:' : '← Следствие / связано с:';
+                  const dirLabel = lnk.isAutoSync
+                    ? `⇄ Авто-связь (${lnk.syncTag ? `#${lnk.syncTag}` : 'общий тег'}):`
+                    : lnk.direction === 'outgoing'
+                      ? '→ Причина / триггер для:'
+                      : '← Следствие / связано с:';
                   return (
                     <button
                       key={lnk.id}
@@ -159,6 +166,57 @@ export function CardDetailModal({
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
                         <span className="text-emerald-300 font-bold">{dirLabel}</span>
+                        <span className="text-slate-400">
+                          {tb?.gitName} · {target.sourceFile}
+                        </span>
+                      </div>
+                      <div className="text-xs sm:text-sm font-bold text-white mt-1">
+                        <span className="font-mono mr-1.5 tabular-nums" style={{ color: tb?.color }}>
+                          {target.period}
+                        </span>
+                        {target.title}
+                      </div>
+                      <div className="text-xs text-slate-300 mt-1 italic">«{lnk.label}»</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {retrospectiveLinks.length > 0 && (
+            <div className="bg-violet-950/30 border border-violet-500/40 rounded-xl p-4 space-y-2.5">
+              <div className="text-xs font-mono font-bold text-violet-300 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5" />
+                  Отражение в книгах, произведениях и отложенных событиях:
+                </span>
+                <span className="text-[11px] text-violet-400 tabular-nums">{retrospectiveLinks.length}</span>
+              </div>
+              <div className="space-y-2">
+                {retrospectiveLinks.map((lnk) => {
+                  const target = lnk.targetEvent;
+                  const tb = branches.find((b) => b.id === target.task) || branches[0];
+                  const isLaterTarget = target.startYear >= card.startYear;
+                  const gapText =
+                    lnk.yearGap && lnk.yearGap > 0
+                      ? isLaterTarget
+                        ? `+${lnk.yearGap} л. спустя`
+                        : `−${lnk.yearGap} л. до`
+                      : 'вне окна';
+                  const tagText = lnk.syncTag ? ` · #${lnk.syncTag}` : '';
+                  const dirLabel = isLaterTarget
+                    ? `Позднее упоминание / произведение (${gapText}${tagText}):`
+                    : `Относится к событию (${gapText}${tagText}):`;
+                  return (
+                    <button
+                      key={lnk.id}
+                      type="button"
+                      onClick={() => onSelectEvent(target.id)}
+                      className="w-full text-left p-3 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-violet-500/30 cursor-pointer transition-colors"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                        <span className="text-violet-300 font-bold">{dirLabel}</span>
                         <span className="text-slate-400">
                           {tb?.gitName} · {target.sourceFile}
                         </span>

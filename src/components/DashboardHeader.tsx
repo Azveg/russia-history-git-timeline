@@ -5,6 +5,8 @@ interface DashboardHeaderProps {
   matchingRulersCount: number;
   streamCount: number;
   crossLinksCount: number;
+  minYear?: number;
+  maxYear?: number;
   showEndNodes: boolean;
   onToggleShowEndNodes: () => void;
 }
@@ -14,6 +16,8 @@ export function DashboardHeader({
   matchingRulersCount,
   streamCount,
   crossLinksCount,
+  minYear = 1686,
+  maxYear = 2000,
   showEndNodes,
   onToggleShowEndNodes,
 }: DashboardHeaderProps) {
@@ -25,7 +29,7 @@ export function DashboardHeader({
             <div className="flex flex-wrap items-center gap-2.5 text-xs font-mono text-slate-400 mb-2">
               <span className="inline-flex items-center gap-1.5 text-amber-300 font-semibold">
                 <GitBranch className="w-3.5 h-3.5" />
-                История в ветвях Git · 1686–2000
+                История в ветвях Git · {minYear}–{maxYear}
               </span>
               <span aria-hidden="true">·</span>
               <span className="text-emerald-300">Связей синхронизации: {crossLinksCount}</span>

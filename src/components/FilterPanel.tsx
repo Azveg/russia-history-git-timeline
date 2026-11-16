@@ -6,6 +6,8 @@ import type { DynamicWindowHotspot, MacroEra, RulerPeriod, YearRangeStep } from 
 interface FilterPanelProps {
   yearFrom: number;
   yearTo: number;
+  minYear?: number;
+  maxYear?: number;
   onYearRangeChange: (from: number, to: number, recordHistory?: boolean) => void;
   onRecordZoomStep: (from: number, to: number) => void;
   onQuickWindowSelect: (from: number, to: number) => void;
@@ -29,16 +31,11 @@ interface FilterPanelProps {
   syncLinkedCount: number;
 }
 
-const CENTURY_WINDOWS = [
-  { label: 'Весь период', from: 1686, to: 2000 },
-  { label: 'XVIII в.', from: 1700, to: 1800 },
-  { label: 'XIX в.', from: 1801, to: 1900 },
-  { label: 'XX в.', from: 1901, to: 2000 },
-];
-
 export function FilterPanel({
   yearFrom,
   yearTo,
+  minYear = 1686,
+  maxYear = 2000,
   onYearRangeChange,
   onRecordZoomStep,
   onQuickWindowSelect,
@@ -61,6 +58,12 @@ export function FilterPanel({
   onToggleOnlyWithSyncLinks,
   syncLinkedCount,
 }: FilterPanelProps) {
+  const centuryWindows = [
+    { label: 'Весь период', from: minYear, to: maxYear },
+    { label: 'XVIII в.', from: 1700, to: 1800 },
+    { label: 'XIX в.', from: 1801, to: 1900 },
+    { label: 'XX в.', from: 1901, to: Math.min(2000, maxYear) },
+  ].filter((w) => w.from <= maxYear && w.to >= minYear);
   const spanYears = Math.max(1, yearTo - yearFrom);
   const sliderOriginRef = useRef<YearRangeStep | null>(null);
 
@@ -92,8 +95,8 @@ export function FilterPanel({
                 <span className="text-slate-400">с</span>
                 <input
                   type="number"
-                  min={1686}
-                  max={2000}
+                  min={minYear}
+                  max={maxYear}
                   value={yearFrom}
                   aria-label="Начало окна лет"
                   onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
@@ -102,8 +105,8 @@ export function FilterPanel({
                 <span className="text-slate-400">по</span>
                 <input
                   type="number"
-                  min={1686}
-                  max={2000}
+                  min={minYear}
+                  max={maxYear}
                   value={yearTo}
                   aria-label="Конец окна лет"
                   onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
@@ -171,8 +174,8 @@ export function FilterPanel({
               </span>
               <input
                 type="range"
-                min={1686}
-                max={2000}
+                min={minYear}
+                max={maxYear}
                 value={yearFrom}
                 aria-label="Ползунок начала окна"
                 onPointerDown={handleSliderStart}
@@ -187,8 +190,8 @@ export function FilterPanel({
               </span>
               <input
                 type="range"
-                min={1686}
-                max={2000}
+                min={minYear}
+                max={maxYear}
                 value={yearTo}
                 aria-label="Ползунок конца окна"
                 onPointerDown={handleSliderStart}
@@ -202,7 +205,7 @@ export function FilterPanel({
           <div className="pt-0.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             <span className="text-[11px] font-mono text-slate-400 shrink-0 mr-1">Быстрые окна:</span>
 
-            {CENTURY_WINDOWS.map((w) => {
+            {centuryWindows.map((w) => {
               const isActive = yearFrom === w.from && yearTo === w.to;
               return (
                 <button
@@ -277,12 +280,12 @@ export function FilterPanel({
                   : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
               }`}
             >
-              Все периоды · 1686–2000
+              Все периоды · {minYear}–{maxYear}
             </button>
             {resolveMacroEras(macroEras).map((era) => {
               const active = selectedEra === era.id;
               const count = eraCounts[era.id] || 0;
-              const isOutsideLoadedData = count === 0 && era.endYear < 1686;
+              const isOutsideLoadedData = count === 0 && era.endYear < minYear;
               return (
                 <div
                   key={era.id}
@@ -299,7 +302,7 @@ export function FilterPanel({
                     onClick={() => (isOutsideLoadedData ? onOpenEraModal(era.id) : onSelectEra(active ? 'ALL' : era.id))}
                     title={
                       isOutsideLoadedData
-                        ? `${era.title} · ${era.period} (модули до 1686 г. пока не подключены — откроется карточка периода)`
+                        ? `${era.title} · ${era.period} (модули до ${minYear} г. пока не подключены — откроется карточка периода)`
                         : `${era.title} · ${era.period}`
                     }
                     className={`px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${

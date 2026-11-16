@@ -6,6 +6,8 @@ import type { BranchDefinition, EnrichedEvent, RulerPeriod, YearRangeStep } from
 interface OverlapMapSectionProps {
   yearFrom: number;
   yearTo: number;
+  minYear?: number;
+  maxYear?: number;
   previousYearRange: YearRangeStep | null;
   canStepUp: boolean;
   onZoomStepUp: () => void;
@@ -15,6 +17,7 @@ interface OverlapMapSectionProps {
   matchingEvents: EnrichedEvent[];
   visibleLanes: BranchDefinition[];
   branches: BranchDefinition[];
+  collapsedParents: Record<string, boolean>;
   hoveredEventId: string | null;
   showOverlapMatrix: boolean;
   onToggleOverlapMatrix: () => void;
@@ -27,6 +30,8 @@ interface OverlapMapSectionProps {
 export function OverlapMapSection({
   yearFrom,
   yearTo,
+  minYear = 1686,
+  maxYear = 2000,
   previousYearRange,
   canStepUp,
   onZoomStepUp,
@@ -36,6 +41,7 @@ export function OverlapMapSection({
   matchingEvents,
   visibleLanes,
   branches,
+  collapsedParents,
   hoveredEventId,
   showOverlapMatrix,
   onToggleOverlapMatrix,
@@ -46,7 +52,7 @@ export function OverlapMapSection({
 }: OverlapMapSectionProps) {
   const maxY = Math.max(yearFrom + 1, yearTo);
   const totalSpan = maxY - yearFrom;
-  const isZoomedRange = yearFrom !== 1686 || maxY !== 2000;
+  const isZoomedRange = yearFrom !== minYear || maxY !== maxYear;
   const toPct = (y: number) => Math.max(0, Math.min(100, ((y - yearFrom) / totalSpan) * 100));
 
   const thematicLanes = useMemo(
@@ -75,8 +81,8 @@ export function OverlapMapSection({
   ];
 
   const handleFocusPeak = (fromYear: number, toYear: number) => {
-    const paddedFrom = Math.max(1686, fromYear - 2);
-    const paddedTo = Math.min(2000, Math.max(paddedFrom + 2, toYear + 2));
+    const paddedFrom = Math.max(minYear, fromYear - 2);
+    const paddedTo = Math.min(maxYear, Math.max(paddedFrom + 2, toYear + 2));
     if (yearFrom === paddedFrom && yearTo === paddedTo) {
       onYearRangeChange(fromYear, Math.max(fromYear + 1, toYear));
     } else {
@@ -131,7 +137,7 @@ export function OverlapMapSection({
                   type="button"
                   onClick={onResetYearWindow}
                   className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-amber-200 text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                  title="Вернуться к исходному диапазону 1686–2000 гг. (ветки и поиск сохранятся)"
+                  title={`Вернуться к исходному диапазону ${minYear}–${maxYear} гг. (ветки и поиск сохранятся)`}
                 >
                   <Maximize2 className="w-3.5 h-3.5" />
                   <span>Весь период</span>
@@ -243,7 +249,7 @@ export function OverlapMapSection({
                       type="button"
                       onClick={onResetYearWindow}
                       className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-400/40 text-amber-200 text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                      title="Вернуться к исходному диапазону 1686–2000 гг. (ветки и поиск сохранятся)"
+                      title={`Вернуться к исходному диапазону ${minYear}–${maxYear} гг. (ветки и поиск сохранятся)`}
                     >
                       <Maximize2 className="w-3.5 h-3.5" />
                       <span>Весь период</span>
@@ -400,7 +406,7 @@ export function OverlapMapSection({
                 {thematicLanes.map((lane, laneIdx) => {
                   const rowNum = laneIdx + 2;
                   const laneEvents = matchingEvents.filter(
-                    (ev) => resolveEventBranch(ev, branches).id === lane.id,
+                    (ev) => resolveEventBranch(ev, branches, collapsedParents).id === lane.id,
                   );
                   return (
                     <div key={lane.id} className="contents">
@@ -444,7 +450,11 @@ export function OverlapMapSection({
                                 className={`absolute top-1 bottom-1 rounded border px-1 flex items-center overflow-hidden cursor-pointer transition-all text-left ${
                                   isHovered ? 'ring-1 ring-white z-30 brightness-125' : 'hover:brightness-125 z-20'
                                 }`}
-                                title={`${ev.period} — ${ev.title}\nПравители: ${ev.ruler}`}
+                                title={
+                                  ev.ruler
+                                    ? `${ev.period} — ${ev.title}\nПравители: ${ev.ruler}`
+                                    : `${ev.period} — ${ev.title}`
+                                }
                               >
                                 <span className="text-[9px] font-mono text-white truncate">
                                   {multiPrefix}
@@ -488,8 +498,8 @@ export function OverlapMapSection({
                           type="button"
                           onClick={() =>
                             onYearRangeChange(
-                              Math.max(1686, bucket.year - 5),
-                              Math.min(2000, bucket.year + 5),
+                              Math.max(minYear, bucket.year - 5),
+                              Math.min(maxYear, bucket.year + 5),
                             )
                           }
                           style={{ height: `${heightPct}%` }}

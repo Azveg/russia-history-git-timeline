@@ -12,13 +12,17 @@ import {
   buildUnifiedTimelineStream,
   computeBranchPresetMap,
   computeDynamicWindowHotspots,
+  computeTimelineYearBounds,
   doesIntervalBelongToEra,
   extractBranchesFromStore,
   extractRulersFromStore,
   fetchTimelineRepository,
+  getDescendantBranchIds,
   getEnrichedEvents,
   getVisibleLanes,
+  hasChildBranches,
   intersectsTimeWindow,
+  isBranchOrDescendantActive,
   isEventBranchActive,
   resolveEventBranch,
   resolveMacroEras,
@@ -39,15 +43,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [activeBranches, setActiveBranches] = useState<Record<string, boolean>>({
-    MAIN_RULERS: true,
-    SEAS: true,
-    PERIPHERY: true,
-    INTERNAL_BUFFER: true,
-    REFORMS_ECO: true,
-    WORLD_CONTEXT: true,
-    DIPLOMACY_TREATIES: true,
-  });
+  const [activeBranches, setActiveBranches] = useState<Record<string, boolean>>({});
+  const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
 
   const [yearFrom, setYearFrom] = useState(1686);
   const [yearTo, setYearTo] = useState(2000);
@@ -129,6 +126,36 @@ export default function App() {
     return extractBranchesFromStore(manifest, filesMap);
   }, [manifest, filesMap]);
 
+  // Динамическая инициализация состояния веток (включая автообнаруженные JSON-модули)
+  useEffect(() => {
+    if (branches.length === 0) return;
+
+    setActiveBranches((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      branches.forEach((b) => {
+        if (b.isGroup) return;
+        if (next[b.id] === undefined) {
+          next[b.id] = b.defaultEnabled !== false;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+
+    setCollapsedParents((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      branches.forEach((b) => {
+        if (b.defaultCollapsedOnTimeline && next[b.id] === undefined) {
+          next[b.id] = true;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
+    });
+  }, [branches]);
+
   const rulers = useMemo(() => {
     if (!manifest) return [];
     return extractRulersFromStore(manifest, filesMap);
@@ -139,9 +166,46 @@ export default function App() {
     return getEnrichedEvents(manifest, filesMap, rulers);
   }, [manifest, filesMap, rulers]);
 
+  const timelineBounds = useMemo(
+    () => computeTimelineYearBounds(manifest, rulers, enrichedEvents),
+    [manifest, rulers, enrichedEvents],
+  );
+
+  // Расширяем дефолтное окно лет, если подключённые модули охватывают более ранние или поздние годы
+  useEffect(() => {
+    if (!manifest) return;
+    setYearFrom((prev) => (prev === 1686 ? timelineBounds.minYear : Math.max(timelineBounds.minYear, prev)));
+    setYearTo((prev) => (prev === 2000 ? timelineBounds.maxYear : Math.min(timelineBounds.maxYear, prev)));
+  }, [manifest, timelineBounds.minYear, timelineBounds.maxYear]);
+
+  // Изоляция устаревших ID при удалении файлов веток или правителей
+  useEffect(() => {
+    if (!manifest) return;
+    if (selectedReign !== 'ALL' && !rulers.some((r) => r.id === selectedReign)) {
+      setSelectedReign('ALL');
+    }
+    if (focusedEventId && !enrichedEvents.some((e) => e.id === focusedEventId)) {
+      setFocusedEventId(null);
+    }
+    if (activeCardId && !enrichedEvents.some((e) => e.id === activeCardId)) {
+      setActiveCardId(null);
+    }
+    if (activePeriodId && !rulers.some((r) => r.id === activePeriodId)) {
+      setActivePeriodId(null);
+    }
+  }, [manifest, rulers, enrichedEvents, selectedReign, focusedEventId, activeCardId, activePeriodId]);
+
+  const totalSyncLinksCount = useMemo(() => {
+    const ids = new Set<string>();
+    enrichedEvents.forEach((ev) => {
+      ev.explicitLinks.forEach((lnk) => ids.add(lnk.id));
+    });
+    return ids.size;
+  }, [enrichedEvents]);
+
   const visibleLanes = useMemo(
-    () => getVisibleLanes(branches, activeBranches),
-    [branches, activeBranches],
+    () => getVisibleLanes(branches, activeBranches, collapsedParents),
+    [branches, activeBranches, collapsedParents],
   );
 
   const { stream, matchingEvents, matchingRulers, focusedEvent, effectiveYearFrom, effectiveYearTo, axisResolution } =
@@ -193,14 +257,14 @@ export default function App() {
     const laneIds = new Set(visibleLanes.map((l) => l.id));
     const extras: BranchDefinition[] = [];
     matchingEvents.forEach((ev) => {
-      const b = resolveEventBranch(ev, branches);
+      const b = resolveEventBranch(ev, branches, collapsedParents);
       if (!laneIds.has(b.id)) {
         laneIds.add(b.id);
         extras.push(b);
       }
     });
     return extras.length > 0 ? [...visibleLanes, ...extras] : visibleLanes;
-  }, [focusedEvent, visibleLanes, matchingEvents, branches]);
+  }, [focusedEvent, visibleLanes, matchingEvents, branches, collapsedParents]);
 
   const syncLinkedCount = useMemo(
     () =>
@@ -221,11 +285,18 @@ export default function App() {
       }
     });
 
-    return branches.map((b) =>
-      b.id === 'MAIN_RULERS'
-        ? { ...b, count: matchingRulers.length }
-        : { ...b, count: byBranchCount[b.id] || 0 },
-    );
+    return branches.map((b) => {
+      if (b.id === 'MAIN_RULERS') {
+        return { ...b, count: matchingRulers.length };
+      }
+      const descendants = getDescendantBranchIds(b.id, branches);
+      if (descendants.length > 0) {
+        const ownCount = b.isGroup ? 0 : (byBranchCount[b.id] || 0);
+        const childSum = descendants.reduce((acc, dId) => acc + (byBranchCount[dId] || 0), 0);
+        return { ...b, count: ownCount + childSum };
+      }
+      return { ...b, count: byBranchCount[b.id] || 0 };
+    });
   }, [branches, enrichedEvents, matchingRulers.length, yearFrom, yearTo]);
 
   const resolvedMacroEras = useMemo(
@@ -246,8 +317,14 @@ export default function App() {
   }, [resolvedMacroEras, enrichedEvents, activeBranches]);
 
   const dynamicWindowHotspots = useMemo(
-    () => computeDynamicWindowHotspots(enrichedEvents, activeBranches),
-    [enrichedEvents, activeBranches],
+    () =>
+      computeDynamicWindowHotspots(
+        enrichedEvents,
+        activeBranches,
+        timelineBounds.minYear,
+        timelineBounds.maxYear,
+      ),
+    [enrichedEvents, activeBranches, timelineBounds.minYear, timelineBounds.maxYear],
   );
 
   function handleRecordZoomStep(fromVal: number, toVal: number) {
@@ -259,10 +336,10 @@ export default function App() {
   }
 
   function handleYearRangeChange(fromVal: number, toVal: number, recordHistory = true) {
-    let y1 = Number.isFinite(fromVal) ? Math.round(fromVal) : 1686;
-    let y2 = Number.isFinite(toVal) ? Math.round(toVal) : 2000;
-    y1 = Math.max(1686, Math.min(2000, y1));
-    y2 = Math.max(1686, Math.min(2000, y2));
+    let y1 = Number.isFinite(fromVal) ? Math.round(fromVal) : timelineBounds.minYear;
+    let y2 = Number.isFinite(toVal) ? Math.round(toVal) : timelineBounds.maxYear;
+    y1 = Math.max(timelineBounds.minYear, Math.min(timelineBounds.maxYear, y1));
+    y2 = Math.max(timelineBounds.minYear, Math.min(timelineBounds.maxYear, y2));
     if (y1 > y2) {
       [y1, y2] = [y2, y1];
     }
@@ -284,8 +361,8 @@ export default function App() {
 
   function handleResetYearWindow() {
     setZoomHistory([]);
-    setYearFrom(1686);
-    setYearTo(2000);
+    setYearFrom(timelineBounds.minYear);
+    setYearTo(timelineBounds.maxYear);
   }
 
   function handleQuickWindowSelect(fromVal: number, toVal: number) {
@@ -298,20 +375,28 @@ export default function App() {
     if (eraId === 'ALL') {
       setSelectedEra('ALL');
       setSelectedReign('ALL');
-      handleYearRangeChange(1686, 2000);
+      handleYearRangeChange(timelineBounds.minYear, timelineBounds.maxYear);
       return;
     }
     const targetEra = resolvedMacroEras.find((e) => e.id === eraId);
-    if (targetEra && targetEra.endYear < 1686) {
+    const hasEraItems =
+      targetEra &&
+      (enrichedEvents.some((ev) => doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, targetEra)) ||
+        rulers.some((r) => doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, targetEra)));
+
+    if (targetEra && targetEra.endYear < timelineBounds.minYear && !hasEraItems) {
       setActiveEraModalId(targetEra.id);
       return;
     }
     setSelectedEra(eraId);
     setSelectedReign('ALL');
     if (targetEra) {
-      handleYearRangeChange(Math.max(1686, targetEra.startYear), Math.min(2000, targetEra.endYear));
+      handleYearRangeChange(
+        Math.max(timelineBounds.minYear, targetEra.startYear),
+        Math.min(timelineBounds.maxYear, targetEra.endYear),
+      );
     } else {
-      handleYearRangeChange(1686, 2000);
+      handleYearRangeChange(timelineBounds.minYear, timelineBounds.maxYear);
     }
   }
 
@@ -321,7 +406,7 @@ export default function App() {
       const r = rulers.find((item) => item.id === rulerId);
       if (r) handleYearRangeChange(r.startYear, r.endYear);
     } else {
-      handleYearRangeChange(1686, 2000);
+      handleYearRangeChange(timelineBounds.minYear, timelineBounds.maxYear);
     }
   }
 
@@ -332,13 +417,20 @@ export default function App() {
     setOnlyWithSyncLinks(false);
     setFocusedEventId(null);
     setZoomHistory([]);
-    setYearFrom(1686);
-    setYearTo(2000);
+    setYearFrom(timelineBounds.minYear);
+    setYearTo(timelineBounds.maxYear);
     const nextActive: Record<string, boolean> = {};
+    const nextCollapsed: Record<string, boolean> = {};
     branches.forEach((b) => {
-      nextActive[b.id] = true;
+      if (!b.isGroup) {
+        nextActive[b.id] = b.defaultEnabled !== false;
+      }
+      if (b.defaultCollapsedOnTimeline) {
+        nextCollapsed[b.id] = true;
+      }
     });
     setActiveBranches(nextActive);
+    setCollapsedParents(nextCollapsed);
   }
 
   function handleToggleFocusEvent(eventId: string) {
@@ -403,6 +495,29 @@ export default function App() {
   }
 
   function handleToggleBranch(branchId: string) {
+    const target = branches.find((b) => b.id === branchId);
+    if (!target) return;
+
+    const descendants = getDescendantBranchIds(branchId, branches);
+    if (descendants.length > 0) {
+      const currentlyActive = isBranchOrDescendantActive(target, branches, activeBranches);
+      const nextEnable = !currentlyActive;
+      setActiveBranches((prev) => {
+        const next = { ...prev };
+        if (!target.isGroup) {
+          next[target.id] = nextEnable;
+        }
+        descendants.forEach((dId) => {
+          const d = branches.find((item) => item.id === dId);
+          if (d && !d.isGroup) {
+            next[dId] = nextEnable;
+          }
+        });
+        return next;
+      });
+      return;
+    }
+
     setActiveBranches((prev) => ({
       ...prev,
       [branchId]: prev[branchId] === false,
@@ -413,7 +528,16 @@ export default function App() {
     setActiveBranches((prev) => {
       const next = { ...prev };
       branchIds.forEach((id) => {
-        next[id] = enable;
+        const b = branches.find((item) => item.id === id);
+        if (b && !b.isGroup) {
+          next[id] = enable;
+        }
+        getDescendantBranchIds(id, branches).forEach((dId) => {
+          const d = branches.find((item) => item.id === dId);
+          if (d && !d.isGroup) {
+            next[dId] = enable;
+          }
+        });
       });
       return next;
     });
@@ -427,11 +551,38 @@ export default function App() {
   }
 
   function handleIsolateBranch(branchId: string) {
+    const target = branches.find((b) => b.id === branchId);
+    const descendants = getDescendantBranchIds(branchId, branches);
+    const keepSet = new Set<string>([branchId, ...descendants]);
+
     const next: Record<string, boolean> = {};
     branches.forEach((b) => {
-      next[b.id] = b.id === branchId;
+      if (!b.isGroup) {
+        next[b.id] = keepSet.has(b.id);
+      }
     });
     setActiveBranches(next);
+
+    // Если изолируется дочерняя ветка внутри свернутой родительской линии, раскрываем её предков на графе
+    if (target?.parentBranchId) {
+      setCollapsedParents((prev) => {
+        const updated = { ...prev };
+        let cur: BranchDefinition | undefined = target;
+        while (cur?.parentBranchId) {
+          updated[cur.parentBranchId] = false;
+          cur = branches.find((item) => item.id === cur!.parentBranchId);
+        }
+        return updated;
+      });
+    }
+  }
+
+  function handleToggleCollapseParent(parentId: string) {
+    if (!hasChildBranches(parentId, branches)) return;
+    setCollapsedParents((prev) => ({
+      ...prev,
+      [parentId]: !prev[parentId],
+    }));
   }
 
   function handleToggleFilters() {
@@ -480,8 +631,8 @@ export default function App() {
     searchQuery.trim() !== '' ||
     onlyWithSyncLinks ||
     focusedEventId !== null ||
-    yearFrom !== 1686 ||
-    yearTo !== 2000;
+    yearFrom !== timelineBounds.minYear ||
+    yearTo !== timelineBounds.maxYear;
 
   return (
     <div className="min-h-screen bg-[#050811] text-slate-100">
@@ -495,12 +646,16 @@ export default function App() {
       <TopControlBar
         branchControls={branchControls}
         activeBranches={activeBranches}
+        collapsedParents={collapsedParents}
         onToggleBranch={handleToggleBranch}
         onToggleCategory={handleToggleBranchCategory}
         onApplyPreset={handleApplyBranchPreset}
         onIsolateBranch={handleIsolateBranch}
+        onToggleCollapseParent={handleToggleCollapseParent}
         yearFrom={yearFrom}
         yearTo={yearTo}
+        minYear={timelineBounds.minYear}
+        maxYear={timelineBounds.maxYear}
         onYearRangeChange={handleYearRangeChange}
         cardDensity={cardDensity}
         onChangeCardDensity={setCardDensity}
@@ -514,7 +669,9 @@ export default function App() {
         visibleLanesCount={visibleLanes.length}
         matchingRulersCount={matchingRulers.length}
         streamCount={stream.length}
-        crossLinksCount={manifest.crossLinks.length}
+        crossLinksCount={totalSyncLinksCount}
+        minYear={timelineBounds.minYear}
+        maxYear={timelineBounds.maxYear}
         showEndNodes={showEndNodes}
         onToggleShowEndNodes={() => setShowEndNodes((prev) => !prev)}
       />
@@ -523,6 +680,8 @@ export default function App() {
         <FilterPanel
           yearFrom={effectiveYearFrom}
           yearTo={effectiveYearTo}
+          minYear={timelineBounds.minYear}
+          maxYear={timelineBounds.maxYear}
           onYearRangeChange={handleYearRangeChange}
           onRecordZoomStep={handleRecordZoomStep}
           onQuickWindowSelect={handleQuickWindowSelect}
@@ -550,6 +709,8 @@ export default function App() {
       <OverlapMapSection
         yearFrom={effectiveYearFrom}
         yearTo={effectiveYearTo}
+        minYear={timelineBounds.minYear}
+        maxYear={timelineBounds.maxYear}
         previousYearRange={zoomHistory.length > 0 ? zoomHistory[zoomHistory.length - 1] : null}
         canStepUp={zoomHistory.length > 0}
         onZoomStepUp={handleZoomStepUp}
@@ -559,6 +720,7 @@ export default function App() {
         matchingEvents={matchingEvents}
         visibleLanes={displayLanes}
         branches={branches}
+        collapsedParents={collapsedParents}
         hoveredEventId={hoveredEventId}
         showOverlapMatrix={showOverlapMatrix}
         onToggleOverlapMatrix={() => setShowOverlapMatrix((prev) => !prev)}
@@ -582,7 +744,7 @@ export default function App() {
               onClick={handleResetAll}
               className="mt-5 px-4 py-2 bg-amber-500 text-slate-950 font-semibold text-xs rounded-lg hover:bg-amber-400 transition-colors cursor-pointer"
             >
-              Восстановить весь график (1686–2000)
+              Восстановить весь график ({timelineBounds.minYear}–{timelineBounds.maxYear})
             </button>
           </div>
         ) : (
@@ -607,8 +769,11 @@ export default function App() {
                 rulers={rulers}
                 visibleLanes={displayLanes}
                 branches={branches}
+                activeBranches={activeBranches}
+                collapsedParents={collapsedParents}
                 manifest={manifest}
                 yearFrom={effectiveYearFrom}
+                minYear={timelineBounds.minYear}
                 axisResolution={axisResolution}
                 hoveredEventId={hoveredEventId}
                 cardDensity={cardDensity}
@@ -616,6 +781,7 @@ export default function App() {
                 focusScope={focusScope}
                 onChangeFocusScope={setFocusScope}
                 onToggleFocusEvent={handleToggleFocusEvent}
+                onToggleCollapseParent={handleToggleCollapseParent}
                 onExitFocusMode={() => setFocusedEventId(null)}
                 highlightedJumpId={highlightedJumpId}
                 onJumpToEvent={handleJumpToEvent}
@@ -654,6 +820,8 @@ export default function App() {
       <EraSummaryModal
         eraId={activeEraModalId}
         macroEras={manifest.macroEras}
+        minYear={timelineBounds.minYear}
+        maxYear={timelineBounds.maxYear}
         rulers={rulers}
         enrichedEvents={enrichedEvents}
         branches={branches}

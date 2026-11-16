@@ -7,6 +7,8 @@ import type { BranchDefinition, EnrichedEvent, MacroEra, RulerPeriod } from '../
 interface EraSummaryModalProps {
   eraId: string | null;
   macroEras: MacroEra[];
+  minYear?: number;
+  maxYear?: number;
   rulers: RulerPeriod[];
   enrichedEvents: EnrichedEvent[];
   branches: BranchDefinition[];
@@ -20,6 +22,8 @@ interface EraSummaryModalProps {
 export function EraSummaryModal({
   eraId,
   macroEras,
+  minYear = 1686,
+  maxYear = 2000,
   rulers,
   enrichedEvents,
   branches,
@@ -107,7 +111,7 @@ export function EraSummaryModal({
               </span>
             </div>
 
-            {eraObj.endYear >= 1686 ? (
+            {eraObj.endYear >= minYear || summary.events.length > 0 || summary.rulers.length > 0 ? (
               <button
                 type="button"
                 onClick={() => {
@@ -121,7 +125,7 @@ export function EraSummaryModal({
               </button>
             ) : (
               <span className="text-[11px] font-mono text-slate-400 whitespace-nowrap shrink-0">
-                График сейчас охватывает 1686–2000 гг.
+                График сейчас охватывает {minYear}–{maxYear} гг.
               </span>
             )}
           </div>
@@ -164,8 +168,8 @@ export function EraSummaryModal({
 
             {summary.rulers.length === 0 ? (
               <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400">
-                {eraObj.endYear < 1686
-                  ? 'Данные о правителях этого периода появятся после подключения модулей до 1686 г.'
+                {eraObj.endYear < minYear
+                  ? `Данные о правителях этого периода появятся после подключения модулей до ${minYear} г.`
                   : 'В этом макро-периоде не найдено пересекающихся правлений.'}
               </div>
             ) : (
@@ -300,8 +304,8 @@ export function EraSummaryModal({
             {filteredEvents.length === 0 ? (
               <div className="p-6 rounded-xl bg-slate-950/70 border border-slate-800 text-center space-y-2">
                 <p className="text-xs text-slate-400">
-                  {summary.events.length === 0 && eraObj.endYear < 1686
-                    ? 'События для этого периода ещё не подключены — текущая база данных начинается с 1686 года.'
+                  {summary.events.length === 0 && eraObj.endYear < minYear
+                    ? `События для этого периода ещё не подключены — текущая база данных начинается с ${minYear} года.`
                     : 'По выбранному сочетанию ветки и типа событий в этом периоде нет.'}
                 </p>
                 {hasLocalFilter && (
@@ -347,10 +351,14 @@ export function EraSummaryModal({
                         ·
                       </span>
                       <span className="text-slate-200">{ev.type || 'Событие'}</span>
-                      <span aria-hidden="true" className="text-slate-700">
-                        ·
-                      </span>
-                      <span>{ev.ruler}</span>
+                      {ev.ruler && (
+                        <>
+                          <span aria-hidden="true" className="text-slate-700">
+                            ·
+                          </span>
+                          <span>{ev.ruler}</span>
+                        </>
+                      )}
                       {ev.region && (
                         <>
                           <span aria-hidden="true" className="text-slate-700">

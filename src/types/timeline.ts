@@ -24,6 +24,10 @@ export interface BranchDefinition {
   badgeClass: string;
   isMilitary: boolean;
   alwaysTrunk?: boolean;
+  parentBranchId?: string;
+  isGroup?: boolean;
+  defaultEnabled?: boolean;
+  defaultCollapsedOnTimeline?: boolean;
 }
 
 export interface MacroEra {
@@ -62,6 +66,12 @@ export interface SubEvent {
   text: string;
 }
 
+export interface InlineNodeLink {
+  targetId: string;
+  type?: 'triggers' | 'sync_context' | 'enables' | 'references' | 'about_event' | 'inspired_by' | string;
+  label: string;
+}
+
 export interface TimelineNode {
   id: string;
   startYear?: number;
@@ -77,23 +87,32 @@ export interface TimelineNode {
   region: string;
   type: string;
   subEvents?: SubEvent[];
+  linksTo?: InlineNodeLink[];
+  campaignId?: string;
+  syncTags?: string[];
+  referenceTags?: string[];
 }
 
 export interface CrossLink {
   id: string;
   from: string;
   to: string;
-  type: 'triggers' | 'sync_context' | 'enables' | string;
+  type: 'triggers' | 'sync_context' | 'enables' | 'references' | 'about_event' | 'inspired_by' | string;
   label: string;
 }
 
 export interface MountedFileMeta {
   fileId: string;
   path: string;
-  role: 'trunk' | 'military_branches' | 'thematic_branch' | string;
+  role: 'trunk' | 'military_branches' | 'thematic_branch' | 'rulers_branch' | string;
   branchIds: string[];
   title: string;
   enabled: boolean;
+}
+
+export interface ModulesIndexFile {
+  generatedAt?: string;
+  files: string[];
 }
 
 export interface SyncManifest {
@@ -116,6 +135,7 @@ export interface RulersFile {
   fileId: string;
   path: string;
   version: string;
+  enabled?: boolean;
   branch: BranchDefinition;
   rulers: RulerPeriod[];
 }
@@ -125,9 +145,11 @@ export interface BranchFile {
   fileId: string;
   path: string;
   version?: string;
+  enabled?: boolean;
   branch?: BranchDefinition;
   branches?: BranchDefinition[];
   nodes: TimelineNode[];
+  crossLinks?: CrossLink[];
 }
 
 export type TimelineDataFile = RulersFile | BranchFile;
@@ -135,6 +157,10 @@ export type TimelineDataFile = RulersFile | BranchFile;
 export interface ExplicitLinkInfo extends CrossLink {
   direction: 'outgoing' | 'incoming';
   targetEvent: EnrichedEvent;
+  isAutoSync?: boolean;
+  syncTag?: string;
+  isRetrospective?: boolean;
+  yearGap?: number;
 }
 
 export interface EnrichedEvent extends TimelineNode {

@@ -5,12 +5,16 @@ import { BranchSelectorPopover } from './BranchSelectorPopover';
 interface TopControlBarProps {
   branchControls: Array<BranchDefinition & { count: number }>;
   activeBranches: Record<string, boolean>;
+  collapsedParents: Record<string, boolean>;
   onToggleBranch: (branchId: string) => void;
   onToggleCategory: (branchIds: string[], enable: boolean) => void;
   onApplyPreset: (presetId: BranchPresetId) => void;
   onIsolateBranch: (branchId: string) => void;
+  onToggleCollapseParent: (parentId: string) => void;
   yearFrom: number;
   yearTo: number;
+  minYear?: number;
+  maxYear?: number;
   onYearRangeChange: (from: number, to: number) => void;
   cardDensity: CardDensity;
   onChangeCardDensity: (density: CardDensity) => void;
@@ -23,12 +27,16 @@ interface TopControlBarProps {
 export function TopControlBar({
   branchControls,
   activeBranches,
+  collapsedParents,
   onToggleBranch,
   onToggleCategory,
   onApplyPreset,
   onIsolateBranch,
+  onToggleCollapseParent,
   yearFrom,
   yearTo,
+  minYear = 1686,
+  maxYear = 2000,
   onYearRangeChange,
   cardDensity,
   onChangeCardDensity,
@@ -44,10 +52,12 @@ export function TopControlBar({
           <BranchSelectorPopover
             branchControls={branchControls}
             activeBranches={activeBranches}
+            collapsedParents={collapsedParents}
             onToggleBranch={onToggleBranch}
             onToggleCategory={onToggleCategory}
             onApplyPreset={onApplyPreset}
             onIsolateBranch={onIsolateBranch}
+            onToggleCollapseParent={onToggleCollapseParent}
           />
         </div>
 
@@ -56,8 +66,8 @@ export function TopControlBar({
             <span className="text-slate-400">Годы:</span>
             <input
               type="number"
-              min={1686}
-              max={2000}
+              min={minYear}
+              max={maxYear}
               value={yearFrom}
               aria-label="Год начала"
               onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
@@ -66,8 +76,8 @@ export function TopControlBar({
             <span className="text-slate-500">—</span>
             <input
               type="number"
-              min={1686}
-              max={2000}
+              min={minYear}
+              max={maxYear}
               value={yearTo}
               aria-label="Год окончания"
               onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}

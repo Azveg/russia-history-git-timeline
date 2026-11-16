@@ -1,0 +1,66 @@
+name: Sync Branch Catalog
+
+on:
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "public/data/**/*.json"
+      - "scripts/sync-branch-catalog.mjs"
+      - "scripts/validate-branches.mjs"
+  pull_request:
+    paths:
+      - "public/data/**/*.json"
+      - "scripts/sync-branch-catalog.mjs"
+      - "scripts/validate-branches.mjs"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-catalog-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate-and-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Validate all branch JSON modules
+        run: npm run validate:branches
+
+      - name: Check catalog sync preview on Pull Request
+        if: github.event_name == 'pull_request'
+        run: |
+          if npm run sync:catalog:check; then
+            echo "BRANCH_CATALOG.md is up to date." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "BRANCH_CATALOG.md will be automatically regenerated on merge to main/master." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Regenerate BRANCH_CATALOG.md
+        if: github.event_name != 'pull_request'
+        run: |
+          npm run sync:catalog
+          npm run sync:catalog:check
+
+      - name: Commit updated BRANCH_CATALOG.md
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ -n "$(git status --porcelain BRANCH_CATALOG.md)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add BRANCH_CATALOG.md
+            git commit -m "docs(catalog): update BRANCH_CATALOG.md [skip ci]"
+            git push
+            echo "Committed updated BRANCH_CATALOG.md." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "BRANCH_CATALOG.md is already up to date." >> "$GITHUB_STEP_SUMMARY"
+          fi

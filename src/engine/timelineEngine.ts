@@ -6,11 +6,14 @@ import type {
   BranchLaneLayout,
   BranchPresetId,
   BranchSubLaneLayout,
+  CrossLink,
   DynamicWindowHotspot,
   EnrichedEvent,
   ExplicitLinkInfo,
   FilterState,
   MacroEra,
+  ModulesIndexFile,
+  MountedFileMeta,
   OverlapAnalyticsSummary,
   OverlapPeakInterval,
   OverlapYearBucket,
@@ -71,11 +74,11 @@ export function parseEventYears(periodStr: string, eventId?: string): { startYea
   if (eventId && CUSTOM_EVENT_YEARS[eventId]) {
     return { startYear: CUSTOM_EVENT_YEARS[eventId][0], endYear: CUSTOM_EVENT_YEARS[eventId][1] };
   }
-  const matches = periodStr.match(/\b(16\d\d|17\d\d|18\d\d|19\d\d|20\d\d)\b/g);
-  if (!matches || matches.length === 0) {
+  const matches = periodStr.match(/\b(\d{3,4})\b/g);
+  const nums = (matches || []).map(Number).filter((n) => n >= 100 && n <= 2100);
+  if (nums.length === 0) {
     return { startYear: 1700, endYear: 1700 };
   }
-  const nums = matches.map(Number);
   const startYear = nums[0];
   const endYear = nums.length > 1 ? Math.max(...nums) : startYear;
   return { startYear, endYear: Math.max(startYear, endYear) };
@@ -198,6 +201,84 @@ export function formatDateForResolution(parts: PreciseDateParts, resolution: Axi
   return `${parts.year} г.`;
 }
 
+function formatCompactAxisDate(parts: PreciseDateParts, resolution: AxisResolution): string {
+  if (resolution === 'day' && parts.day !== undefined && parts.month !== undefined) {
+    return `${parts.day} ${MONTHS_SHORT_RU[parts.month - 1]} ${parts.year}`;
+  }
+  if ((resolution === 'day' || resolution === 'month') && parts.month !== undefined) {
+    return `${MONTHS_SHORT_RU[parts.month - 1]} ${parts.year}`;
+  }
+  return `${parts.year}`;
+}
+
+export function formatAxisGutterDate(
+  row: StreamRow,
+  resolution: AxisResolution,
+): { label: string; title: string } {
+  if (row.rowType === 'ERA_START') {
+    const resolved = resolveMacroEra(row.era);
+    return {
+      label: `${row.year}`,
+      title: `Рубеж периода: ${resolved.displayShortTitle} (${resolved.period})`,
+    };
+  }
+
+  if (row.rowType === 'TIME_TICK') {
+    const mIdx = Math.max(0, Math.min(11, (row.month ?? 1) - 1));
+    return {
+      label: `${MONTHS_SHORT_RU[mIdx]} ${row.year}`,
+      title: `Опорная отметка оси времени: ${row.label}`,
+    };
+  }
+
+  if (row.rowType === 'RULER_COMMIT') {
+    if (row.startedBeforeWindow) {
+      return {
+        label: `с ${row.rulerObj.startYear}`,
+        title: `Правление ${row.rulerObj.shortRuler} началось в ${row.rulerObj.startYear} г. (до начала окна)`,
+      };
+    }
+    const parts = parsePreciseDate(row.rulerObj.startDate, row.rulerObj.startYear, false);
+    return {
+      label: formatCompactAxisDate(parts, resolution),
+      title: `Начало правления (${row.rulerObj.shortRuler}): ${formatDateForResolution(parts, resolution)}`,
+    };
+  }
+
+  if (row.rowType === 'RULER_END') {
+    const parts = parsePreciseDate(row.rulerObj.endDate, row.rulerObj.endYear, true);
+    return {
+      label: formatCompactAxisDate(parts, resolution),
+      title: `Слияние ветки правления (${row.rulerObj.shortRuler}): ${formatDateForResolution(parts, resolution)}`,
+    };
+  }
+
+  if (row.rowType === 'EVENT_COMMIT') {
+    if (row.startedBeforeWindow) {
+      return {
+        label: `с ${row.eventObj.startYear}`,
+        title: `Процесс начался в ${row.eventObj.startYear} г. (продолжается в окне): ${row.eventObj.title}`,
+      };
+    }
+    const parts = row.eventObj.startPrecision;
+    const approxNote =
+      parts.precision === 'year' && resolution !== 'year' ? ' (в источнике указан только год)' : '';
+    return {
+      label: formatCompactAxisDate(parts, resolution),
+      title: `${row.isAtomicInView ? 'Событие' : 'Ответвление'}: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
+    };
+  }
+
+  // EVENT_END
+  const parts = row.eventObj.endPrecision;
+  const approxNote =
+    parts.precision === 'year' && resolution !== 'year' ? ' (в источнике указан только год)' : '';
+  return {
+    label: formatCompactAxisDate(parts, resolution),
+    title: `Слияние процесса: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
+  };
+}
+
 export function isAtomicEventNode(
   node: TimelineNode,
   startParts: PreciseDateParts,
@@ -225,12 +306,213 @@ export function getGitHash(idStr: string): string {
   return (hash >>> 0).toString(16).padStart(7, '0').slice(0, 7);
 }
 
+const FALLBACK_BRANCH_COLORS = [
+  '#38bdf8',
+  '#34d399',
+  '#a78bfa',
+  '#fb923c',
+  '#f472b6',
+  '#2dd4bf',
+  '#60a5fa',
+  '#facc15',
+] as const;
+
+function pickFallbackBranchColor(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  }
+  return FALLBACK_BRANCH_COLORS[hash % FALLBACK_BRANCH_COLORS.length];
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function sanitizeBranchDefinition(raw: unknown, fallbackPath: string): BranchDefinition | null {
+  if (!isPlainRecord(raw)) return null;
+  const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+  if (!id) return null;
+
+  const rawLabel = typeof raw.label === 'string' ? raw.label.trim() : '';
+  const rawShort = typeof raw.short === 'string' ? raw.short.trim() : '';
+  const label = rawLabel || rawShort || id;
+  const short = rawShort || id.toLowerCase();
+  const gitName =
+    typeof raw.gitName === 'string' && raw.gitName.trim()
+      ? raw.gitName.trim()
+      : `branch/${short.toLowerCase().replace(/\s+/g, '-')}`;
+  const description = typeof raw.description === 'string' ? raw.description.trim() : '';
+  const color =
+    typeof raw.color === 'string' && raw.color.trim()
+      ? raw.color.trim()
+      : pickFallbackBranchColor(id);
+  const badgeClass =
+    typeof raw.badgeClass === 'string' && raw.badgeClass.trim()
+      ? raw.badgeClass.trim()
+      : 'bg-slate-500/15 text-slate-300 border-slate-500/40';
+  const parentBranchId =
+    typeof raw.parentBranchId === 'string' && raw.parentBranchId.trim() && raw.parentBranchId.trim() !== id
+      ? raw.parentBranchId.trim()
+      : undefined;
+
+  const validCategory =
+    raw.category === 'rulers' ||
+    raw.category === 'military' ||
+    raw.category === 'economy' ||
+    raw.category === 'world' ||
+    raw.category === 'other'
+      ? raw.category
+      : undefined;
+
+  return {
+    id,
+    gitName,
+    label,
+    short,
+    category: validCategory,
+    sourceFile: typeof raw.sourceFile === 'string' && raw.sourceFile.trim() ? raw.sourceFile.trim() : fallbackPath,
+    description,
+    color,
+    badgeClass,
+    isMilitary: Boolean(raw.isMilitary),
+    alwaysTrunk: raw.alwaysTrunk === true ? true : undefined,
+    parentBranchId,
+    isGroup: raw.isGroup === true ? true : undefined,
+    defaultEnabled: raw.defaultEnabled === false ? false : raw.defaultEnabled === true ? true : undefined,
+    defaultCollapsedOnTimeline: raw.defaultCollapsedOnTimeline === true ? true : undefined,
+  };
+}
+
+function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode | null {
+  if (!isPlainRecord(raw)) return null;
+  const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+  const title = typeof raw.title === 'string' ? raw.title.trim() : '';
+  const rawTask = typeof raw.task === 'string' ? raw.task.trim() : '';
+  const task = rawTask || fallbackTask || '';
+
+  const hasPeriod = typeof raw.period === 'string' && raw.period.trim().length > 0;
+  const hasStartYear = typeof raw.startYear === 'number' && Number.isFinite(raw.startYear);
+
+  if (!id || !title || !task || (!hasPeriod && !hasStartYear)) {
+    return null;
+  }
+
+  const period = hasPeriod
+    ? (raw.period as string).trim()
+    : typeof raw.endYear === 'number' && Number.isFinite(raw.endYear) && raw.endYear !== raw.startYear
+      ? `${raw.startYear}–${raw.endYear}`
+      : `${raw.startYear}`;
+
+  const subEvents = Array.isArray(raw.subEvents)
+    ? raw.subEvents
+        .filter((se): se is Record<string, unknown> => isPlainRecord(se) && typeof se.title === 'string')
+        .map((se) => ({
+          title: (se.title as string).trim(),
+          text: typeof se.text === 'string' ? se.text : '',
+        }))
+    : undefined;
+
+  const linksTo = Array.isArray(raw.linksTo)
+    ? raw.linksTo
+        .filter(
+          (lnk): lnk is Record<string, unknown> =>
+            isPlainRecord(lnk) && typeof lnk.targetId === 'string' && lnk.targetId.trim().length > 0,
+        )
+        .map((lnk) => ({
+          targetId: (lnk.targetId as string).trim(),
+          type: typeof lnk.type === 'string' ? lnk.type : 'sync_context',
+          label: typeof lnk.label === 'string' ? lnk.label : 'Связанное событие',
+        }))
+    : undefined;
+
+  const syncTags = Array.isArray(raw.syncTags)
+    ? raw.syncTags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+    : undefined;
+
+  const referenceTags = Array.isArray(raw.referenceTags)
+    ? raw.referenceTags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+    : undefined;
+
+  return {
+    id,
+    startYear: hasStartYear ? (raw.startYear as number) : undefined,
+    endYear: typeof raw.endYear === 'number' && Number.isFinite(raw.endYear) ? raw.endYear : undefined,
+    startDate: typeof raw.startDate === 'string' ? raw.startDate.trim() : undefined,
+    endDate: typeof raw.endDate === 'string' ? raw.endDate.trim() : undefined,
+    isAtomic: raw.isAtomic === true ? true : undefined,
+    period,
+    title,
+    subtitle: typeof raw.subtitle === 'string' ? raw.subtitle : '',
+    details: typeof raw.details === 'string' ? raw.details : '',
+    task,
+    region: typeof raw.region === 'string' ? raw.region : '',
+    type: typeof raw.type === 'string' ? raw.type : 'Событие',
+    subEvents,
+    linksTo,
+    campaignId: typeof raw.campaignId === 'string' && raw.campaignId.trim() ? raw.campaignId.trim() : undefined,
+    syncTags,
+    referenceTags,
+  };
+}
+
+function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
+  if (!isPlainRecord(raw)) return null;
+  const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+  const startYear = typeof raw.startYear === 'number' && Number.isFinite(raw.startYear) ? raw.startYear : null;
+  const endYear = typeof raw.endYear === 'number' && Number.isFinite(raw.endYear) ? raw.endYear : null;
+  if (!id || startYear === null || endYear === null) return null;
+
+  const ruler = typeof raw.ruler === 'string' && raw.ruler.trim() ? raw.ruler.trim() : id;
+  const shortRuler =
+    typeof raw.shortRuler === 'string' && raw.shortRuler.trim() ? raw.shortRuler.trim() : ruler;
+
+  return {
+    id,
+    eraId: typeof raw.eraId === 'string' && raw.eraId.trim() ? raw.eraId.trim() : 'ERA_1',
+    ruler,
+    shortRuler,
+    reignPeriod:
+      typeof raw.reignPeriod === 'string' && raw.reignPeriod.trim()
+        ? raw.reignPeriod.trim()
+        : `${startYear}–${Math.max(startYear, endYear)}`,
+    startYear,
+    endYear: Math.max(startYear, endYear),
+    startDate: typeof raw.startDate === 'string' ? raw.startDate.trim() : undefined,
+    endDate: typeof raw.endDate === 'string' ? raw.endDate.trim() : undefined,
+    reignTitle: typeof raw.reignTitle === 'string' ? raw.reignTitle : ruler,
+    reignThesis: typeof raw.reignThesis === 'string' ? raw.reignThesis : '',
+  };
+}
+
 export function isRulersFile(file: TimelineDataFile | undefined): file is RulersFile {
-  return Boolean(file && 'rulers' in file && Array.isArray(file.rulers));
+  return Boolean(file && isPlainRecord(file) && 'rulers' in file && Array.isArray(file.rulers));
 }
 
 export function isBranchFile(file: TimelineDataFile | undefined): file is BranchFile {
-  return Boolean(file && 'nodes' in file && Array.isArray(file.nodes));
+  return Boolean(file && isPlainRecord(file) && 'nodes' in file && Array.isArray(file.nodes));
+}
+
+function normalizeDataPath(rawPath: string): string {
+  return rawPath.trim().replace(/^\.?\//, '');
+}
+
+function collectBranchesFromDataFile(fileData: TimelineDataFile, fallbackPath: string): BranchDefinition[] {
+  const result: BranchDefinition[] = [];
+  if (!isPlainRecord(fileData)) return result;
+  const pathHint = typeof fileData.path === 'string' && fileData.path.trim() ? fileData.path : fallbackPath;
+
+  if ('branch' in fileData && fileData.branch) {
+    const parsed = sanitizeBranchDefinition(fileData.branch, pathHint);
+    if (parsed) result.push(parsed);
+  }
+  if ('branches' in fileData && Array.isArray(fileData.branches)) {
+    fileData.branches.forEach((b) => {
+      const parsed = sanitizeBranchDefinition(b, pathHint);
+      if (parsed) result.push(parsed);
+    });
+  }
+  return result;
 }
 
 export async function fetchTimelineRepository(): Promise<{
@@ -241,20 +523,138 @@ export async function fetchTimelineRepository(): Promise<{
   if (!manifestRes.ok) {
     throw new Error(`Не удалось загрузить файл синхронизации (HTTP ${manifestRes.status})`);
   }
-  const manifest = (await manifestRes.json()) as SyncManifest;
-  const files: Record<string, TimelineDataFile> = {};
+  const rawManifest = (await manifestRes.json()) as Partial<SyncManifest>;
+  const manifest: SyncManifest = {
+    project: rawManifest.project || 'Git-таймлайн',
+    schemaVersion: rawManifest.schemaVersion || '2.0.0',
+    timeAxis: rawManifest.timeAxis || {
+      minYear: 1686,
+      maxYear: 2000,
+      resolution: 'adaptive_year_month_day',
+      overlapRule: 'inclusive_interval',
+    },
+    mountedFiles: Array.isArray(rawManifest.mountedFiles) ? rawManifest.mountedFiles : [],
+    macroEras: Array.isArray(rawManifest.macroEras) ? rawManifest.macroEras : [],
+    crossLinks: Array.isArray(rawManifest.crossLinks) ? rawManifest.crossLinks : [],
+  };
 
-  await Promise.allSettled(
-    manifest.mountedFiles.map(async (meta) => {
-      const cleanPath = meta.path.replace(/^\.?\//, '');
-      const res = await fetch(`./${cleanPath}`, { cache: 'no-store' });
-      if (res.ok) {
-        files[meta.path] = (await res.json()) as TimelineDataFile;
+  // Автообнаружение JSON-модулей из /public/data/ (через Vite modules.index.json с фоллбеком на manifest)
+  let hasDiscoveredIndex = false;
+  let discoveredPaths: string[] = [];
+  try {
+    const indexRes = await fetch('./data/modules.index.json', { cache: 'no-store' });
+    const ct = indexRes.headers.get('content-type') || '';
+    if (indexRes.ok && !ct.includes('text/html')) {
+      const idxData = (await indexRes.json()) as ModulesIndexFile;
+      if (Array.isArray(idxData?.files)) {
+        hasDiscoveredIndex = true;
+        discoveredPaths = idxData.files.map(normalizeDataPath).filter(Boolean);
+      }
+    }
+  } catch {
+    // Фоллбек на явный список из sync.manifest.json
+  }
+
+  const manifestMetaByNormPath = new Map<string, MountedFileMeta>();
+  manifest.mountedFiles.forEach((meta) => {
+    if (meta?.path) {
+      manifestMetaByNormPath.set(normalizeDataPath(meta.path), meta);
+    }
+  });
+
+  const discoveredSet = new Set(discoveredPaths);
+  const orderedCandidatePaths: string[] = [];
+  const seenPaths = new Set<string>();
+
+  if (hasDiscoveredIndex) {
+    // modules.index.json — источник истины на диске: удалённые из папки файлы не запрашиваются (без Vite HTML-фоллбека)
+    manifest.mountedFiles.forEach((meta) => {
+      if (!meta?.path) return;
+      const norm = normalizeDataPath(meta.path);
+      if (norm && discoveredSet.has(norm) && !seenPaths.has(norm)) {
+        seenPaths.add(norm);
+        orderedCandidatePaths.push(norm);
+      }
+    });
+
+    discoveredPaths.forEach((norm) => {
+      if (norm && !seenPaths.has(norm)) {
+        seenPaths.add(norm);
+        orderedCandidatePaths.push(norm);
+      }
+    });
+  } else {
+    manifest.mountedFiles.forEach((meta) => {
+      if (!meta?.path) return;
+      const norm = normalizeDataPath(meta.path);
+      if (norm && !seenPaths.has(norm)) {
+        seenPaths.add(norm);
+        orderedCandidatePaths.push(norm);
+      }
+    });
+  }
+
+  const files: Record<string, TimelineDataFile> = {};
+  const resolvedMountedFiles: MountedFileMeta[] = [];
+
+  const fetchedEntries = await Promise.all(
+    orderedCandidatePaths.map(async (normPath) => {
+      try {
+        const res = await fetch(`./${normPath}`, { cache: 'no-store' });
+        const ct = res.headers.get('content-type') || '';
+        if (!res.ok || ct.includes('text/html')) {
+          return { normPath, data: null as TimelineDataFile | null };
+        }
+        const parsed = (await res.json()) as unknown;
+        if (!isPlainRecord(parsed) || (!Array.isArray(parsed.nodes) && !Array.isArray(parsed.rulers))) {
+          return { normPath, data: null as TimelineDataFile | null };
+        }
+        return { normPath, data: parsed as unknown as TimelineDataFile };
+      } catch {
+        // Полная изоляция: битый или недоступный JSON-файл пропускается без сбоев
+        return { normPath, data: null as TimelineDataFile | null };
       }
     }),
   );
 
-  return { manifest, files };
+  fetchedEntries.forEach(({ normPath, data }) => {
+    if (!data) return;
+    const existingMeta = manifestMetaByNormPath.get(normPath);
+    const storeKey = existingMeta?.path || (typeof data.path === 'string' && data.path.trim()) || normPath;
+    files[storeKey] = data;
+
+    const declaredBranches = collectBranchesFromDataFile(data, storeKey);
+    const branchIds = declaredBranches.map((b) => b.id);
+    const inferredRole: MountedFileMeta['role'] = isRulersFile(data)
+      ? 'rulers_branch'
+      : declaredBranches.some((b) => b.isMilitary)
+        ? 'military_branches'
+        : 'thematic_branch';
+
+    const isFileEnabled =
+      data.enabled === false
+        ? false
+        : existingMeta
+          ? existingMeta.enabled !== false
+          : true;
+
+    resolvedMountedFiles.push({
+      fileId: existingMeta?.fileId || (typeof data.fileId === 'string' && data.fileId) || normPath,
+      path: storeKey,
+      role: existingMeta?.role || inferredRole,
+      branchIds: existingMeta?.branchIds?.length ? existingMeta.branchIds : branchIds,
+      title: existingMeta?.title || declaredBranches[0]?.label || storeKey,
+      enabled: isFileEnabled,
+    });
+  });
+
+  return {
+    manifest: {
+      ...manifest,
+      mountedFiles: resolvedMountedFiles,
+    },
+    files,
+  };
 }
 
 export function extractBranchesFromStore(
@@ -262,18 +662,56 @@ export function extractBranchesFromStore(
   filesMap: Record<string, TimelineDataFile>,
 ): BranchDefinition[] {
   const result: BranchDefinition[] = [];
+  const seenIds = new Set<string>();
+
   manifest.mountedFiles.forEach((meta) => {
     if (!meta.enabled) return;
     const fileData = filesMap[meta.path];
     if (!fileData) return;
-    if ('branch' in fileData && fileData.branch) {
-      result.push({ ...fileData.branch, sourceFile: fileData.branch.sourceFile || meta.path });
-    } else if ('branches' in fileData && Array.isArray(fileData.branches)) {
-      fileData.branches.forEach((b) => {
-        result.push({ ...b, sourceFile: b.sourceFile || meta.path });
-      });
-    }
+
+    collectBranchesFromDataFile(fileData, meta.path).forEach((branch) => {
+      if (!seenIds.has(branch.id)) {
+        seenIds.add(branch.id);
+        result.push(branch);
+      }
+    });
   });
+
+  // Автоматически синтезируем тематическую дорожку для событий-сирот, если ветка в файле не была объявлена или удалена
+  manifest.mountedFiles.forEach((meta) => {
+    if (
+      !meta.enabled ||
+      meta.role === 'trunk' ||
+      meta.role === 'rulers_branch' ||
+      meta.fileId === 'rulers'
+    ) {
+      return;
+    }
+    const fileData = filesMap[meta.path];
+    if (!isBranchFile(fileData)) return;
+
+    const fallbackBranchId = collectBranchesFromDataFile(fileData, meta.path).find((b) => !b.isGroup)?.id;
+
+    fileData.nodes.forEach((rawNode) => {
+      const node = sanitizeTimelineNode(rawNode, fallbackBranchId);
+      if (!node || seenIds.has(node.task)) return;
+
+      seenIds.add(node.task);
+      result.push({
+        id: node.task,
+        gitName: `theme/${node.task.toLowerCase().replace(/[^a-z0-9_-]+/g, '-')}`,
+        label: node.task,
+        short: node.task.toLowerCase(),
+        category: 'other',
+        sourceFile: meta.path,
+        description: `Автоматически созданная ветка для узлов с task="${node.task}"`,
+        color: pickFallbackBranchColor(node.task),
+        badgeClass: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
+        isMilitary: false,
+      });
+    });
+  });
+
   return result;
 }
 
@@ -284,12 +722,13 @@ export function extractRulersFromStore(
   const rulersMeta = manifest.mountedFiles.find(
     (m) => m.role === 'trunk' || m.role === 'rulers_branch' || m.fileId === 'rulers',
   );
-  if (!rulersMeta) return [];
+  if (!rulersMeta || !rulersMeta.enabled) return [];
   const fileData = filesMap[rulersMeta.path];
-  if (isRulersFile(fileData)) {
-    return fileData.rulers;
-  }
-  return [];
+  if (!isRulersFile(fileData)) return [];
+
+  return fileData.rulers
+    .map((raw) => sanitizeRulerPeriod(raw))
+    .filter((r): r is RulerPeriod => r !== null);
 }
 
 export function getEnrichedEvents(
@@ -300,6 +739,8 @@ export function getEnrichedEvents(
   const list: EnrichedEvent[] = [];
   let seq = 0;
   const resolvedEras = resolveMacroEras(manifest.macroEras || []);
+  const fileCrossLinks: CrossLink[] = [];
+  const inlineCrossLinks: CrossLink[] = [];
 
   manifest.mountedFiles.forEach((fileMeta) => {
     if (
@@ -313,7 +754,39 @@ export function getEnrichedEvents(
     const fileObj = filesMap[fileMeta.path];
     if (!isBranchFile(fileObj)) return;
 
-    fileObj.nodes.forEach((ev) => {
+    const fallbackBranchId = collectBranchesFromDataFile(fileObj, fileMeta.path).find((b) => !b.isGroup)?.id;
+
+    if (Array.isArray(fileObj.crossLinks)) {
+      fileObj.crossLinks.forEach((lnk) => {
+        if (isPlainRecord(lnk) && typeof lnk.from === 'string' && typeof lnk.to === 'string') {
+          fileCrossLinks.push({
+            id: typeof lnk.id === 'string' && lnk.id ? lnk.id : `file-link-${lnk.from}-${lnk.to}`,
+            from: lnk.from.trim(),
+            to: lnk.to.trim(),
+            type: typeof lnk.type === 'string' ? lnk.type : 'sync_context',
+            label: typeof lnk.label === 'string' ? lnk.label : 'Связанное событие',
+          });
+        }
+      });
+    }
+
+    fileObj.nodes.forEach((rawNode) => {
+      const ev = sanitizeTimelineNode(rawNode, fallbackBranchId);
+      if (!ev) return;
+
+      if (Array.isArray(ev.linksTo)) {
+        ev.linksTo.forEach((lnk, idx) => {
+          if (!lnk?.targetId) return;
+          inlineCrossLinks.push({
+            id: `inline-${ev.id}-${lnk.targetId}-${idx}`,
+            from: ev.id,
+            to: lnk.targetId,
+            type: lnk.type || 'sync_context',
+            label: lnk.label || 'Связанное событие',
+          });
+        });
+      }
+
       const parsed =
         typeof ev.startYear === 'number' && typeof ev.endYear === 'number'
           ? { startYear: ev.startYear, endYear: ev.endYear }
@@ -327,9 +800,6 @@ export function getEnrichedEvents(
       const isAtomic = ev.isAtomic === true || (startYear === endYear && startPrecision.sortKey === endPrecision.sortKey);
 
       const overlappingRulers = rulers.filter((r) => r.startYear <= endYear && r.endYear >= startYear);
-      if (overlappingRulers.length === 0 && rulers.length > 0) {
-        overlappingRulers.push(rulers[0]);
-      }
 
       const eraObj = findMacroEraForYear(startYear, resolvedEras, startPrecision.month);
 
@@ -366,7 +836,185 @@ export function getEnrichedEvents(
   });
 
   const byId = new Map(list.map((e) => [e.id, e]));
-  const crossLinks = manifest.crossLinks || [];
+
+  // Слой 1: явные связи (из sync.manifest.json + локальные crossLinks ветки + inline linksTo у узлов)
+  const explicitLinks: CrossLink[] = [];
+  const seenLinkSignatures = new Set<string>();
+  const explicitPairKeys = new Set<string>();
+
+  const combinedRawLinks = [
+    ...(manifest.crossLinks || []),
+    ...fileCrossLinks,
+    ...inlineCrossLinks,
+  ];
+
+  combinedRawLinks.forEach((lnk) => {
+    if (!lnk.from || !lnk.to || lnk.from === lnk.to) return;
+    const signature = `${lnk.from}|${lnk.to}|${lnk.type}`;
+    if (seenLinkSignatures.has(signature)) return;
+    seenLinkSignatures.add(signature);
+    explicitLinks.push(lnk);
+
+    const pairKey = lnk.from < lnk.to ? `${lnk.from}|${lnk.to}` : `${lnk.to}|${lnk.from}`;
+    explicitPairKeys.add(pairKey);
+  });
+
+  // Слой 2: автоматическая синхронизация событий разных веток по общим тегам кампаний и хронологической близости
+  const eventsByTag = new Map<string, EnrichedEvent[]>();
+  list.forEach((ev) => {
+    const rawTags = [
+      ...(ev.syncTags || []),
+      ...(ev.campaignId ? [ev.campaignId] : []),
+    ];
+    const uniqueNormalized = new Set(
+      rawTags.map((t) => t.trim().toLowerCase()).filter(Boolean),
+    );
+    uniqueNormalized.forEach((tag) => {
+      const bucket = eventsByTag.get(tag);
+      if (bucket) {
+        bucket.push(ev);
+      } else {
+        eventsByTag.set(tag, [ev]);
+      }
+    });
+  });
+
+  const autoSyncByPair = new Map<
+    string,
+    { from: EnrichedEvent; to: EnrichedEvent; tags: string[] }
+  >();
+
+  eventsByTag.forEach((taggedEvents, tag) => {
+    if (taggedEvents.length < 2) return;
+    for (let i = 0; i < taggedEvents.length; i++) {
+      for (let j = i + 1; j < taggedEvents.length; j++) {
+        const a = taggedEvents[i];
+        const b = taggedEvents[j];
+        if (a.task === b.task) continue;
+
+        const pairKey = a.id < b.id ? `${a.id}|${b.id}` : `${b.id}|${a.id}`;
+        if (explicitPairKeys.has(pairKey)) continue;
+
+        // Пересечение интервалов или близость до 3 лет
+        const maxStart = Math.max(a.startYear, b.startYear);
+        const minEnd = Math.min(a.endYear, b.endYear);
+        if (maxStart > minEnd + 3) continue;
+
+        const existingAuto = autoSyncByPair.get(pairKey);
+        if (existingAuto) {
+          if (!existingAuto.tags.includes(tag)) {
+            existingAuto.tags.push(tag);
+          }
+        } else {
+          autoSyncByPair.set(pairKey, { from: a, to: b, tags: [tag] });
+        }
+      }
+    }
+  });
+
+  const autoSyncLinks: Array<CrossLink & { isAutoSync: boolean; syncTag: string; isRetrospective?: boolean }> = [];
+  autoSyncByPair.forEach(({ from, to, tags }, pairKey) => {
+    const formattedTags = tags.map((t) => `#${t}`).join(', ');
+    autoSyncLinks.push({
+      id: `auto-sync-${pairKey}`,
+      from: from.id,
+      to: to.id,
+      type: 'sync_context',
+      label: `Авто-синхронизация по общему тегу кампании (${formattedTags})`,
+      isAutoSync: true,
+      syncTag: tags[0],
+      isRetrospective: false,
+    });
+  });
+
+  // Слой 3: внеоконные и ретроспективные связи (referenceTags и канонические теги event-<id>) без ограничения в 3 года
+  const retrospectivePairMap = new Map<
+    string,
+    { from: EnrichedEvent; to: EnrichedEvent; tags: string[] }
+  >();
+
+  const registerRetrospectivePair = (referencer: EnrichedEvent, target: EnrichedEvent, tag: string) => {
+    if (referencer.id === target.id || referencer.task === target.task) return;
+    const pairKey = referencer.id < target.id ? `${referencer.id}|${target.id}` : `${target.id}|${referencer.id}`;
+    if (explicitPairKeys.has(pairKey) || autoSyncByPair.has(pairKey)) return;
+
+    // Ориентируем связь от более позднего узла (книга/исследование) к исходному историческому событию
+    const fromNode = referencer.startYear >= target.startYear ? referencer : target;
+    const toNode = fromNode === referencer ? target : referencer;
+
+    const existing = retrospectivePairMap.get(pairKey);
+    if (existing) {
+      if (!existing.tags.includes(tag)) {
+        existing.tags.push(tag);
+      }
+    } else {
+      retrospectivePairMap.set(pairKey, { from: fromNode, to: toNode, tags: [tag] });
+    }
+  };
+
+  list.forEach((ev) => {
+    // 3a. Канонический тег вида event-<node.id> в syncTags или referenceTags всегда связывает с целевым узлом
+    const allNodeTags = Array.from(
+      new Set(
+        [
+          ...(ev.syncTags || []),
+          ...(ev.referenceTags || []),
+          ...(ev.campaignId ? [ev.campaignId] : []),
+        ]
+          .map((t) => t.trim().toLowerCase())
+          .filter(Boolean),
+      ),
+    );
+
+    allNodeTags.forEach((tag) => {
+      if (tag.startsWith('event-')) {
+        const targetId = tag.slice('event-'.length);
+        const targetNode = byId.get(targetId);
+        if (targetNode) {
+          const isExplicitRefTag = (ev.referenceTags || []).some((rt) => rt.trim().toLowerCase() === tag);
+          const maxStart = Math.max(ev.startYear, targetNode.startYear);
+          const minEnd = Math.min(ev.endYear, targetNode.endYear);
+          if (isExplicitRefTag || maxStart > minEnd + 3) {
+            registerRetrospectivePair(ev, targetNode, tag);
+          }
+        }
+      }
+    });
+
+    // 3b. Теги из referenceTags связываются с первичными носителями этого тега (syncTags / campaignId) на любой дистанции лет
+    const refTags = Array.from(
+      new Set((ev.referenceTags || []).map((t) => t.trim().toLowerCase()).filter(Boolean)),
+    );
+    refTags.forEach((tag) => {
+      const owners = eventsByTag.get(tag) || [];
+      owners.forEach((owner) => {
+        registerRetrospectivePair(ev, owner, tag);
+      });
+    });
+  });
+
+  const retrospectiveTagLinks: Array<
+    CrossLink & { isAutoSync: boolean; syncTag: string; isRetrospective: boolean }
+  > = [];
+  retrospectivePairMap.forEach(({ from, to, tags }, pairKey) => {
+    const formattedTags = tags.map((t) => `#${t}`).join(', ');
+    retrospectiveTagLinks.push({
+      id: `ref-sync-${pairKey}`,
+      from: from.id,
+      to: to.id,
+      type: 'references',
+      label: `Внеоконная отсылка по тегу (${formattedTags})`,
+      isAutoSync: true,
+      syncTag: tags[0],
+      isRetrospective: true,
+    });
+  });
+
+  const RETROSPECTIVE_LINK_TYPES = new Set(['references', 'about_event', 'inspired_by']);
+
+  const allLinks: Array<
+    CrossLink & { isAutoSync?: boolean; syncTag?: string; isRetrospective?: boolean }
+  > = [...explicitLinks, ...autoSyncLinks, ...retrospectiveTagLinks];
 
   list.forEach((ev) => {
     ev.concurrentEvents = list.filter(
@@ -374,16 +1022,26 @@ export function getEnrichedEvents(
     );
 
     const links: ExplicitLinkInfo[] = [];
-    crossLinks.forEach((lnk) => {
+    allLinks.forEach((lnk) => {
       if (lnk.from === ev.id || lnk.to === ev.id) {
         const isOutgoing = lnk.from === ev.id;
         const targetId = isOutgoing ? lnk.to : lnk.from;
         const targetEvent = byId.get(targetId);
         if (targetEvent) {
+          const maxStart = Math.max(ev.startYear, targetEvent.startYear);
+          const minEnd = Math.min(ev.endYear, targetEvent.endYear);
+          const yearGap = maxStart > minEnd ? maxStart - minEnd : 0;
+          const isRetrospective =
+            lnk.isRetrospective === true ||
+            RETROSPECTIVE_LINK_TYPES.has(lnk.type) ||
+            (yearGap > 3 && lnk.type !== 'triggers' && lnk.type !== 'enables');
+
           links.push({
             ...lnk,
             direction: isOutgoing ? 'outgoing' : 'incoming',
             targetEvent,
+            isRetrospective,
+            yearGap,
           });
         }
       }
@@ -394,9 +1052,104 @@ export function getEnrichedEvents(
   return list;
 }
 
+export function getDescendantBranchIds(
+  parentId: string,
+  branches: BranchDefinition[],
+): string[] {
+  const result: string[] = [];
+  const queue = [parentId];
+  const visited = new Set<string>([parentId]);
+
+  while (queue.length > 0) {
+    const currentId = queue.shift()!;
+    branches.forEach((b) => {
+      if (b.parentBranchId === currentId && !visited.has(b.id)) {
+        visited.add(b.id);
+        result.push(b.id);
+        queue.push(b.id);
+      }
+    });
+  }
+
+  return result;
+}
+
+export function getDirectChildBranches<T extends BranchDefinition>(
+  parentId: string,
+  branches: T[],
+): T[] {
+  return branches.filter((b) => b.parentBranchId === parentId);
+}
+
+export function hasChildBranches(
+  branchId: string,
+  branches: BranchDefinition[],
+): boolean {
+  return branches.some((b) => b.parentBranchId === branchId);
+}
+
+function getBranchAncestorChain(
+  branchId: string,
+  byId: Map<string, BranchDefinition>,
+): BranchDefinition[] {
+  const chain: BranchDefinition[] = [];
+  const visited = new Set<string>();
+  let current = byId.get(branchId);
+
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    chain.push(current);
+    current = current.parentBranchId ? byId.get(current.parentBranchId) : undefined;
+  }
+
+  return chain;
+}
+
+export function isBranchOrDescendantActive(
+  branch: BranchDefinition,
+  branches: BranchDefinition[],
+  activeBranches: Record<string, boolean>,
+): boolean {
+  const descendants = getDescendantBranchIds(branch.id, branches);
+  if (descendants.length === 0) {
+    return activeBranches[branch.id] !== false;
+  }
+
+  const byId = new Map(branches.map((b) => [b.id, b]));
+  const ownActive = !branch.isGroup && activeBranches[branch.id] !== false;
+  if (ownActive) return true;
+
+  return descendants.some((id) => {
+    const desc = byId.get(id);
+    return Boolean(desc && !desc.isGroup && activeBranches[desc.id] !== false);
+  });
+}
+
+export function resolveEffectiveBranch(
+  branchId: string,
+  branches: BranchDefinition[],
+  collapsedParents: Record<string, boolean> = {},
+): BranchDefinition {
+  const byId = new Map(branches.map((b) => [b.id, b]));
+  const chain = getBranchAncestorChain(branchId, byId);
+  if (chain.length === 0) {
+    return branches.find((b) => b.id !== 'MAIN_RULERS' && !b.isGroup) || TIME_AXIS_BRANCH;
+  }
+
+  // Находим самого верхнего свернутого родителя в цепочке предков
+  for (let i = chain.length - 1; i >= 1; i--) {
+    if (collapsedParents[chain[i].id]) {
+      return chain[i];
+    }
+  }
+
+  return chain[0];
+}
+
 export function getVisibleLanes(
   branches: BranchDefinition[],
   activeBranches: Record<string, boolean>,
+  collapsedParents: Record<string, boolean> = {},
 ): BranchDefinition[] {
   const list: BranchDefinition[] = [];
   const rulersBranch = branches.find((b) => b.id === 'MAIN_RULERS');
@@ -407,8 +1160,26 @@ export function getVisibleLanes(
   // Центральная ось времени (time/main) всегда отделяет зону правителей слева от тематических веток справа
   list.push(TIME_AXIS_BRANCH);
 
+  const byId = new Map(branches.map((b) => [b.id, b]));
+
   branches.forEach((b) => {
     if (b.id === 'MAIN_RULERS') return;
+
+    // Если любой строгий предок свернут на таймлайне, дочерняя ветка сливается в него и не занимает отдельную дорожку
+    const chain = getBranchAncestorChain(b.id, byId);
+    const hasCollapsedAncestor = chain.slice(1).some((anc) => Boolean(collapsedParents[anc.id]));
+    if (hasCollapsedAncestor) return;
+
+    const isParentWithChildren = hasChildBranches(b.id, branches);
+    if (isParentWithChildren && collapsedParents[b.id]) {
+      if (isBranchOrDescendantActive(b, branches, activeBranches)) {
+        list.push(b);
+      }
+      return;
+    }
+
+    if (b.isGroup) return;
+
     if (activeBranches[b.id] !== false) {
       list.push(b);
     }
@@ -420,8 +1191,9 @@ export function getVisibleLanes(
 export function resolveEventBranch(
   ev: EnrichedEvent,
   branches: BranchDefinition[],
+  collapsedParents: Record<string, boolean> = {},
 ): BranchDefinition {
-  return branches.find((b) => b.id === ev.task) || branches[0] || TIME_AXIS_BRANCH;
+  return resolveEffectiveBranch(ev.task, branches, collapsedParents);
 }
 
 export function isEventBranchActive(
@@ -450,6 +1222,34 @@ export function getEventRulerSegments(ev: EnrichedEvent): RulerSpanSegment[] {
   }));
 }
 
+export function computeTimelineYearBounds(
+  manifest: SyncManifest | null,
+  rulers: RulerPeriod[],
+  enrichedEvents: EnrichedEvent[],
+): { minYear: number; maxYear: number } {
+  const baseMin = typeof manifest?.timeAxis?.minYear === 'number' ? manifest.timeAxis.minYear : 1686;
+  const baseMax = typeof manifest?.timeAxis?.maxYear === 'number' ? manifest.timeAxis.maxYear : 2000;
+
+  let minYear = baseMin;
+  let maxYear = baseMax;
+
+  rulers.forEach((r) => {
+    if (r.startYear < minYear) minYear = r.startYear;
+    if (r.endYear > maxYear) maxYear = r.endYear;
+  });
+
+  enrichedEvents.forEach((ev) => {
+    if (ev.startYear < minYear) minYear = ev.startYear;
+    if (ev.endYear > maxYear) maxYear = ev.endYear;
+  });
+
+  if (maxYear <= minYear) {
+    maxYear = minYear + 1;
+  }
+
+  return { minYear, maxYear };
+}
+
 export function buildUnifiedTimelineStream(
   enrichedEvents: EnrichedEvent[],
   rulers: RulerPeriod[],
@@ -474,6 +1274,8 @@ export function buildUnifiedTimelineStream(
   let matchingRulers: RulerPeriod[] = [];
   let effectiveYearFrom = filters.yearFrom;
   let effectiveYearTo = filters.yearTo;
+
+  const yearBounds = computeTimelineYearBounds(manifest, rulers, enrichedEvents);
 
   const rulersFileMeta = manifest.mountedFiles.find(
     (f) => f.role === 'trunk' || f.role === 'rulers_branch' || f.fileId === 'rulers',
@@ -511,8 +1313,8 @@ export function buildUnifiedTimelineStream(
 
     const minEventYear = matchingEvents.reduce((m, e) => Math.min(m, e.startYear), focusTarget.startYear);
     const maxEventYear = matchingEvents.reduce((m, e) => Math.max(m, e.endYear), focusTarget.endYear);
-    effectiveYearFrom = Math.max(1686, minEventYear);
-    effectiveYearTo = Math.min(2000, Math.max(effectiveYearFrom + 1, maxEventYear));
+    effectiveYearFrom = Math.max(yearBounds.minYear, minEventYear);
+    effectiveYearTo = Math.min(yearBounds.maxYear, Math.max(effectiveYearFrom + 1, maxEventYear));
   } else {
     matchingEvents = enrichedEvents.filter((ev) => {
       if (!isEventBranchActive(ev, filters.activeBranches)) return false;
@@ -772,6 +1574,7 @@ export function computeBranchPresetMap(
 ): Record<string, boolean> {
   const next: Record<string, boolean> = {};
   branches.forEach((b) => {
+    if (b.isGroup) return;
     const cat = resolveBranchCategory(b).key;
     if (presetId === 'all') {
       next[b.id] = true;
@@ -894,11 +1697,13 @@ export function computeBranchSubLaneLayout(
     firstThematicOffset?: number;
     laneGap?: number;
     subStep?: number;
+    collapsedParents?: Record<string, boolean>;
   },
 ): BranchSubLaneLayout {
   const firstThematicX = timeSpineX + (options?.firstThematicOffset ?? 28);
   const laneGap = options?.laneGap ?? 22;
   const subStep = options?.subStep ?? 10;
+  const collapsedParents = options?.collapsedParents ?? {};
 
   const slotByEventId = new Map<string, number>();
   const branchLayouts = new Map<string, BranchLaneLayout>();
@@ -909,7 +1714,7 @@ export function computeBranchSubLaneLayout(
     const laneNonAtomicEvents = matchingEvents
       .filter(
         (ev) =>
-          resolveEventBranch(ev, branches).id === lane.id &&
+          resolveEventBranch(ev, branches, collapsedParents).id === lane.id &&
           !isAtomicEventNode(ev, ev.startPrecision, ev.endPrecision, axisResolution),
       )
       .sort((a, b) => {

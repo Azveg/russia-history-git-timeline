@@ -21,7 +21,7 @@
       "fileId": "wars",
       "path": "data/wars.json",
       "role": "military_branches",
-      "branchIds": ["SEAS", "PERIPHERY", "INTERNAL_BUFFER"],
+      "branchIds": ["WAR_ALL", "SEAS", "PERIPHERY", "INTERNAL_BUFFER"],
       "title": "Военные конфликты, походы и силовые операции (1686–1999)",
       "enabled": true
     },
@@ -47,7 +47,7 @@
       "role": "thematic_branch",
       "branchIds": ["DIPLOMACY_TREATIES"],
       "title": "Дипломатия: ключевые мирные договоры и военные союзы (опциональный модуль)",
-      "enabled": false
+      "enabled": true
     }
   ],
   "macroEras": [

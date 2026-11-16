@@ -5,10 +5,24 @@
   "version": "2.0.0",
   "branches": [
     {
+      "id": "WAR_ALL",
+      "gitName": "war/all",
+      "label": "Военные кампании (общая ветка)",
+      "short": "war/all",
+      "category": "military",
+      "sourceFile": "data/wars.json",
+      "description": "Объединённая военная ветка, объединяющая походы за выход к морям, имперскую периферию и внутренние операции",
+      "color": "#f43f5e",
+      "badgeClass": "bg-rose-500/15 text-rose-300 border-rose-500/40",
+      "isMilitary": true,
+      "isGroup": true
+    },
+    {
       "id": "SEAS",
       "gitName": "war/seas",
       "label": "Войны: Выход к морям",
       "short": "war/seas",
+      "parentBranchId": "WAR_ALL",
       "sourceFile": "data/wars.json",
       "description": "Борьба за выход к Балтийскому, Черному, Азовскому, Каспийскому и Желтому морям и проливам",
       "color": "#38bdf8",
@@ -20,6 +34,7 @@
       "gitName": "war/periphery",
       "label": "Войны: Имперская периферия",
       "short": "war/periphery",
+      "parentBranchId": "WAR_ALL",
       "sourceFile": "data/wars.json",
       "description": "Колониальные походы, расширение границ и силовое удержание национальных окраин",
       "color": "#fb923c",
@@ -31,6 +46,7 @@
       "gitName": "war/buffer-internal",
       "label": "Войны: Восстания и буферные зоны",
       "short": "war/buffer",
+      "parentBranchId": "WAR_ALL",
       "sourceFile": "data/wars.json",
       "description": "Подавление внутренних бунтов и зарубежные интервенции в Европе и Азии",
       "color": "#f43f5e",
@@ -78,7 +94,8 @@
       "region": "Балтика и Восточная Европа",
       "type": "Международная война",
       "startDate": "1700-08-30",
-      "endDate": "1721-09-10"
+      "endDate": "1721-09-10",
+      "syncTags": ["northern-war"]
     },
     {
       "id": "1704-bashkir",
@@ -464,7 +481,8 @@
       "type": "Международная война",
       "startDate": "1812-06-24",
       "endDate": "1812-12-26",
-      "isAtomic": false
+      "isAtomic": false,
+      "syncTags": ["napoleonic"]
     },
     {
       "id": "1813-foreign-campaigns",
@@ -476,7 +494,8 @@
       "details": "Военная кампания антифранцузской коалиции по изгнанию войск Наполеона из Германии, взятию Парижа и установлению Венской системы международных отношений («Священного союза»).",
       "task": "INTERNAL_BUFFER",
       "region": "Западная и Центральная Европа",
-      "type": "Международная война"
+      "type": "Международная война",
+      "syncTags": ["napoleonic"]
     },
     {
       "id": "1825-decembrists",
@@ -711,7 +730,8 @@
       "region": "Восточная Европа и Кавказ",
       "type": "Международная война",
       "startDate": "1914-08-01",
-      "endDate": "1918-03-03"
+      "endDate": "1918-03-03",
+      "syncTags": ["ww1"]
     },
     {
       "id": "1916-central-asia-revolt",
@@ -1003,7 +1023,9 @@
       "region": "Европа и Дальний Восток",
       "type": "Международная война",
       "startDate": "1941-06-22",
-      "endDate": "1945-09-02"
+      "endDate": "1945-09-02",
+      "campaignId": "ww2",
+      "syncTags": ["ww2"]
     },
     {
       "id": "1941-iran-consent",
