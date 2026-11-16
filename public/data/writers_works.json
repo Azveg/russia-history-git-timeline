@@ -147,6 +147,11 @@
       "type": "Историческое сочинение",
       "syncTags": ["person-karamzin-nikolay"],
       "referenceTags": [
+        "event-1237-batu-invasion",
+        "event-1378-vozha-kulikovo",
+        "event-1480-ugra-standing",
+        "event-1545-kazan-astrakhan",
+        "event-1609-time-of-troubles-intervention",
         "era-1",
         "era-2",
         "era-3",
@@ -158,6 +163,23 @@
         "ruler-ivan-3",
         "ruler-ivan-4",
         "ruler-boris-godunov"
+      ],
+      "linksTo": [
+        {
+          "targetId": "1378-vozha-kulikovo",
+          "type": "about_event",
+          "label": "Развёрнутая летописная реконструкция Куликовской битвы и возвышения Москвы в V томе «Истории»"
+        },
+        {
+          "targetId": "1545-kazan-astrakhan",
+          "type": "about_event",
+          "label": "Классическое повествование о взятии Казани и реформах Ивана IV в VIII–IX томах «Истории»"
+        },
+        {
+          "targetId": "1609-time-of-troubles-intervention",
+          "type": "about_event",
+          "label": "Заключительный XII том посвящён катастрофе Смутного времени и польско-шведской интервенции"
+        }
       ]
     },
     {
@@ -209,10 +231,18 @@
       "type": "Историческая трагедия",
       "syncTags": ["person-pushkin-alexander"],
       "referenceTags": [
+        "event-1609-time-of-troubles-intervention",
         "ruler-boris-godunov",
         "ruler-false-dmitry-1",
         "era-3",
         "era-4"
+      ],
+      "linksTo": [
+        {
+          "targetId": "1609-time-of-troubles-intervention",
+          "type": "about_event",
+          "label": "Трагедия изображает завязку Смутного времени и поход Лжедмитрия I при поддержке польских магнатов"
+        }
       ]
     },
     {
@@ -269,7 +299,17 @@
       "region": "Санкт-Петербург / Малороссия",
       "type": "Историческая повесть",
       "syncTags": ["person-gogol-nikolay"],
-      "referenceTags": ["era-4"]
+      "referenceTags": [
+        "event-1654-rus-polish-swedish-war",
+        "era-4"
+      ],
+      "linksTo": [
+        {
+          "targetId": "1654-rus-polish-swedish-war",
+          "type": "references",
+          "label": "Повесть отражает исторический контекст казацко-польских войн, приведших к Переяславской раде и войне 1654–1667 гг."
+        }
+      ]
     },
     {
       "id": "1836-pushkin-kapitanskaya-dochka",
@@ -881,7 +921,20 @@
       "region": "Санкт-Петербург / Шахматово",
       "type": "Лирико-исторический цикл",
       "syncTags": ["person-blok-alexander", "topic-silver-age"],
-      "referenceTags": ["ruler-dmitry-donskoy", "era-2", "ruler-nicholas-2", "era-9"]
+      "referenceTags": [
+        "event-1378-vozha-kulikovo",
+        "ruler-dmitry-donskoy",
+        "era-2",
+        "ruler-nicholas-2",
+        "era-9"
+      ],
+      "linksTo": [
+        {
+          "targetId": "1378-vozha-kulikovo",
+          "type": "about_event",
+          "label": "Поэтический цикл, посвящённый Куликовской битве 1380 года как вечному духовному рубежу России"
+        }
+      ]
     },
     {
       "id": "1914-mayakovsky-oblako-v-shtanakh",

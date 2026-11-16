@@ -8,12 +8,12 @@
 ## 1. Сводка состояния базы
 
 - **Модульных JSON-файлов:** 7
-- **Объявленных веток:** 11 (групп: 2, листовых: 9)
-- **Событий (nodes):** 234
+- **Объявленных веток:** 13 (групп: 2, листовых: 11)
+- **Событий (nodes):** 269
 - **Правлений (rulers):** 70
 - **Фактический диапазон оси времени:** `862–2008`
-- **Активных тегов (`syncTags` / `campaignId` / `referenceTags`):** 87
-- **Явных связей (`crossLinks` + `linksTo`):** 65
+- **Активных тегов (`syncTags` / `campaignId` / `referenceTags`):** 95
+- **Явных связей (`crossLinks` + `linksTo`):** 71
 
 ---
 
@@ -24,10 +24,12 @@
 | `DIPLOMACY_TREATIES` | `diplomacy/treaties` | Дипломатия и договоры | — | Тематическая | `#2dd4bf` | выкл (по умолч.) | 6 | `data/diplomacy.json` |
 | `REFORMS_ECO` | `feat/reforms-eco` | Экономика и реформы | — | Тематическая | `#10b981` | выкл (по умолч.) | 15 | `data/economics.json` |
 | `MAIN_RULERS` | `rulers/reigns` | Правители (ветвления) | — | Тематическая | `#f59e0b` | вкл (по умолч.) | 70 | `data/rulers.json` |
-| `WAR_ALL` | `war/all` | Военные кампании (общая ветка) | — | Группа (`isGroup`) | `#f43f5e` | группа | 0 | `data/wars.json` |
-| `SEAS` | `war/seas` | Войны: Выход к морям | `WAR_ALL` | Военная | `#38bdf8` | выкл (по умолч.) | 20 | `data/wars.json` |
-| `PERIPHERY` | `war/periphery` | Войны: Имперская периферия | `WAR_ALL` | Военная | `#fb923c` | выкл (по умолч.) | 32 | `data/wars.json` |
-| `INTERNAL_BUFFER` | `war/buffer-internal` | Войны: Восстания и буферные зоны | `WAR_ALL` | Военная | `#f43f5e` | выкл (по умолч.) | 44 | `data/wars.json` |
+| `WAR_ALL` | `war/all` | Военные кампании (общая ветка) | — | Группа (`isGroup`) | `#f43f5e` | свёрнута | 0 | `data/wars.json` |
+| `WAR_CONTINENTAL` | `war/continental` | Войны: Большие и мировые войны | `WAR_ALL` | Военная | `#ef4444` | выкл (по умолч.) | 21 | `data/wars.json` |
+| `SEAS` | `war/seas` | Войны: Выход к морям и проливам | `WAR_ALL` | Военная | `#38bdf8` | выкл (по умолч.) | 29 | `data/wars.json` |
+| `PERIPHERY` | `war/periphery` | Войны: Расширение границ и периферия | `WAR_ALL` | Военная | `#fb923c` | выкл (по умолч.) | 32 | `data/wars.json` |
+| `INTERNAL_BUFFER` | `war/internal` | Войны: Усобицы, восстания и гражданские войны | `WAR_ALL` | Военная | `#f43f5e` | выкл (по умолч.) | 22 | `data/wars.json` |
+| `WAR_EXPEDITION` | `war/expedition` | Войны: Зарубежные походы и локальные операции | `WAR_ALL` | Военная | `#eab308` | выкл (по умолч.) | 27 | `data/wars.json` |
 | `WORLD_CONTEXT` | `world/events` | События в других странах | — | Тематическая | `#a855f7` | выкл (по умолч.) | 14 | `data/world.json` |
 | `LITERATURE_ALL` | `lit/all` | Литература: писатели и произведения (общая) | — | Группа (`isGroup`) | `#d946ef` | свёрнута | 0 | `data/writers_bio.json` |
 | `WRITERS_BIO` | `culture/writers` | Русские писатели-классики | `LITERATURE_ALL` | Тематическая | `#e879f9` | выкл (по умолч.) | 32 | `data/writers_bio.json` |
@@ -53,6 +55,12 @@
 | `era-7` | ref (внеоконный) | 1782–1921 | `WRITERS_WORKS` | `1782-derzhavin-felitsa` (1782), `1782-fonvizin-nedorosl` (1782), `1791-derzhavin-vodopad` (1791–1794), `1812-krylov-basni-1812` (1811–1812), `1812-zhukovsky-svetlana-pevets` (1812), `1822-griboedov-gore-ot-uma` (1822–1824), `1823-pushkin-evgeny-onegin` (1823–1831), `1842-gogol-mertvye-dushi` (1835–1842), `1836-gogol-revizor` (1836), `1836-pushkin-kapitanskaya-dochka` (1836), `1837-lermontov-borodino-kalashnikov` (1837), `1840-lermontov-geroy-nashego-vremeni` (1838–1840), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1863-tolstoy-voyna-i-mir` (1863–1869), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1871-nekrasov-russkie-zhenshchiny` (1871–1872), `1881-leskov-levsha` (1881), `1896-tolstoy-khadzhi-murat` (1896–1904 (опубл. 1912)), `1921-yesenin-pugachev` (1921) |
 | `era-8` | ref (внеоконный) | 1847–1938 | `WRITERS_WORKS` | `1847-turgenev-zapiski-okhotnika` (1847–1852), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1858-goncharov-fregat-pallada` (1855–1858), `1859-goncharov-oblomov` (1859), `1859-ostrovsky-groza` (1859), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1862-turgenev-ottsy-i-deti` (1862), `1863-nekrasov-komu-na-rusi` (1863–1877), `1866-dostoevsky-prestuplenie-i-nakazanie` (1866), `1866-tyutchev-umom-rossiyu-ne-ponyat` (1866), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1871-dostoevsky-besy` (1871–1872), `1873-leskov-ocharovanny-strannik` (1873), `1873-tolstoy-anna-karenina` (1873–1877), `1875-shchedrin-gospoda-golovlevy` (1875–1880), `1878-ostrovsky-bespridannitsa` (1878), `1879-dostoevsky-bratya-karamazovy` (1879–1880), `1883-fet-vechernie-ogni` (1883–1891), `1892-chekhov-palata-6-sakhalin` (1892–1895), `1935-nabokov-dar` (1935–1938) |
 | `era-9` | ref (внеоконный) | 1896–1991 | `WRITERS_WORKS` | `1896-chekhov-chayka-tri-sestry` (1896–1901), `1902-gorky-na-dne` (1902), `1903-chekhov-vishnevy-sad` (1903–1904), `1906-gorky-mat` (1906–1907), `1908-blok-na-pole-kulikovom` (1908), `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1917-pasternak-sestra-moya-zhizn` (1917 (изд. 1922)), `1925-sholokhov-tikhiy-don` (1925–1940), `1925-yesenin-anna-snegina` (1925), `1926-nabokov-mashenka` (1926), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
+| `event-1237-batu-invasion` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
+| `event-1378-vozha-kulikovo` | ref (внеоконный) | 1816–1908 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826), `1908-blok-na-pole-kulikovom` (1908) |
+| `event-1480-ugra-standing` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
+| `event-1545-kazan-astrakhan` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
+| `event-1609-time-of-troubles-intervention` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826), `1825-pushkin-boris-godunov` (1825) |
+| `event-1654-rus-polish-swedish-war` | ref (внеоконный) | 1835–1842 | `WRITERS_WORKS` | `1835-gogol-taras-bulba` (1835–1842) |
 | `event-1700-northern-war` | ref (внеоконный) | 1833–1833 | `WRITERS_WORKS` | `1833-pushkin-medny-vsadnik` (1833) |
 | `event-1721-nystad-treaty` | ref (внеоконный) | 1833–1833 | `WRITERS_WORKS` | `1833-pushkin-medny-vsadnik` (1833) |
 | `event-1773-pugachev` | ref (внеоконный) | 1836–1921 | `WRITERS_WORKS` | `1836-pushkin-kapitanskaya-dochka` (1836), `1921-yesenin-pugachev` (1921) |
@@ -73,7 +81,8 @@
 | `event-1920-peasant-uprisings` | ref (внеоконный) | 1921–1940 | `WRITERS_WORKS` | `1921-yesenin-pugachev` (1921), `1925-sholokhov-tikhiy-don` (1925–1940) |
 | `event-1928-reform-five-year` | ref (внеоконный) | 1932–1973 | `WRITERS_WORKS` | `1932-sholokhov-podnyataya-tselina` (1932–1959), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)) |
 | `event-1941-ww2` | ref (внеоконный) | 1940–1973 | `WRITERS_WORKS` | `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1956-sholokhov-sudba-cheloveka` (1956), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)) |
-| `napoleonic` | sync + ref | 1807–1869 | `DIPLOMACY_TREATIES`, `INTERNAL_BUFFER`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1807-tilsit-treaty` (1807 (июнь)), `1812-krylov-basni-1812` (1811–1812), `1812-patriotic-war` (1812), `1812-zhukovsky-svetlana-pevets` (1812), `1813-foreign-campaigns` (1813–1814 (и 1815)), `1815-world-vienna` (1814–1815), `1837-lermontov-borodino-kalashnikov` (1837), `1863-tolstoy-voyna-i-mir` (1863–1869) |
+| `kulikovo` | sync (±3 г.) | 1378–1380 | `WAR_CONTINENTAL` | `1378-vozha-kulikovo` (1378–1380) |
+| `napoleonic` | sync + ref | 1805–1869 | `DIPLOMACY_TREATIES`, `WAR_CONTINENTAL`, `WAR_EXPEDITION`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1805-coalitions-3-4` (1805–1807), `1807-tilsit-treaty` (1807 (июнь)), `1812-krylov-basni-1812` (1811–1812), `1812-patriotic-war` (1812), `1812-zhukovsky-svetlana-pevets` (1812), `1813-foreign-campaigns` (1813–1814 (и 1815)), `1815-world-vienna` (1814–1815), `1837-lermontov-borodino-kalashnikov` (1837), `1863-tolstoy-voyna-i-mir` (1863–1869) |
 | `northern-war` | sync + ref | 1700–1833 | `DIPLOMACY_TREATIES`, `SEAS`, `WRITERS_WORKS` | `1700-northern-war` (1700–1721), `1721-nystad-treaty` (1721 (август)), `1833-pushkin-medny-vsadnik` (1833) |
 | `person-akhmatova-anna` | sync (±3 г.) | 1889–1966 | `WRITERS_BIO`, `WRITERS_WORKS` | `1889-akhmatova-anna` (1889–1966), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1940-akhmatova-poema-bez-geroya` (1940–1962) |
 | `person-blok-alexander` | sync (±3 г.) | 1880–1921 | `WRITERS_BIO`, `WRITERS_WORKS` | `1880-blok-alexander` (1880–1921), `1908-blok-na-pole-kulikovom` (1908), `1918-blok-dvenadtsat` (1918 (январь)) |
@@ -127,9 +136,10 @@
 | `ruler-stalin` | ref (внеоконный) | 1924–1973 | `WRITERS_WORKS` | `1924-tsvetaeva-poema-gory-kontsa` (1924–1926), `1925-bulgakov-sobachye-serdtse` (1925), `1927-mayakovsky-khorosho` (1927), `1928-bulgakov-master-i-margarita` (1928–1940 (опубл. 1966)), `1932-sholokhov-podnyataya-tselina` (1932–1959), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1956-sholokhov-sudba-cheloveka` (1956), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)), `1959-solzhenitsyn-odin-den` (1959 (опубл. 1962)) |
 | `ruler-vladimir-1` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
 | `ruler-yaroslav-wise` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
+| `smuta` | sync (±3 г.) | 1609–1618 | `WAR_CONTINENTAL` | `1609-time-of-troubles-intervention` (1609–1618) |
 | `topic-silver-age` | sync (±3 г.) | 1870–1966 | `WRITERS_BIO`, `WRITERS_WORKS` | `1870-bunin-ivan` (1870–1953), `1880-blok-alexander` (1880–1921), `1889-akhmatova-anna` (1889–1966), `1890-pasternak-boris` (1890–1960), `1892-tsvetaeva-marina` (1892–1941), `1893-mayakovsky-vladimir` (1893–1930), `1895-yesenin-sergey` (1895–1925), `1908-blok-na-pole-kulikovom` (1908), `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1917-pasternak-sestra-moya-zhizn` (1917 (изд. 1922)), `1917-tsvetaeva-lebediny-stan` (1917–1921), `1918-blok-dvenadtsat` (1918 (январь)), `1918-bunin-okayannye-dni` (1918–1920 (изд. 1925)), `1921-yesenin-pugachev` (1921), `1924-tsvetaeva-poema-gory-kontsa` (1924–1926), `1925-yesenin-anna-snegina` (1925), `1927-mayakovsky-khorosho` (1927), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)) |
-| `ww1` | sync + ref | 1914–1991 | `SEAS`, `WRITERS_WORKS` | `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1914-ww1` (1914–1918), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1925-sholokhov-tikhiy-don` (1925–1940), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
-| `ww2` | sync + ref | 1918–1962 | `DIPLOMACY_TREATIES`, `INTERNAL_BUFFER`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1918-brest-molotov` (1918 / 1939), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1941-ww2` (1941–1945), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1945-world-yalta-nato` (1945–1949), `1956-sholokhov-sudba-cheloveka` (1956) |
+| `ww1` | sync + ref | 1914–1991 | `WAR_CONTINENTAL`, `WRITERS_WORKS` | `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1914-ww1` (1914–1918), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1925-sholokhov-tikhiy-don` (1925–1940), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
+| `ww2` | sync + ref | 1918–1962 | `DIPLOMACY_TREATIES`, `WAR_CONTINENTAL`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1918-brest-molotov` (1918 / 1939), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1941-ww2` (1941–1945), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1945-world-yalta-nato` (1945–1949), `1956-sholokhov-sudba-cheloveka` (1956) |
 
 ---
 
@@ -137,17 +147,17 @@
 
 | `id` | Диапазон | Название | Событий | Правителей |
 | :--- | :--- | :--- | :---: | :---: |
-| `ERA_1` | до 1223 | Период I: Генезис и Древняя Русь | 0 | 25 |
-| `ERA_2` | 1223–1462 | Период II: Эпоха монгольского владычества | 0 | 18 |
-| `ERA_3` | 1462–1605 | Период III: Между Азией и Европой | 0 | 6 |
-| `ERA_4` | 1605–1682 | Период IV: Век Смуты и первых Романовых | 0 | 7 |
+| `ERA_1` | до 1223 | Период I: Генезис и Древняя Русь | 11 | 25 |
+| `ERA_2` | 1223–1462 | Период II: Эпоха монгольского владычества | 9 | 18 |
+| `ERA_3` | 1462–1605 | Период III: Между Азией и Европой | 8 | 6 |
+| `ERA_4` | 1605–1682 | Период IV: Век Смуты и первых Романовых | 7 | 7 |
 | `ERA_5` | 1682–1725 | Период V: Азиатская европеизация | 14 | 1 |
 | `ERA_6` | 1725–1762 | Период VI: Эпоха цариц | 10 | 4 |
 | `ERA_7` | 1762–1855 | Период VII: Первая сверхдержава | 80 | 4 |
 | `ERA_8` | 1855–1894 | Период VIII: Эпоха Великих реформ | 49 | 2 |
 | `ERA_9` | 1894–1917 | Период IX: Агония и крах империи | 33 | 2 |
 | `ERA_10` | 1917–1992 | Период X: СССР | 85 | 7 |
-| `ERA_11` | 1992–2000 | Период XI: Новая история | 10 | 1 |
+| `ERA_11` | 1992–2000 | Период XI: Новая история | 11 | 1 |
 
 ---
 
@@ -259,31 +269,68 @@
 - `1973-reform-oil-boom` (1970-е — 1986) — Освоение нефти Западной Сибири, военный паритет и перегрузка ВПК
 - `1992-reform-market-crisis` (1992–1998) — Рыночные реформы, раздел советского военного наследия и дефолт 1998 г.
 
-### `SEAS` — Войны: Выход к морям (`war/seas`, 20)
+### `WAR_CONTINENTAL` — Войны: Большие и мировые войны (`war/continental`, 21)
 
+- `1068-polovtsian-wars` (1068–1116) — Русско-половецкие войны и степные походы Владимира Мономаха
+- `1185-igor-polovtsy-campaign` (1185 (весна)) — Поход князя Игоря Святославича против половцев
+- `1223-kalka-battle` (1223 (31 мая)) — Битва на реке Калке
+- `1237-batu-invasion` (1237–1241) — Монгольское (Батыево) нашествие на Русь
+- `1240-nevsky-ice-battle` (1240–1242) — Отражение шведской и ливонской агрессии (Невская битва и Ледовое побоище)
+- `1268-rakovor-livonia` (1268–1269) — Раковорская битва и оборона Пскова от Ливонского ордена
+- `1368-lithuanian-moscow-wars` (1368–1372) — Московско-литовская война («Литовщина»)
+- `1378-vozha-kulikovo` (1378–1380) — Битва на реке Воже и Куликовская битва — теги: `#kulikovo`
+- `1382-tokhtamysh-edigu` (1382–1408) — Нашествие хана Тохтамыша (1382) и поход Едигея (1408)
+- `1480-ugra-standing` (1480 (октябрь–ноябрь)) — Стояние на реке Угре и свержение ордынского ига
+- `1487-rus-lithuanian-wars` (1487–1537) — Русско-литовские войны за возвращение западнорусских земель и Смоленска
+- `1571-devlet-giray-molodi` (1571–1572) — Походы крымского хана Девлет-Гирея и битва при Молодях
+- `1609-time-of-troubles-intervention` (1609–1618) — Освободительная война против польско-литовской и шведской интервенции (Смутное время) — теги: `#smuta`
+- `1632-smolensk-azov` (1632–1642) — Смоленская война (1632–1634) и «Азовское осадное сидение» (1637–1642)
+- `1654-rus-polish-swedish-war` (1654–1667) — Русско-польская война за Левобережную Украину, Киев и Смоленск (и Русско-шведская 1656–1658)
+- `1756-seven-years` (1756–1763) — Семилетняя война
+- `1805-coalitions-3-4` (1805–1807) — Войны Третьей и Четвертой антифранцузских коалиций — теги: `#napoleonic`
+- `1812-patriotic-war` (1812) — Отечественная война 1812 года — теги: `#napoleonic`
+- `1914-ww1` (1914–1918) — Первая мировая война — теги: `#ww1`
+- `1919-soviet-polish` (1919–1921) — Советско-польская война
+- `1941-ww2` (1941–1945) — Великая Отечественная война (и Советско-японская война 1945 г.) — теги: `#ww2`
+
+### `SEAS` — Войны: Выход к морям и проливам (`war/seas`, 29)
+
+- `907-byzantine-oleg` (907–911) — Походы Олега Вещего на Царьград (Византию)
+- `941-byzantine-igor` (941–945) — Русско-византийская война Игоря Рюриковича и Древлянское восстание
+- `968-svyatoslav-danube` (968–971) — Дунайские походы Святослава и русско-византийская война
+- `988-korsun-vladimir` (988–997) — Корсунский поход Владимира Святого и оборонительные войны с печенегами
+- `1036-pechenegs-byzantium` (1036–1043) — Разгром печенегов под Киевом и последний морской поход на Византию
+- `1558-livonian-war` (1558–1583) — Ливонская война
+- `1590-rus-swedish-war` (1590–1595) — Русско-шведская война и Тявзинский мир
+- `1672-chigirin-rus-turk` (1672–1681) — Русско-турецкая война (Чигиринские походы)
 - `1686-rus-turk` (1686–1700) — Русско-турецкая война (Крымские и Азовские походы)
 - `1700-northern-war` (1700–1721) — Великая Северная война — теги: `#northern-war`
 - `1710-pruth` (1710–1713) — Русско-турецкая война (и Прутский поход 1711 г.)
 - `1722-persian` (1722–1723) — Персидский (Каспийский) поход Петра I
 - `1735-rus-turk` (1735–1739) — Русско-турецкая война
 - `1741-rus-swed` (1741–1743) — Русско-шведская война
-- `1768-rus-turk` (1768–1774) — Русско-турецкая война
+- `1768-rus-turk` (1768–1774) — Русско-турецкая война (1768–1774)
 - `1783-crimea-annex` (1783) — Ликвидация и аннексия Крымского ханства
-- `1787-rus-turk` (1787–1791) — Русско-турецкая война
+- `1787-rus-turk` (1787–1791) — Русско-турецкая война (1787–1791)
 - `1788-rus-swed` (1788–1790) — Русско-шведская война
+- `1806-rus-turk` (1806–1812) — Русско-турецкая война (1806–1812)
 - `1807-anglo-rus` (1807–1812) — Англо-русская война
+- `1808-finnish-war` (1808–1809) — Русско-шведская (Финляндская) война
 - `1827-navarino` (1827) — Наваринское сражение
 - `1828-rus-turk` (1828–1829) — Русско-турецкая война
 - `1833-bosphorus` (1833) — Босфорская экспедиция
 - `1853-crimean-war` (1853–1856) — Крымская (Восточная) война
-- `1877-rus-turk` (1877–1878) — Русско-турецкая война
+- `1877-rus-turk` (1877–1878) — Русско-турецкая война (1877–1878)
 - `1904-rus-japanese` (1904–1905) — Русско-японская война
-- `1914-ww1` (1914–1918) — Первая мировая война — теги: `#ww1`
 - `1939-winter-war` (1939–1940) — Советско-финляндская («Зимняя») война
 - `1967-arab-israeli` (1967–1973) — Арабо-израильские войны (включая операцию «Кавказ» 1970 г.)
 
-### `PERIPHERY` — Войны: Имперская периферия (`war/periphery`, 32)
+### `PERIPHERY` — Войны: Расширение границ и периферия (`war/periphery`, 32)
 
+- `964-svyatoslav-eastern` (964–966) — Восточные походы Святослава: разгром Хазарского каганата
+- `1471-novgorod-campaigns` (1471–1478) — Новгородские походы Ивана III и присоединение Новгорода
+- `1545-kazan-astrakhan` (1545–1556) — Казанские и Астраханские походы Ивана IV Грозного
+- `1581-yermak-siberia` (1581–1598) — Поход Ермака Тимофеевича и присоединение Сибирского ханства
 - `1717-khiva` (1717) — Хивинский поход Бековича-Черкасского
 - `1735-bashkir-2` (1735–1740) — Подавление Башкирских восстаний
 - `1746-chukchi` (1746–1770-е) — Русско-чукотские войны
@@ -291,56 +338,64 @@
 - `1796-zubov-persia` (1796) — Персидский поход Зубова
 - `1801-caucasian-war` (1801–1864) — Кавказская война
 - `1802-tlingit` (1802–1805) — Русско-тлинкитская война
-- `1804-rus-persian` (1804–1813) — Русско-персидская война
-- `1806-rus-turk` (1806–1812) — Русско-турецкая война
-- `1808-finnish-war` (1808–1809) — Русско-шведская (Финляндская) война
+- `1804-rus-persian` (1804–1813) — Русско-персидская война (1804–1813)
 - `1826-rus-persian` (1826–1828) — Русско-персидская война
 - `1830-polish-november` (1830–1831) — Подавление Польского (Ноябрьского) восстания
 - `1837-kenesary` (1837–1847) — Подавление восстания Кенесары Касымова
 - `1839-khiva-winter` (1839–1840) — Зимний Хивинский поход генерала Перовского
 - `1853-central-asia` (1853–1895) — Среднеазиатские походы (завоевание Туркестана)
 - `1863-polish-january` (1863–1864) — Подавление Польского (Январского) восстания
-- `1899-boxer-rebellion` (1899–1901) — Подавление Ихэтуаньского («Боксерского») восстания в Китае
 - `1916-central-asia-revolt` (1916) — Подавление Среднеазиатского восстания
-- `1917-civil-war` (1917–1922) — Гражданская война и завоевание национальных окраин
 - `1918-baltic-finnish` (1918–1920) — Войны с государствами Балтии и Финляндией
 - `1918-basmachi` (1918–1934 (основные бои до 1926 г.)) — Борьба с басмачеством в Средней Азии
 - `1921-second-finnish` (1921–1922) — Вторая советско-финская война (Карельское восстание)
 - `1938-khasan` (1938 (июль–август)) — Бои у озера Хасан
 - `1939-polish-campaign` (1939 (сентябрь)) — Польский поход Красной армии
 - `1940-baltics-bessarabia` (1940 (июнь–август)) — Присоединение стран Балтии и Бессарабии
-- `1944-deportations` (1944) — Войсковые операции по депортации народов (операция «Чечевица»)
 - `1944-upa-forest-brothers` (1944–1950-е) — Подавление антисоветского подполья в Западной Украине и Прибалтике
 - `1969-damansky` (1969 (март и август)) — Пограничные конфликты с Китаем (Даманский и Жаланашколь)
 - `1988-ussr-collapse` (1988–1991) — Войсковые операции на фоне распада СССР
 - `1991-transnistria` (1991–1992) — Приднестровский конфликт (Молдова)
 - `1991-abkhazia-ossetia` (1991–1993) — Вооруженные конфликты в Южной Осетии и Абхазии
 - `1994-first-chechen` (1994–1996) — Первая чеченская война
+- `1999-dagestan-second-chechen` (1999–2000 (активная войсковая фаза)) — Отражение вторжения в Дагестан и Вторая чеченская кампания (КТО на Северном Кавказе)
 
-### `INTERNAL_BUFFER` — Войны: Восстания и буферные зоны (`war/buffer-internal`, 44)
+### `INTERNAL_BUFFER` — Войны: Усобицы, восстания и гражданские войны (`war/internal`, 22)
 
+- `1015-feudal-strife-1` (1015–1019) — Междоусобная война сыновей Владимира Святого
+- `1146-princely-wars-kiev` (1146–1174) — Княжеские усобицы за Киев и взятие Киева войсками Андрея Боголюбского
+- `1317-moscow-tver-horde` (1317–1328) — Война Москвы и Твери за великое княжение и Тверское восстание
+- `1425-feudal-war-moscow` (1425–1453) — Великая феодальная война в Московском княжестве
+- `1606-bolotnikov-uprising` (1606–1607) — Восстание под предводительством Ивана Болотникова
+- `1648-urban-copper-riots` (1648–1662) — Городские восстания «бунташного века» (Соляной, Хлебный и Медный бунты)
+- `1667-stepan-razin-solovki` (1667–1676) — Крестьянская война под предводительством Степана Разина и Соловецкое восстание
 - `1698-streltsy` (1698) — Подавление Стрелецкого бунта
 - `1704-bashkir` (1704–1711) — Подавление Башкирского восстания
 - `1705-astrakhan` (1705–1706) — Подавление Астраханского восстания
 - `1707-bulavin` (1707–1708) — Подавление Булавинского восстания
-- `1733-polish-succession` (1733–1735) — Война за польское наследство
-- `1756-seven-years` (1756–1763) — Семилетняя война
-- `1768-bar-confed` (1768–1772) — Война с Барской конфедерацией
 - `1771-plague-riot` (1771) — Подавление Чумного бунта в Москве
 - `1773-pugachev` (1773–1775) — Крестьянская война под предводительством Емельяна Пугачева
+- `1825-decembrists` (1825 (декабрь)) — Подавление восстания декабристов
+- `1905-first-revolution` (1905–1907) — Подавление Первой русской революции
+- `1917-civil-war` (1917–1922) — Гражданская война и завоевание национальных окраин
+- `1920-peasant-uprisings` (1920–1924) — Подавление антибольшевистских крестьянских и военных восстаний
+- `1920s-north-caucasus` (1920-е — 1930-е) — Войсковые операции на Северном Кавказе
+- `1944-deportations` (1944) — Войсковые операции по депортации народов (операция «Чечевица»)
+- `1962-novocherkassk` (1962 (июнь)) — Новочеркасский расстрел
+- `1992-prigorodny` (1992 (октябрь–ноябрь)) — Осетино-ингушский конфликт в Пригородном районе
+- `1993-white-house` (1993 (октябрь)) — Силовой разгон Верховного Совета РФ (события октября 1993 г.)
+
+### `WAR_EXPEDITION` — Войны: Зарубежные походы и локальные операции (`war/expedition`, 27)
+
+- `1733-polish-succession` (1733–1735) — Война за польское наследство
+- `1768-bar-confed` (1768–1772) — Война с Барской конфедерацией
 - `1792-rus-polish` (1792) — Русско-польская война
 - `1798-second-coalition` (1798–1800) — Война Второй антифранцузской коалиции
-- `1805-coalitions-3-4` (1805–1807) — Войны Третьей и Четвертой антифранцузских коалиций
-- `1812-patriotic-war` (1812) — Отечественная война — теги: `#napoleonic`
 - `1813-foreign-campaigns` (1813–1814 (и 1815)) — Заграничные походы русской армии — теги: `#napoleonic`
-- `1825-decembrists` (1825 (декабрь)) — Подавление восстания декабристов
 - `1849-hungary` (1849) — Венгерский поход
-- `1905-first-revolution` (1905–1907) — Подавление Первой русской революции
+- `1899-boxer-rebellion` (1899–1901) — Подавление Ихэтуаньского («Боксерского») восстания в Китае
 - `1909-persian-intervention` (1909–1911) — Персидская интервенция
-- `1919-soviet-polish` (1919–1921) — Советско-польская война
-- `1920-peasant-uprisings` (1920–1924) — Подавление антибольшевистских крестьянских и военных восстаний
 - `1921-mongolia` (1921) — Монгольская операция
-- `1920s-north-caucasus` (1920-е — 1930-е) — Войсковые операции на Северном Кавказе
 - `1929-afghan-raid` (1929 (апрель–май)) — Афганский поход Красной армии
 - `1929-kvzhd` (1929 (октябрь–ноябрь)) — Конфликт на КВЖД
 - `1934-xinjiang` (1934 и 1937) — Синьцзянские интервенции
@@ -348,20 +403,16 @@
 - `1937-china-z` (1937–1941) — Военная помощь Китаю (операция «Z»)
 - `1939-khalkhin-gol` (1939 (май–сентябрь)) — Бои на реке Халхин-Гол
 - `1941-iran-consent` (1941 (август–сентябрь)) — Иранская операция (операция «Согласие»)
-- `1941-ww2` (1941–1945) — Великая Отечественная война (и Советско-японская война 1945 г.) — теги: `#ww2`
 - `1950-korean-war` (1950–1953) — Корейская война
 - `1953-gdr-uprising` (1953 (июнь)) — Подавление восстания в ГДР
 - `1956-hungary-whirlwind` (1956 (октябрь–ноябрь)) — Венгерское восстание (операция «Вихрь»)
 - `1962-cuban-crisis` (1962 (октябрь)) — Карибский кризис (операция «Анадырь»)
-- `1962-novocherkassk` (1962 (июнь)) — Новочеркасский расстрел
 - `1965-vietnam` (1965–1974) — Война во Вьетнаме
 - `1968-prague-danube` (1968 (август)) — Ввод войск в Чехословакию (операция «Дунай»)
 - `1975-angola` (1975–1991) — Гражданская война в Анголе (и Мозамбике)
 - `1977-ogaden` (1977–1978) — Эфиопо-сомалийская (Огаденская) война
 - `1979-afghan-war` (1979–1989) — Афганская война
-- `1992-prigorodny` (1992 (октябрь–ноябрь)) — Осетино-ингушский конфликт в Пригородном районе
 - `1992-tajikistan` (1992–1997) — Гражданская война в Таджикистане
-- `1993-white-house` (1993 (октябрь)) — Силовой разгон Верховного Совета РФ (расстрел Белого дома)
 - `1999-pristina` (1999 (июнь)) — Марш-бросок на Приштину (Косово)
 
 ### `WORLD_CONTEXT` — События в других странах (`world/events`, 14)
@@ -424,13 +475,13 @@
 - `1792-karamzin-bednaya-liza` (1792) — Н. М. Карамзин — «Бедная Лиза» — теги: `#person-karamzin-nikolay`
 - `1812-krylov-basni-1812` (1811–1812) — И. А. Крылов — басни «Квартет» и «Волк на псарне» — теги: `#person-krylov-ivan` `#napoleonic` · отсылки: `@event-1812-patriotic-war` `@ruler-alexander-1` `@era-7`
 - `1812-zhukovsky-svetlana-pevets` (1812) — В. А. Жуковский — баллада «Светлана» и «Певец во стане русских воинов» — теги: `#person-zhukovsky-vasily` `#napoleonic` · отсылки: `@event-1812-patriotic-war` `@ruler-alexander-1` `@era-7`
-- `1816-karamzin-history-state` (1816–1826) — Н. М. Карамзин — «История государства Российского» (12 томов) — теги: `#person-karamzin-nikolay` · отсылки: `@era-1` `@era-2` `@era-3` `@era-4` `@ruler-ryurik` `@ruler-vladimir-1` `@ruler-yaroslav-wise` `@ruler-dmitry-donskoy` `@ruler-ivan-3` `@ruler-ivan-4` `@ruler-boris-godunov`
+- `1816-karamzin-history-state` (1816–1826) — Н. М. Карамзин — «История государства Российского» (12 томов) — теги: `#person-karamzin-nikolay` · отсылки: `@event-1237-batu-invasion` `@event-1378-vozha-kulikovo` `@event-1480-ugra-standing` `@event-1545-kazan-astrakhan` `@event-1609-time-of-troubles-intervention` `@era-1` `@era-2` `@era-3` `@era-4` `@ruler-ryurik` `@ruler-vladimir-1` `@ruler-yaroslav-wise` `@ruler-dmitry-donskoy` `@ruler-ivan-3` `@ruler-ivan-4` `@ruler-boris-godunov`
 - `1822-griboedov-gore-ot-uma` (1822–1824) — А. С. Грибоедов — «Горе от ума» — теги: `#person-griboedov-aleksandr` · отсылки: `@event-1825-decembrists` `@ruler-alexander-1` `@era-7`
 - `1823-pushkin-evgeny-onegin` (1823–1831) — А. С. Пушкин — «Евгений Онегин» — теги: `#person-pushkin-alexander` · отсылки: `@ruler-alexander-1` `@ruler-nicholas-1` `@era-7`
-- `1825-pushkin-boris-godunov` (1825) — А. С. Пушкин — трагедия «Борис Годунов» — теги: `#person-pushkin-alexander` · отсылки: `@ruler-boris-godunov` `@ruler-false-dmitry-1` `@era-3` `@era-4`
+- `1825-pushkin-boris-godunov` (1825) — А. С. Пушкин — трагедия «Борис Годунов» — теги: `#person-pushkin-alexander` · отсылки: `@event-1609-time-of-troubles-intervention` `@ruler-boris-godunov` `@ruler-false-dmitry-1` `@era-3` `@era-4`
 - `1830-tyutchev-silentium` (1830) — Ф. И. Тютчев — «Silentium!» («Молчи, скрывайся и таи...») — теги: `#person-tyutchev-fyodor`
 - `1833-pushkin-medny-vsadnik` (1833) — А. С. Пушкин — поэма «Медный всадник» — теги: `#person-pushkin-alexander` · отсылки: `@event-1700-northern-war` `@event-1721-nystad-treaty` `@northern-war` `@ruler-peter-1` `@era-5`
-- `1835-gogol-taras-bulba` (1835–1842) — Н. В. Гоголь — «Тарас Бульба» — теги: `#person-gogol-nikolay` · отсылки: `@era-4`
+- `1835-gogol-taras-bulba` (1835–1842) — Н. В. Гоголь — «Тарас Бульба» — теги: `#person-gogol-nikolay` · отсылки: `@event-1654-rus-polish-swedish-war` `@era-4`
 - `1842-gogol-mertvye-dushi` (1835–1842) — Н. В. Гоголь — поэма «Мёртвые души» — теги: `#person-gogol-nikolay` · отсылки: `@ruler-nicholas-1` `@era-7`
 - `1836-gogol-revizor` (1836) — Н. В. Гоголь — комедия «Ревизор» — теги: `#person-gogol-nikolay` · отсылки: `@ruler-nicholas-1` `@era-7`
 - `1836-pushkin-kapitanskaya-dochka` (1836) — А. С. Пушкин — «Капитанская дочка» — теги: `#person-pushkin-alexander` · отсылки: `@event-1773-pugachev` `@ruler-catherine-2` `@era-7`
@@ -464,7 +515,7 @@
 - `1902-gorky-na-dne` (1902) — М. Горький — пьеса «На дне» — теги: `#person-gorky-maxim` · отсылки: `@ruler-nicholas-2` `@era-9`
 - `1903-chekhov-vishnevy-sad` (1903–1904) — А. П. Чехов — пьеса «Вишнёвый сад» — теги: `#person-chekhov-anton` · отсылки: `@ruler-nicholas-2` `@era-9`
 - `1906-gorky-mat` (1906–1907) — М. Горький — роман «Мать» — теги: `#person-gorky-maxim` · отсылки: `@event-1905-first-revolution` `@ruler-nicholas-2` `@era-9`
-- `1908-blok-na-pole-kulikovom` (1908) — А. А. Блок — цикл «На поле Куликовом» — теги: `#person-blok-alexander` `#topic-silver-age` · отсылки: `@ruler-dmitry-donskoy` `@era-2` `@ruler-nicholas-2` `@era-9`
+- `1908-blok-na-pole-kulikovom` (1908) — А. А. Блок — цикл «На поле Куликовом» — теги: `#person-blok-alexander` `#topic-silver-age` · отсылки: `@event-1378-vozha-kulikovo` `@ruler-dmitry-donskoy` `@era-2` `@ruler-nicholas-2` `@era-9`
 - `1914-mayakovsky-oblako-v-shtanakh` (1914–1915) — В. В. Маяковский — поэма «Облако в штанах» — теги: `#person-mayakovsky-vladimir` `#topic-silver-age` `#ww1` · отсылки: `@event-1914-ww1` `@ruler-nicholas-2` `@era-9`
 - `1915-bunin-gospodin-iz-san-frantsisko` (1915) — И. А. Бунин — «Господин из Сан-Франциско» — теги: `#person-bunin-ivan` `#topic-silver-age` `#ww1` · отсылки: `@event-1914-ww1` `@ruler-nicholas-2` `@era-9`
 - `1917-tsvetaeva-lebediny-stan` (1917–1921) — М. И. Цветаева — стихотворный цикл «Лебединый стан» — теги: `#person-tsvetaeva-marina` `#topic-silver-age` · отсылки: `@event-1917-civil-war` `@ruler-lenin` `@era-10`

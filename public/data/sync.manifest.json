@@ -21,8 +21,8 @@
       "fileId": "wars",
       "path": "data/wars.json",
       "role": "military_branches",
-      "branchIds": ["WAR_ALL", "SEAS", "PERIPHERY", "INTERNAL_BUFFER"],
-      "title": "Военные конфликты, походы и силовые операции (1686–1999)",
+      "branchIds": ["WAR_ALL", "WAR_CONTINENTAL", "SEAS", "PERIPHERY", "INTERNAL_BUFFER", "WAR_EXPEDITION"],
+      "title": "Военные конфликты, походы и силовые операции (862–2000)",
       "enabled": true
     },
     {
