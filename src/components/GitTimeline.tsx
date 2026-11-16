@@ -5,9 +5,12 @@ import {
   computeRulerSubLaneLayout,
   findMacroEraForYear,
   formatAxisGutterDate,
+  formatEventTitleWithPeriod,
   getDirectChildBranches,
   hasChildBranches,
+  isBiographyNode,
   isBranchOrDescendantActive,
+  isMajorCampaignOrConflictNode,
   parsePreciseDate,
   resolveEventBranch,
   resolveMacroEra,
@@ -274,7 +277,11 @@ export function GitTimeline({
     return map;
   }, [matchingRulers]);
 
-  const alreadyRunningEvents = !focusedEvent ? matchingEvents.filter((ev) => ev.startYear < yearFrom) : [];
+  const alreadyRunningEvents = !focusedEvent
+    ? matchingEvents.filter(
+        (ev) => ev.startYear < yearFrom && isMajorCampaignOrConflictNode(ev, branches),
+      )
+    : [];
 
   const gutterWidthClass =
     axisResolution === 'day'
@@ -467,7 +474,7 @@ export function GitTimeline({
                     title={`${lane.label}: свёрнуто веток (${activeChildCount}). Нажмите, чтобы развернуть в отдельные линии.`}
                   >
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: lane.color }} />
-                    <span className="font-semibold">{lane.short}</span>
+                    <span className="font-semibold">{lane.label}</span>
                     {subCount > 1 && (
                       <span className="text-amber-300 font-bold tabular-nums">×{subCount}</span>
                     )}
@@ -487,12 +494,12 @@ export function GitTimeline({
                   }`}
                   title={
                     subCount > 1
-                      ? `${lane.label}: до ${subCount} параллельных под-веток в окне`
+                      ? `${lane.label}: до ${subCount} параллельных линий в окне`
                       : lane.label
                   }
                 >
                   <span className="w-2 h-2 rounded-full" style={{ backgroundColor: lane.color }} />
-                  <span>{lane.short}</span>
+                  <span>{lane.label}</span>
                   {subCount > 1 && (
                     <span className="text-amber-300 font-bold tabular-nums">×{subCount}</span>
                   )}
@@ -510,10 +517,10 @@ export function GitTimeline({
                   type="button"
                   onClick={() => onToggleCollapseParent(parent.id)}
                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 hover:border-amber-400/50 text-[10px] font-mono text-slate-300 hover:text-amber-200 shrink-0 cursor-pointer transition-colors whitespace-nowrap"
-                  title={`Свернуть ${activeChildCount} веток группы «${parent.label}» в одну линию (${parent.short})`}
+                  title={`Свернуть ${activeChildCount} веток группы «${parent.label}» в одну линию`}
                 >
                   <GitMerge className="w-3 h-3 text-amber-400" />
-                  <span>Свернуть {parent.short} ({activeChildCount} → 1)</span>
+                  <span>Свернуть «{parent.label}» ({activeChildCount} → 1)</span>
                 </button>
               );
             })}
@@ -649,7 +656,7 @@ export function GitTimeline({
           <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 flex flex-wrap items-center gap-2">
             <span className="text-xs font-mono font-semibold text-amber-200 flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
-              Переходящие процессы (начались до {yearFrom} г. и продолжаются в окне):
+              Военные кампании и конфликты, начавшиеся до {yearFrom} г. и продолжающиеся в окне:
             </span>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-amber-100">
               {alreadyRunningEvents.map((e) => (
@@ -659,7 +666,7 @@ export function GitTimeline({
                   onClick={() => onOpenCardModal(e.id)}
                   className="underline decoration-amber-400/50 hover:text-white cursor-pointer text-left"
                 >
-                  {e.period} {e.title}
+                  {formatEventTitleWithPeriod(e)}
                 </button>
               ))}
             </div>
@@ -672,7 +679,10 @@ export function GitTimeline({
           if (item.rowType === 'ERA_START') {
             const resolvedEra = resolveMacroEra(item.era);
             const carryOverWars = matchingEvents.filter(
-              (ev) => ev.startYear < item.year && ev.endYear > item.year,
+              (ev) =>
+                ev.startYear < item.year &&
+                ev.endYear > item.year &&
+                isMajorCampaignOrConflictNode(ev, branches),
             );
 
             return (
@@ -727,8 +737,8 @@ export function GitTimeline({
                   <p className="text-xs sm:text-sm text-slate-300 mt-1">{resolvedEra.thesis}</p>
                   {carryOverWars.length > 0 && (
                     <div className="mt-2 text-[11px] font-mono text-sky-300">
-                      Сквозь рубеж периода продолжают идти:{' '}
-                      {carryOverWars.map((w) => `${w.title} (${w.period})`).join(', ')}
+                      Военные кампании, переходящие через рубеж периода:{' '}
+                      {carryOverWars.map((w) => formatEventTitleWithPeriod(w)).join(', ')}
                     </div>
                   )}
                 </div>
@@ -785,7 +795,10 @@ export function GitTimeline({
             const rx = rulerLayout.railXs[rSlot] ?? 16;
             const rColor = rulerLayout.colorByRulerId.get(r.id) ?? item.rulerColor;
             const ongoingWarsAtAccession = matchingEvents.filter(
-              (ev) => ev.startYear < r.startYear && ev.endYear > r.startYear,
+              (ev) =>
+                ev.startYear < r.startYear &&
+                ev.endYear > r.startYear &&
+                isMajorCampaignOrConflictNode(ev, branches),
             );
 
             return (
@@ -913,7 +926,7 @@ export function GitTimeline({
 
                   {ongoingWarsAtAccession.length > 0 && (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-amber-200/90">
-                      <span>Смена правителя в ходе идущих кампаний:</span>
+                      <span>Смена правителя в ходе военных кампаний:</span>
                       {ongoingWarsAtAccession.map((w) => (
                         <button
                           key={w.id}
@@ -921,7 +934,7 @@ export function GitTimeline({
                           onClick={() => onOpenCardModal(w.id)}
                           className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-white hover:border-amber-400 cursor-pointer"
                         >
-                          {w.title} ({w.period})
+                          {formatEventTitleWithPeriod(w)}
                         </button>
                       ))}
                     </div>
@@ -1012,7 +1025,7 @@ export function GitTimeline({
                           {r.center}
                         </span>
                       )}
-                      <span className="text-slate-400 shrink-0 hidden sm:inline">Слияние ветки:</span>
+                      <span className="text-slate-400 shrink-0 hidden sm:inline">Завершение правления:</span>
                       <span className="font-sans font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
                         {r.shortRuler} ({r.reignPeriod})
                       </span>
@@ -1250,10 +1263,10 @@ export function GitTimeline({
                         <span className="text-xs sm:text-sm font-bold text-white group-hover:text-amber-200 truncate min-w-0">
                           {ev.title}
                         </span>
-                        <span className="hidden md:inline text-[11px] font-mono text-slate-400 shrink-0 truncate max-w-[110px]">
-                          · {origBranchObj.short}
+                        <span className="hidden md:inline text-[11px] font-mono text-slate-400 shrink-0 truncate max-w-[150px]">
+                          · {origBranchObj.label}
                         </span>
-                        {hasMultipleRulers && (
+                        {hasMultipleRulers && !isBiographyNode(ev, branches) && (
                           <span className="hidden lg:inline text-[11px] font-mono text-amber-300 shrink-0 tabular-nums">
                             · {ev.overlappingRulers.length} правл.
                           </span>
@@ -1316,8 +1329,8 @@ export function GitTimeline({
                         </div>
 
                         <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-slate-400 shrink-0 whitespace-nowrap">
-                          <span className="max-w-[170px] truncate font-semibold" style={{ color: origBranchObj.color }}>
-                            {origBranchObj.short}
+                          <span className="max-w-[190px] truncate font-semibold" style={{ color: origBranchObj.color }}>
+                            {origBranchObj.label}
                           </span>
                           {ev.region && (
                             <>
@@ -1339,12 +1352,22 @@ export function GitTimeline({
                           {ev.ruler && (
                             <span
                               className={`inline-flex items-center gap-1 min-w-0 truncate ${
-                                hasMultipleRulers ? 'text-amber-300 font-semibold' : 'text-slate-300'
+                                hasMultipleRulers && !isBiographyNode(ev, branches)
+                                  ? 'text-amber-300 font-semibold'
+                                  : 'text-slate-300'
                               }`}
                             >
                               <Crown className="w-3 h-3 shrink-0" />
                               <span className="truncate">
-                                {hasMultipleRulers ? `${ev.overlappingRulers.length} правл.` : ev.ruler}
+                                {isBiographyNode(ev, branches)
+                                  ? `Эпоха: ${ev.overlappingRulers[0]?.shortRuler}${
+                                      ev.overlappingRulers.length > 1
+                                        ? ` — ${ev.overlappingRulers[ev.overlappingRulers.length - 1]?.shortRuler}`
+                                        : ''
+                                    }`
+                                  : hasMultipleRulers
+                                    ? `${ev.overlappingRulers.length} правл.`
+                                    : ev.ruler}
                               </span>
                             </span>
                           )}
@@ -1493,9 +1516,13 @@ export function GitTimeline({
                     <span className="font-mono font-bold tabular-nums shrink-0" style={{ color: branchObj.color }}>
                       {item.dateLabel}
                     </span>
-                    <span className="text-slate-400 font-mono shrink-0 hidden sm:inline">Слияние с осью:</span>
+                    <span className="text-slate-400 font-mono shrink-0 hidden sm:inline">
+                      {branchObj.isMilitary || ev.task.startsWith('WAR_')
+                        ? 'Окончание кампании:'
+                        : 'Завершение процесса:'}
+                    </span>
                     <span className="font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
-                      {ev.title} ({ev.period})
+                      {formatEventTitleWithPeriod(ev)}
                     </span>
                   </div>
                   <span className="text-[11px] font-mono text-slate-400 shrink-0 tabular-nums whitespace-nowrap hidden sm:inline">

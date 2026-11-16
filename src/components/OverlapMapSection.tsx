@@ -10,7 +10,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
-import { computeDensityBins, getLeafBranches } from '../engine/timelineEngine';
+import { computeDensityBins, getLeafBranches, isBiographyNode } from '../engine/timelineEngine';
 import type { BranchDefinition, EnrichedEvent, RulerPeriod } from '../types/timeline';
 
 interface OverlapMapSectionProps {
@@ -465,7 +465,7 @@ export function OverlapMapSection({
                           </span>
                         )}
                         <span className="truncate font-semibold" title={branch.label}>
-                          {branch.short}
+                          {branch.label}
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-400 tabular-nums shrink-0">
@@ -483,9 +483,10 @@ export function OverlapMapSection({
                       ))}
 
                       {branchEvents.map((ev) => {
+                        const isBio = isBiographyNode(ev);
                         const left = toPct(ev.startYear);
-                        const right = toPct(ev.endYear);
-                        const isPoint = ev.startYear === ev.endYear;
+                        const right = toPct(isBio ? ev.startYear : ev.endYear);
+                        const isPoint = ev.startYear === ev.endYear || isBio;
                         const width = isPoint ? Math.max(0.9, 100 / Math.max(30, span)) : Math.max(1.2, right - left);
                         const isHovered = hoveredEventId === ev.id;
                         const isLinked = linkedIds.has(ev.id);
@@ -502,7 +503,11 @@ export function OverlapMapSection({
                             onMouseEnter={() => onHoverEvent(ev.id)}
                             onMouseLeave={() => onHoverEvent(null)}
                             onClick={() => onOpenCardModal(ev.id)}
-                            title={`${ev.period}: ${ev.title} (правителей: ${ev.overlappingRulers.length}, связей: ${ev.explicitLinks.length})`}
+                            title={
+                              isBio
+                                ? `${ev.title} (${ev.period}) · связей: ${ev.explicitLinks.length}`
+                                : `${ev.period}: ${ev.title} (правлений: ${ev.overlappingRulers.length}, связей: ${ev.explicitLinks.length})`
+                            }
                             style={{
                               left: `${left}%`,
                               width: `${width}%`,

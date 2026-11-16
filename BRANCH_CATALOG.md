@@ -429,21 +429,21 @@
 
 ### `SCIENTISTS_BIO` — Выдающиеся учёные и конструкторы (`science/scientists`, 15)
 
-- `1711-lomonosov-mikhail` (1711–1765) — М. В. Ломоносов (1711–1765) — теги: `#person-lomonosov`
-- `1735-kulibin-ivan` (1735–1818) — И. П. Кулибин (1735–1818) — теги: `#person-kulibin`
-- `1792-lobachevsky-nikolay` (1792–1856) — Н. И. Лобачевский (1792–1856) — теги: `#person-lobachevsky`
-- `1810-pirogov-nikolay` (1810–1881) — Н. И. Пирогов (1810–1881) — теги: `#person-pirogov`
-- `1829-sechenov-ivan` (1829–1905) — И. М. Сеченов (1829–1905) — теги: `#person-sechenov`
-- `1834-mendeleev-dmitry` (1834–1907) — Д. И. Менделеев (1834–1907) — теги: `#person-mendeleev`
-- `1849-pavlov-ivan` (1849–1936) — И. П. Павлов (1849–1936) — теги: `#person-pavlov`
-- `1857-tsiolkovsky-konstantin` (1857–1935) — К. Э. Циолковский (1857–1935) — теги: `#person-tsiolkovsky`
-- `1859-popov-alexander` (1859–1906) — А. С. Попов (1859–1906) — теги: `#person-popov`
-- `1863-vernadsky-vladimir` (1863–1945) — В. И. Вернадский (1863–1945) — теги: `#person-vernadsky`
-- `1894-kapitsa-pyotr` (1894–1984) — П. Л. Капица (1894–1984) — теги: `#person-kapitsa`
-- `1903-kurchatov-igor` (1903–1960) — И. В. Курчатов (1903–1960) — теги: `#person-kurchatov`
-- `1907-korolev-sergey` (1907–1966) — С. П. Королёв (1907–1966) — теги: `#person-korolev`
-- `1921-sakharov-andrey` (1921–1989) — А. Д. Сахаров (1921–1989) — теги: `#person-sakharov`
-- `1930-alferov-zhores` (1930–2000) — Ж. И. Алфёров (1930–2019) — теги: `#person-alferov`
+- `1711-lomonosov-mikhail` (1711–1765) — Михаил Васильевич Ломоносов — теги: `#person-lomonosov`
+- `1735-kulibin-ivan` (1735–1818) — Иван Петрович Кулибин — теги: `#person-kulibin`
+- `1792-lobachevsky-nikolay` (1792–1856) — Николай Иванович Лобачевский — теги: `#person-lobachevsky`
+- `1810-pirogov-nikolay` (1810–1881) — Николай Иванович Пирогов — теги: `#person-pirogov`
+- `1829-sechenov-ivan` (1829–1905) — Иван Михайлович Сеченов — теги: `#person-sechenov`
+- `1834-mendeleev-dmitry` (1834–1907) — Дмитрий Иванович Менделеев — теги: `#person-mendeleev`
+- `1849-pavlov-ivan` (1849–1936) — Иван Петрович Павлов — теги: `#person-pavlov`
+- `1857-tsiolkovsky-konstantin` (1857–1935) — Константин Эдуардович Циолковский — теги: `#person-tsiolkovsky`
+- `1859-popov-alexander` (1859–1906) — Александр Степанович Попов — теги: `#person-popov`
+- `1863-vernadsky-vladimir` (1863–1945) — Владимир Иванович Вернадский — теги: `#person-vernadsky`
+- `1894-kapitsa-pyotr` (1894–1984) — Пётр Леонидович Капица — теги: `#person-kapitsa`
+- `1903-kurchatov-igor` (1903–1960) — Игорь Васильевич Курчатов — теги: `#person-kurchatov`
+- `1907-korolev-sergey` (1907–1966) — Сергей Павлович Королёв — теги: `#person-korolev`
+- `1921-sakharov-andrey` (1921–1989) — Андрей Дмитриевич Сахаров — теги: `#person-sakharov`
+- `1930-alferov-zhores` (1930–2000) — Жорес Иванович Алфёров — теги: `#person-alferov`
 
 ### `WAR_CONTINENTAL` — Войны: Большие и мировые войны (`war/continental`, 21)
 

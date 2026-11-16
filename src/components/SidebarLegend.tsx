@@ -133,8 +133,7 @@ export function SidebarLegend({
           {visibleLanes.map((lane) => (
             <div key={lane.id} className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
-              <span className="font-mono text-[10px] font-semibold text-slate-200 shrink-0">{lane.short}</span>
-              <span className="text-slate-500 truncate">— {lane.label}</span>
+              <span className="text-slate-200 font-medium truncate">{lane.label}</span>
             </div>
           ))}
         </div>

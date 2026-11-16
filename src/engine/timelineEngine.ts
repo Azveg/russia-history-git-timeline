@@ -278,7 +278,7 @@ export function formatAxisGutterDate(
     const parts = parsePreciseDate(row.rulerObj.endDate, row.rulerObj.endYear, true);
     return {
       label: formatCompactAxisDate(parts, resolution),
-      title: `Слияние ветки правления (${row.rulerObj.shortRuler}): ${formatDateForResolution(parts, resolution)}`,
+      title: `Завершение правления (${row.rulerObj.shortRuler}): ${formatDateForResolution(parts, resolution)}`,
     };
   }
 
@@ -294,7 +294,7 @@ export function formatAxisGutterDate(
       parts.precision === 'year' && resolution !== 'year' ? ' (в источнике указан только год)' : '';
     return {
       label: formatCompactAxisDate(parts, resolution),
-      title: `${row.isAtomicInView ? 'Событие' : 'Ответвление'}: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
+      title: `${row.isAtomicInView ? 'Событие' : 'Начало процесса'}: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
     };
   }
 
@@ -302,9 +302,10 @@ export function formatAxisGutterDate(
   const parts = row.eventObj.endPrecision;
   const approxNote =
     parts.precision === 'year' && resolution !== 'year' ? ' (в источнике указан только год)' : '';
+  const isWar = row.eventObj.task.startsWith('WAR_');
   return {
     label: formatCompactAxisDate(parts, resolution),
-    title: `Слияние процесса: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
+    title: `${isWar ? 'Окончание кампании' : 'Завершение процесса'}: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
   };
 }
 
@@ -314,7 +315,7 @@ export function isAtomicEventNode(
   endParts: PreciseDateParts,
   resolution: AxisResolution,
 ): boolean {
-  if (node.isAtomic === true) return true;
+  if (node.isAtomic === true || isBiographyNode(node)) return true;
   if (endParts.year > startParts.year) return false;
   if (resolution === 'year') return true;
   const startMonth = startParts.month ?? 1;
@@ -324,6 +325,16 @@ export function isAtomicEventNode(
     return endParts.sortKey - startParts.sortKey < 7;
   }
   return true;
+}
+
+export function formatEventTitleWithPeriod(ev: Pick<TimelineNode, 'title' | 'period'>): string {
+  const title = (ev.title || '').trim();
+  const period = (ev.period || '').trim();
+  if (!period) return title;
+  if (title.includes(`(${period})`)) {
+    return title;
+  }
+  return `${title} (${period})`;
 }
 
 export function getGitHash(idStr: string): string {
@@ -1420,9 +1431,11 @@ export function buildUnifiedTimelineStream(
   } else {
     matchingEvents = enrichedEvents.filter((ev) => {
       if (!isEventBranchActive(ev, filters.activeBranches)) return false;
-      if (!intersectsTimeWindow(ev.startYear, ev.endYear, filters.yearFrom, filters.yearTo)) return false;
+      const isBio = isBiographyNode(ev, branches);
+      const effectiveEnd = isBio && filters.selectedReign === 'ALL' && !q ? ev.startYear : ev.endYear;
+      if (!intersectsTimeWindow(ev.startYear, effectiveEnd, filters.yearFrom, filters.yearTo)) return false;
       if (selectedEraObj) {
-        if (!doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, selectedEraObj)) {
+        if (!doesIntervalBelongToEra(ev.startYear, effectiveEnd, ev.eraId, selectedEraObj)) {
           return false;
         }
       }
@@ -1554,7 +1567,7 @@ export function buildUnifiedTimelineStream(
       eventObj.endPrecision,
       axisResolution,
     );
-    const startedBeforeWindow = !focusTarget && eventObj.startYear < effectiveYearFrom;
+    const startedBeforeWindow = !focusTarget && !isAtomicInView && eventObj.startYear < effectiveYearFrom;
     const displayYear = startedBeforeWindow ? effectiveYearFrom : eventObj.startYear;
     const displayParts = startedBeforeWindow
       ? parsePreciseDate(undefined, effectiveYearFrom, false)
@@ -1728,7 +1741,8 @@ export function computeDensityBins(
 
     for (let j = 0; j < events.length; j++) {
       const ev = events[j];
-      if (ev.startYear <= endYear && ev.endYear >= startYear) {
+      const effectiveEndYear = isBiographyNode(ev) ? ev.startYear : ev.endYear;
+      if (ev.startYear <= endYear && effectiveEndYear >= startYear) {
         totalCount++;
         if (ev.startYear >= startYear && ev.startYear <= endYear) {
           commitCount++;
@@ -1764,7 +1778,8 @@ export function computeOverlapAnalytics(
     let count = 0;
     for (let i = 0; i < matchingEvents.length; i++) {
       const ev = matchingEvents[i];
-      if (ev.startYear <= y && ev.endYear >= y) {
+      const effectiveEndYear = isBiographyNode(ev) ? ev.startYear : ev.endYear;
+      if (ev.startYear <= y && effectiveEndYear >= y) {
         count++;
       }
     }
@@ -2287,6 +2302,31 @@ export function isHistoricalEventNode(
     !isLiteraryWorkNode(ev, branches) &&
     !isScienceDiscoveryNode(ev, branches)
   );
+}
+
+export function isMajorCampaignOrConflictNode(
+  ev: Pick<TimelineNode, 'task' | 'type' | 'eventType' | 'syncTags'>,
+  branches?: BranchDefinition[],
+): boolean {
+  if (!isHistoricalEventNode(ev, branches)) return false;
+  const task = ev.task || '';
+  if (task.startsWith('WAR_')) return true;
+  if (branches) {
+    const b = branches.find((br) => br.id === task);
+    if (b?.isMilitary) return true;
+  }
+  const typeLower = (ev.type || '').toLowerCase();
+  const evTypeLower = (ev.eventType || '').toLowerCase();
+  if (
+    task === 'WORLD_CONTEXT' &&
+    (evTypeLower === 'war' ||
+      evTypeLower === 'crisis' ||
+      typeLower.includes('войн') ||
+      typeLower.includes('конфликт'))
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export interface MacroEraSummaryData {
