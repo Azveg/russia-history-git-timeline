@@ -2106,7 +2106,11 @@ export function isHistoricalEventNode(
   ev: Pick<TimelineNode, 'task' | 'type' | 'syncTags'>,
   branches?: BranchDefinition[],
 ): boolean {
-  return !isBiographyNode(ev, branches) && !isLiteraryWorkNode(ev, branches);
+  return (
+    !isBiographyNode(ev, branches) &&
+    !isLiteraryWorkNode(ev, branches) &&
+    !isScienceDiscoveryNode(ev, branches)
+  );
 }
 
 export interface MacroEraSummaryData {

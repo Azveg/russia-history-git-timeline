@@ -46,7 +46,39 @@
       "path": "data/diplomacy.json",
       "role": "thematic_branch",
       "branchIds": ["DIPLOMACY_TREATIES"],
-      "title": "Дипломатия: ключевые мирные договоры и военные союзы (опциональный модуль)",
+      "title": "Дипломатия: ключевые мирные договоры, съезды и военные союзы (911–1997)",
+      "enabled": true
+    },
+    {
+      "fileId": "writers_bio",
+      "path": "data/writers_bio.json",
+      "role": "thematic_branch",
+      "branchIds": ["LITERATURE_ALL", "WRITERS_BIO"],
+      "title": "Русские писатели и летописцы (XI–XX вв.)",
+      "enabled": true
+    },
+    {
+      "fileId": "writers_works",
+      "path": "data/writers_works.json",
+      "role": "thematic_branch",
+      "branchIds": ["WRITERS_WORKS"],
+      "title": "Ключевые произведения русской литературы (XI–XX вв.)",
+      "enabled": true
+    },
+    {
+      "fileId": "scientists_bio",
+      "path": "data/scientists_bio.json",
+      "role": "thematic_branch",
+      "branchIds": ["SCIENCE_ALL", "SCIENTISTS_BIO"],
+      "title": "Выдающиеся учёные и инженеры России и СССР (XVIII–XX вв.)",
+      "enabled": true
+    },
+    {
+      "fileId": "science_discoveries",
+      "path": "data/science_discoveries.json",
+      "role": "thematic_branch",
+      "branchIds": ["SCIENCE_DISCOVERIES"],
+      "title": "Научные открытия, академии и технологические прорывы (1687–2000)",
       "enabled": true
     }
   ],

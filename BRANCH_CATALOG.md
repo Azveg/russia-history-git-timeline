@@ -7,13 +7,13 @@
 
 ## 1. Сводка состояния базы
 
-- **Модульных JSON-файлов:** 7
-- **Объявленных веток:** 13 (групп: 2, листовых: 11)
-- **Событий (nodes):** 269
+- **Модульных JSON-файлов:** 9
+- **Объявленных веток:** 16 (групп: 3, листовых: 13)
+- **Событий (nodes):** 339
 - **Правлений (rulers):** 70
 - **Фактический диапазон оси времени:** `862–2008`
-- **Активных тегов (`syncTags` / `campaignId` / `referenceTags`):** 95
-- **Явных связей (`crossLinks` + `linksTo`):** 71
+- **Активных тегов (`syncTags` / `campaignId` / `referenceTags`):** 210
+- **Явных связей (`crossLinks` + `linksTo`):** 175
 
 ---
 
@@ -21,19 +21,22 @@
 
 | `id` | `gitName` | Название (`label`) | Родитель | Тип | Цвет | Старт | Узлов | Файл |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: | :---: | :--- |
-| `DIPLOMACY_TREATIES` | `diplomacy/treaties` | Дипломатия и договоры | — | Тематическая | `#2dd4bf` | выкл (по умолч.) | 6 | `data/diplomacy.json` |
-| `REFORMS_ECO` | `feat/reforms-eco` | Экономика и реформы | — | Тематическая | `#10b981` | выкл (по умолч.) | 15 | `data/economics.json` |
+| `DIPLOMACY_TREATIES` | `diplomacy/treaties` | Дипломатия, союзы и мирные договоры | — | Тематическая | `#06b6d4` | выкл (по умолч.) | 19 | `data/diplomacy.json` |
+| `REFORMS_ECO` | `economy/reforms` | Экономика, право и госреформы | — | Тематическая | `#10b981` | выкл (по умолч.) | 28 | `data/economics.json` |
 | `MAIN_RULERS` | `rulers/reigns` | Правители (ветвления) | — | Тематическая | `#f59e0b` | вкл (по умолч.) | 70 | `data/rulers.json` |
+| `SCIENCE_DISCOVERIES` | `science/discoveries` | Научные открытия, академии и прорывы | `SCIENCE_ALL` | Тематическая | `#10b981` | выкл (по умолч.) | 16 | `data/science_discoveries.json` |
+| `SCIENCE_ALL` | `sci/all` | Наука и технологии: учёные и открытия (общая) | — | Группа (`isGroup`) | `#14b8a6` | свёрнута | 0 | `data/scientists_bio.json` |
+| `SCIENTISTS_BIO` | `science/people` | Выдающиеся учёные и инженеры | `SCIENCE_ALL` | Тематическая | `#2dd4bf` | выкл (по умолч.) | 15 | `data/scientists_bio.json` |
 | `WAR_ALL` | `war/all` | Военные кампании (общая ветка) | — | Группа (`isGroup`) | `#f43f5e` | свёрнута | 0 | `data/wars.json` |
 | `WAR_CONTINENTAL` | `war/continental` | Войны: Большие и мировые войны | `WAR_ALL` | Военная | `#ef4444` | выкл (по умолч.) | 21 | `data/wars.json` |
 | `SEAS` | `war/seas` | Войны: Выход к морям и проливам | `WAR_ALL` | Военная | `#38bdf8` | выкл (по умолч.) | 29 | `data/wars.json` |
 | `PERIPHERY` | `war/periphery` | Войны: Расширение границ и периферия | `WAR_ALL` | Военная | `#fb923c` | выкл (по умолч.) | 32 | `data/wars.json` |
 | `INTERNAL_BUFFER` | `war/internal` | Войны: Усобицы, восстания и гражданские войны | `WAR_ALL` | Военная | `#f43f5e` | выкл (по умолч.) | 22 | `data/wars.json` |
 | `WAR_EXPEDITION` | `war/expedition` | Войны: Зарубежные походы и локальные операции | `WAR_ALL` | Военная | `#eab308` | выкл (по умолч.) | 27 | `data/wars.json` |
-| `WORLD_CONTEXT` | `world/events` | События в других странах | — | Тематическая | `#a855f7` | выкл (по умолч.) | 14 | `data/world.json` |
+| `WORLD_CONTEXT` | `world/context` | Мировой геополитический контекст | — | Тематическая | `#a855f7` | выкл (по умолч.) | 20 | `data/world.json` |
 | `LITERATURE_ALL` | `lit/all` | Литература: писатели и произведения (общая) | — | Группа (`isGroup`) | `#d946ef` | свёрнута | 0 | `data/writers_bio.json` |
-| `WRITERS_BIO` | `culture/writers` | Русские писатели-классики | `LITERATURE_ALL` | Тематическая | `#e879f9` | выкл (по умолч.) | 32 | `data/writers_bio.json` |
-| `WRITERS_WORKS` | `culture/books` | Ключевые произведения литературы | `LITERATURE_ALL` | Тематическая | `#c084fc` | выкл (по умолч.) | 71 | `data/writers_works.json` |
+| `WRITERS_BIO` | `culture/writers` | Русские писатели и летописцы | `LITERATURE_ALL` | Тематическая | `#e879f9` | выкл (по умолч.) | 35 | `data/writers_bio.json` |
+| `WRITERS_WORKS` | `culture/books` | Ключевые произведения литературы | `LITERATURE_ALL` | Тематическая | `#c084fc` | выкл (по умолч.) | 75 | `data/writers_works.json` |
 
 ---
 
@@ -45,16 +48,17 @@
 
 | Тег | Режим | Диапазон лет | Ветки (`task`) | События (`id`) |
 | :--- | :---: | :---: | :--- | :--- |
-| `era-1` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
-| `era-10` | ref (внеоконный) | 1917–1991 | `WRITERS_WORKS` | `1917-pasternak-sestra-moya-zhizn` (1917 (изд. 1922)), `1917-tsvetaeva-lebediny-stan` (1917–1921), `1918-blok-dvenadtsat` (1918 (январь)), `1918-bunin-okayannye-dni` (1918–1920 (изд. 1925)), `1923-bulgakov-belaya-gvardiya` (1923–1925), `1924-tsvetaeva-poema-gory-kontsa` (1924–1926), `1925-bulgakov-sobachye-serdtse` (1925), `1925-sholokhov-tikhiy-don` (1925–1940), `1925-yesenin-anna-snegina` (1925), `1927-mayakovsky-khorosho` (1927), `1928-bulgakov-master-i-margarita` (1928–1940 (опубл. 1966)), `1932-sholokhov-podnyataya-tselina` (1932–1959), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1935-nabokov-dar` (1935–1938), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1956-sholokhov-sudba-cheloveka` (1956), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)), `1959-solzhenitsyn-odin-den` (1959 (опубл. 1962)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
-| `era-2` | ref (внеоконный) | 1816–1908 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826), `1908-blok-na-pole-kulikovom` (1908) |
-| `era-3` | ref (внеоконный) | 1816–1837 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826), `1825-pushkin-boris-godunov` (1825), `1837-lermontov-borodino-kalashnikov` (1837) |
-| `era-4` | ref (внеоконный) | 1816–1842 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826), `1825-pushkin-boris-godunov` (1825), `1835-gogol-taras-bulba` (1835–1842) |
-| `era-5` | ref (внеоконный) | 1833–1833 | `WRITERS_WORKS` | `1833-pushkin-medny-vsadnik` (1833) |
-| `era-6` | ref (внеоконный) | 1869–1870 | `WRITERS_WORKS` | `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870) |
-| `era-7` | ref (внеоконный) | 1782–1921 | `WRITERS_WORKS` | `1782-derzhavin-felitsa` (1782), `1782-fonvizin-nedorosl` (1782), `1791-derzhavin-vodopad` (1791–1794), `1812-krylov-basni-1812` (1811–1812), `1812-zhukovsky-svetlana-pevets` (1812), `1822-griboedov-gore-ot-uma` (1822–1824), `1823-pushkin-evgeny-onegin` (1823–1831), `1842-gogol-mertvye-dushi` (1835–1842), `1836-gogol-revizor` (1836), `1836-pushkin-kapitanskaya-dochka` (1836), `1837-lermontov-borodino-kalashnikov` (1837), `1840-lermontov-geroy-nashego-vremeni` (1838–1840), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1863-tolstoy-voyna-i-mir` (1863–1869), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1871-nekrasov-russkie-zhenshchiny` (1871–1872), `1881-leskov-levsha` (1881), `1896-tolstoy-khadzhi-murat` (1896–1904 (опубл. 1912)), `1921-yesenin-pugachev` (1921) |
-| `era-8` | ref (внеоконный) | 1847–1938 | `WRITERS_WORKS` | `1847-turgenev-zapiski-okhotnika` (1847–1852), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1858-goncharov-fregat-pallada` (1855–1858), `1859-goncharov-oblomov` (1859), `1859-ostrovsky-groza` (1859), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1862-turgenev-ottsy-i-deti` (1862), `1863-nekrasov-komu-na-rusi` (1863–1877), `1866-dostoevsky-prestuplenie-i-nakazanie` (1866), `1866-tyutchev-umom-rossiyu-ne-ponyat` (1866), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1871-dostoevsky-besy` (1871–1872), `1873-leskov-ocharovanny-strannik` (1873), `1873-tolstoy-anna-karenina` (1873–1877), `1875-shchedrin-gospoda-golovlevy` (1875–1880), `1878-ostrovsky-bespridannitsa` (1878), `1879-dostoevsky-bratya-karamazovy` (1879–1880), `1883-fet-vechernie-ogni` (1883–1891), `1892-chekhov-palata-6-sakhalin` (1892–1895), `1935-nabokov-dar` (1935–1938) |
-| `era-9` | ref (внеоконный) | 1896–1991 | `WRITERS_WORKS` | `1896-chekhov-chayka-tri-sestry` (1896–1901), `1902-gorky-na-dne` (1902), `1903-chekhov-vishnevy-sad` (1903–1904), `1906-gorky-mat` (1906–1907), `1908-blok-na-pole-kulikovom` (1908), `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1917-pasternak-sestra-moya-zhizn` (1917 (изд. 1922)), `1925-sholokhov-tikhiy-don` (1925–1940), `1925-yesenin-anna-snegina` (1925), `1926-nabokov-mashenka` (1926), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
+| `era-1` | ref (внеоконный) | 911–1826 | `DIPLOMACY_TREATIES`, `REFORMS_ECO`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `911-byzantine-treaties` (911 и 944), `946-olga-tax-reform` (946–947), `1016-russkaya-pravda` (1016–1054), `1054-great-schism` (1054 (июль)), `1097-liubech-congress` (1097–1103), `1113-monomakh-statute` (1113), `1113-povest-vremennykh-let` (1113), `1185-slovo-o-polku-igoreve` (1185–1187), `1816-karamzin-history-state` (1816–1826) |
+| `era-10` | ref (внеоконный) | 1917–2000 | `DIPLOMACY_TREATIES`, `REFORMS_ECO`, `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1917-pasternak-sestra-moya-zhizn` (1917 (изд. 1922)), `1917-tsvetaeva-lebediny-stan` (1917–1921), `1918-blok-dvenadtsat` (1918 (январь)), `1918-bunin-okayannye-dni` (1918–1920 (изд. 1925)), `1923-bulgakov-belaya-gvardiya` (1923–1925), `1924-tsvetaeva-poema-gory-kontsa` (1924–1926), `1925-bulgakov-sobachye-serdtse` (1925), `1925-sholokhov-tikhiy-don` (1925–1940), `1925-yesenin-anna-snegina` (1925), `1927-mayakovsky-khorosho` (1927), `1928-bulgakov-master-i-margarita` (1928–1940 (опубл. 1966)), `1932-sholokhov-podnyataya-tselina` (1932–1959), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1935-nabokov-dar` (1935–1938), `1937-kapitsa-landau-superfluidity` (1937–1941), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1949-rds1-obninsk-nuclear` (1949–1954), `1956-sholokhov-sudba-cheloveka` (1956), `1957-sputnik-1-launch` (1957), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)), `1959-solzhenitsyn-odin-den` (1959 (опубл. 1962)), `1961-gagarin-vostok-1` (1961), `1972-salt1-abm-treaty` (1963–1979), `1965-kosygin-reform` (1965–1970 («Золотая восьмая пятилетка»)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991), `1986-mir-orbital-station` (1986–2000) |
+| `era-11` | ref (внеоконный) | 1985–2000 | `REFORMS_ECO`, `SCIENCE_DISCOVERIES` | `1987-perestroika-economy` (1985–1990), `1986-mir-orbital-station` (1986–2000) |
+| `era-2` | ref (внеоконный) | 1204–1908 | `WORLD_CONTEXT`, `WRITERS_WORKS` | `1204-fourth-crusade` (1204–1215), `1380-zadonshchina` (1380-е), `1816-karamzin-history-state` (1816–1826), `1908-blok-na-pole-kulikovom` (1908) |
+| `era-3` | ref (внеоконный) | 1439–1837 | `DIPLOMACY_TREATIES`, `REFORMS_ECO`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1453-fall-of-constantinople` (1439–1453), `1489-habsburg-embassy` (1489–1517), `1492-columbus-reformation` (1492–1553), `1497-sudebnik-ivan3` (1497 (сентябрь)), `1816-karamzin-history-state` (1816–1826), `1825-pushkin-boris-godunov` (1825), `1837-lermontov-borodino-kalashnikov` (1837) |
+| `era-4` | ref (внеоконный) | 1492–1842 | `REFORMS_ECO`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1492-columbus-reformation` (1492–1553), `1535-glinskaya-money-reform` (1535–1538), `1549-chosen-council-sudebnik` (1549–1556), `1565-oprichnina` (1565–1572), `1672-avvakum-zhitie` (1672–1675), `1816-karamzin-history-state` (1816–1826), `1825-pushkin-boris-godunov` (1825), `1835-gogol-taras-bulba` (1835–1842) |
+| `era-5` | ref (внеоконный) | 1617–1833 | `DIPLOMACY_TREATIES`, `REFORMS_ECO`, `SCIENCE_DISCOVERIES`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1617-stolbovo-deulino` (1617–1634), `1618-thirty-years-westphalia` (1618–1648), `1649-sobornoye-ulozhenie` (1649 (январь)), `1653-church-schism-nikon` (1653–1667), `1654-pereyaslav-andrusovo` (1654–1667), `1667-new-trade-statute` (1667–1682), `1686-eternal-peace-nerchinsk` (1686–1689), `1687-slavic-greek-latin-academy` (1687), `1724-st-petersburg-academy-of-sciences` (1724–1725), `1833-pushkin-medny-vsadnik` (1833) |
+| `era-6` | ref (внеоконный) | 1733–1870 | `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1733-great-northern-expedition` (1733–1743), `1755-moscow-university-founded` (1755), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870) |
+| `era-7` | ref (внеоконный) | 1782–1921 | `DIPLOMACY_TREATIES`, `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1782-derzhavin-felitsa` (1782), `1782-fonvizin-nedorosl` (1782), `1791-derzhavin-vodopad` (1791–1794), `1791-jassy-treaty` (1791–1795), `1812-krylov-basni-1812` (1811–1812), `1812-zhukovsky-svetlana-pevets` (1812), `1819-antarctica-discovery` (1819–1821), `1822-griboedov-gore-ot-uma` (1822–1824), `1823-pushkin-evgeny-onegin` (1823–1831), `1826-non-euclidean-geometry` (1826–1829), `1842-gogol-mertvye-dushi` (1835–1842), `1836-gogol-revizor` (1836), `1836-pushkin-kapitanskaya-dochka` (1836), `1837-lermontov-borodino-kalashnikov` (1837), `1840-lermontov-geroy-nashego-vremeni` (1838–1840), `1854-pirogov-field-surgery` (1854–1855), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1863-tolstoy-voyna-i-mir` (1863–1869), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1871-nekrasov-russkie-zhenshchiny` (1871–1872), `1881-leskov-levsha` (1881), `1896-tolstoy-khadzhi-murat` (1896–1904 (опубл. 1912)), `1921-yesenin-pugachev` (1921) |
+| `era-8` | ref (внеоконный) | 1847–1938 | `DIPLOMACY_TREATIES`, `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1847-turgenev-zapiski-okhotnika` (1847–1852), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1858-goncharov-fregat-pallada` (1855–1858), `1858-aigun-beijing` (1858–1867), `1859-goncharov-oblomov` (1859), `1859-ostrovsky-groza` (1859), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1862-turgenev-ottsy-i-deti` (1862), `1863-nekrasov-komu-na-rusi` (1863–1877), `1866-dostoevsky-prestuplenie-i-nakazanie` (1866), `1866-tyutchev-umom-rossiyu-ne-ponyat` (1866), `1869-mendeleev-periodic-law` (1869), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1871-dostoevsky-besy` (1871–1872), `1873-leskov-ocharovanny-strannik` (1873), `1873-tolstoy-anna-karenina` (1873–1877), `1875-shchedrin-gospoda-golovlevy` (1875–1880), `1878-ostrovsky-bespridannitsa` (1878), `1878-san-stefano-berlin` (1878 (февраль — июль)), `1879-dostoevsky-bratya-karamazovy` (1879–1880), `1883-fet-vechernie-ogni` (1883–1891), `1892-chekhov-palata-6-sakhalin` (1892–1895), `1905-portsmouth-treaty` (1905–1907), `1935-nabokov-dar` (1935–1938) |
+| `era-9` | ref (внеоконный) | 1895–1991 | `DIPLOMACY_TREATIES`, `REFORMS_ECO`, `SCIENCE_DISCOVERIES`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1895-popov-radio-invention` (1895–1896), `1896-chekhov-chayka-tri-sestry` (1896–1901), `1902-gorky-na-dne` (1902), `1903-chekhov-vishnevy-sad` (1903–1904), `1903-tsiolkovsky-rocket-formula` (1903), `1904-pavlov-nobel-physiology` (1904), `1906-gorky-mat` (1906–1907), `1908-blok-na-pole-kulikovom` (1908), `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1917-pasternak-sestra-moya-zhizn` (1917 (изд. 1922)), `1921-nep-reform` (1921–1928), `1925-sholokhov-tikhiy-don` (1925–1940), `1925-yesenin-anna-snegina` (1925), `1926-nabokov-mashenka` (1926), `1929-great-depression` (1929–1933), `1939-molotov-ribbentrop` (1939–1941), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-yalta-potsdam-treaties` (1943–1945), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
 | `event-1237-batu-invasion` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
 | `event-1378-vozha-kulikovo` | ref (внеоконный) | 1816–1908 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826), `1908-blok-na-pole-kulikovom` (1908) |
 | `event-1480-ugra-standing` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
@@ -82,64 +86,178 @@
 | `event-1928-reform-five-year` | ref (внеоконный) | 1932–1973 | `WRITERS_WORKS` | `1932-sholokhov-podnyataya-tselina` (1932–1959), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)) |
 | `event-1941-ww2` | ref (внеоконный) | 1940–1973 | `WRITERS_WORKS` | `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1956-sholokhov-sudba-cheloveka` (1956), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)) |
 | `kulikovo` | sync (±3 г.) | 1378–1380 | `WAR_CONTINENTAL` | `1378-vozha-kulikovo` (1378–1380) |
-| `napoleonic` | sync + ref | 1805–1869 | `DIPLOMACY_TREATIES`, `WAR_CONTINENTAL`, `WAR_EXPEDITION`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1805-coalitions-3-4` (1805–1807), `1807-tilsit-treaty` (1807 (июнь)), `1812-krylov-basni-1812` (1811–1812), `1812-patriotic-war` (1812), `1812-zhukovsky-svetlana-pevets` (1812), `1813-foreign-campaigns` (1813–1814 (и 1815)), `1815-world-vienna` (1814–1815), `1837-lermontov-borodino-kalashnikov` (1837), `1863-tolstoy-voyna-i-mir` (1863–1869) |
-| `northern-war` | sync + ref | 1700–1833 | `DIPLOMACY_TREATIES`, `SEAS`, `WRITERS_WORKS` | `1700-northern-war` (1700–1721), `1721-nystad-treaty` (1721 (август)), `1833-pushkin-medny-vsadnik` (1833) |
+| `napoleonic` | sync + ref | 1805–1869 | `WAR_CONTINENTAL`, `WAR_EXPEDITION`, `WRITERS_WORKS` | `1805-coalitions-3-4` (1805–1807), `1812-krylov-basni-1812` (1811–1812), `1812-patriotic-war` (1812), `1812-zhukovsky-svetlana-pevets` (1812), `1813-foreign-campaigns` (1813–1814 (и 1815)), `1837-lermontov-borodino-kalashnikov` (1837), `1863-tolstoy-voyna-i-mir` (1863–1869) |
+| `northern-war` | sync + ref | 1700–1833 | `SEAS`, `WRITERS_WORKS` | `1700-northern-war` (1700–1721), `1833-pushkin-medny-vsadnik` (1833) |
 | `person-akhmatova-anna` | sync (±3 г.) | 1889–1966 | `WRITERS_BIO`, `WRITERS_WORKS` | `1889-akhmatova-anna` (1889–1966), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1940-akhmatova-poema-bez-geroya` (1940–1962) |
+| `person-alferov-zhores` | sync (±3 г.) | 1930–2000 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1930-alferov-zhores` (1930–2000), `1986-mir-orbital-station` (1986–2000) |
+| `person-avvakum-petrov` | sync (±3 г.) | 1620–1682 | `REFORMS_ECO`, `WRITERS_BIO`, `WRITERS_WORKS` | `1620-avvakum-petrov` (1620–1682), `1653-church-schism-nikon` (1653–1667), `1672-avvakum-zhitie` (1672–1675) |
 | `person-blok-alexander` | sync (±3 г.) | 1880–1921 | `WRITERS_BIO`, `WRITERS_WORKS` | `1880-blok-alexander` (1880–1921), `1908-blok-na-pole-kulikovom` (1908), `1918-blok-dvenadtsat` (1918 (январь)) |
 | `person-bulgakov-mikhail` | sync (±3 г.) | 1891–1940 | `WRITERS_BIO`, `WRITERS_WORKS` | `1891-bulgakov-mikhail` (1891–1940), `1923-bulgakov-belaya-gvardiya` (1923–1925), `1925-bulgakov-sobachye-serdtse` (1925), `1928-bulgakov-master-i-margarita` (1928–1940 (опубл. 1966)) |
 | `person-bunin-ivan` | sync (±3 г.) | 1870–1953 | `WRITERS_BIO`, `WRITERS_WORKS` | `1870-bunin-ivan` (1870–1953), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1918-bunin-okayannye-dni` (1918–1920 (изд. 1925)) |
 | `person-chekhov-anton` | sync (±3 г.) | 1860–1904 | `WRITERS_BIO`, `WRITERS_WORKS` | `1860-chekhov-anton` (1860–1904), `1892-chekhov-palata-6-sakhalin` (1892–1895), `1896-chekhov-chayka-tri-sestry` (1896–1901), `1903-chekhov-vishnevy-sad` (1903–1904) |
 | `person-derzhavin-gavrila` | sync (±3 г.) | 1743–1816 | `WRITERS_BIO`, `WRITERS_WORKS` | `1743-derzhavin-gavrila` (1743–1816), `1782-derzhavin-felitsa` (1782), `1791-derzhavin-vodopad` (1791–1794) |
 | `person-dostoevsky-fyodor` | sync (±3 г.) | 1821–1881 | `WRITERS_BIO`, `WRITERS_WORKS` | `1821-dostoevsky-fyodor` (1821–1881), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1866-dostoevsky-prestuplenie-i-nakazanie` (1866), `1871-dostoevsky-besy` (1871–1872), `1879-dostoevsky-bratya-karamazovy` (1879–1880) |
+| `person-euler-leonhard` | sync (±3 г.) | 1707–1783 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1707-euler-leonhard` (1707–1783), `1724-st-petersburg-academy-of-sciences` (1724–1725) |
 | `person-fet-afanasy` | sync (±3 г.) | 1820–1892 | `WRITERS_BIO`, `WRITERS_WORKS` | `1820-fet-afanasy` (1820–1892), `1850-fet-shepot-robkoe-dykhanie` (1850), `1883-fet-vechernie-ogni` (1883–1891) |
 | `person-fonvizin-denis` | sync (±3 г.) | 1745–1792 | `WRITERS_BIO`, `WRITERS_WORKS` | `1745-fonvizin-denis` (1745–1792), `1782-fonvizin-nedorosl` (1782) |
 | `person-gogol-nikolay` | sync (±3 г.) | 1809–1852 | `WRITERS_BIO`, `WRITERS_WORKS` | `1809-gogol-nikolay` (1809–1852), `1835-gogol-taras-bulba` (1835–1842), `1842-gogol-mertvye-dushi` (1835–1842), `1836-gogol-revizor` (1836) |
 | `person-goncharov-ivan` | sync (±3 г.) | 1812–1891 | `WRITERS_BIO`, `WRITERS_WORKS` | `1812-goncharov-ivan` (1812–1891), `1858-goncharov-fregat-pallada` (1855–1858), `1859-goncharov-oblomov` (1859) |
 | `person-gorky-maxim` | sync (±3 г.) | 1868–1936 | `WRITERS_BIO`, `WRITERS_WORKS` | `1868-gorky-maxim` (1868–1936), `1902-gorky-na-dne` (1902), `1906-gorky-mat` (1906–1907) |
 | `person-griboedov-aleksandr` | sync (±3 г.) | 1795–1829 | `WRITERS_BIO`, `WRITERS_WORKS` | `1795-griboedov-aleksandr` (1795–1829), `1822-griboedov-gore-ot-uma` (1822–1824) |
+| `person-kapitsa-pyotr` | sync (±3 г.) | 1894–1984 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1894-kapitsa-pyotr` (1894–1984), `1937-kapitsa-landau-superfluidity` (1937–1941) |
 | `person-karamzin-nikolay` | sync (±3 г.) | 1766–1826 | `WRITERS_BIO`, `WRITERS_WORKS` | `1766-karamzin-nikolay` (1766–1826), `1792-karamzin-bednaya-liza` (1792), `1816-karamzin-history-state` (1816–1826) |
+| `person-korolev-sergei` | sync (±3 г.) | 1907–1966 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1907-korolev-sergei` (1907–1966), `1957-sputnik-1-launch` (1957), `1961-gagarin-vostok-1` (1961) |
 | `person-krylov-ivan` | sync (±3 г.) | 1769–1844 | `WRITERS_BIO`, `WRITERS_WORKS` | `1769-krylov-ivan` (1769–1844), `1812-krylov-basni-1812` (1811–1812) |
+| `person-kurchatov` | sync (±3 г.) | 1945–1953 | `REFORMS_ECO` | `1949-reform-nuclear` (1945–1953) |
+| `person-kurchatov-igor` | sync (±3 г.) | 1903–1960 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1903-kurchatov-igor` (1903–1960), `1949-rds1-obninsk-nuclear` (1949–1954) |
+| `person-landau-lev` | sync (±3 г.) | 1908–1968 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1908-landau-lev` (1908–1968), `1937-kapitsa-landau-superfluidity` (1937–1941) |
 | `person-lermontov-mikhail` | sync (±3 г.) | 1814–1841 | `WRITERS_BIO`, `WRITERS_WORKS` | `1814-lermontov-mikhail` (1814–1841), `1837-lermontov-borodino-kalashnikov` (1837), `1840-lermontov-geroy-nashego-vremeni` (1838–1840) |
 | `person-leskov-nikolay` | sync (±3 г.) | 1831–1895 | `WRITERS_BIO`, `WRITERS_WORKS` | `1831-leskov-nikolay` (1831–1895), `1873-leskov-ocharovanny-strannik` (1873), `1881-leskov-levsha` (1881) |
+| `person-lobachevsky-nikolai` | sync (±3 г.) | 1792–1856 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1792-lobachevsky-nikolai` (1792–1856), `1826-non-euclidean-geometry` (1826–1829) |
+| `person-lomonosov-mikhail` | sync (±3 г.) | 1711–1765 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1711-lomonosov-mikhail` (1711–1765), `1755-moscow-university-founded` (1755) |
 | `person-mayakovsky-vladimir` | sync (±3 г.) | 1893–1930 | `WRITERS_BIO`, `WRITERS_WORKS` | `1893-mayakovsky-vladimir` (1893–1930), `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1927-mayakovsky-khorosho` (1927) |
+| `person-mendeleev` | sync (±3 г.) | 1891–1903 | `REFORMS_ECO` | `1891-reform-transsib` (1891–1903) |
+| `person-mendeleev-dmitry` | sync (±3 г.) | 1834–1907 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1834-mendeleev-dmitry` (1834–1907), `1869-mendeleev-periodic-law` (1869) |
 | `person-nabokov-vladimir` | sync (±3 г.) | 1899–1977 | `WRITERS_BIO`, `WRITERS_WORKS` | `1899-nabokov-vladimir` (1899–1977), `1926-nabokov-mashenka` (1926), `1935-nabokov-dar` (1935–1938) |
 | `person-nekrasov-nikolay` | sync (±3 г.) | 1821–1878 | `WRITERS_BIO`, `WRITERS_WORKS` | `1821-nekrasov-nikolay` (1821–1878), `1863-nekrasov-komu-na-rusi` (1863–1877), `1871-nekrasov-russkie-zhenshchiny` (1871–1872) |
+| `person-nestor-chronicler` | sync (±3 г.) | 1056–1114 | `WRITERS_BIO`, `WRITERS_WORKS` | `1056-nestor-chronicler` (1056–1114), `1113-povest-vremennykh-let` (1113) |
 | `person-ostrovsky-aleksandr` | sync (±3 г.) | 1823–1886 | `WRITERS_BIO`, `WRITERS_WORKS` | `1823-ostrovsky-aleksandr` (1823–1886), `1859-ostrovsky-groza` (1859), `1878-ostrovsky-bespridannitsa` (1878) |
 | `person-pasternak-boris` | sync (±3 г.) | 1890–1960 | `WRITERS_BIO`, `WRITERS_WORKS` | `1890-pasternak-boris` (1890–1960), `1917-pasternak-sestra-moya-zhizn` (1917 (изд. 1922)), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)) |
+| `person-pavlov-ivan` | sync (±3 г.) | 1849–1936 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1849-pavlov-ivan` (1849–1936), `1904-pavlov-nobel-physiology` (1904) |
+| `person-pirogov-nikolai` | sync (±3 г.) | 1810–1881 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1810-pirogov-nikolai` (1810–1881), `1854-pirogov-field-surgery` (1854–1855) |
+| `person-popov-alexander` | sync (±3 г.) | 1859–1906 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1859-popov-alexander` (1859–1906), `1895-popov-radio-invention` (1895–1896) |
 | `person-pushkin-alexander` | sync + ref | 1799–1938 | `WRITERS_BIO`, `WRITERS_WORKS` | `1799-pushkin-alexander` (1799–1837), `1823-pushkin-evgeny-onegin` (1823–1831), `1825-pushkin-boris-godunov` (1825), `1833-pushkin-medny-vsadnik` (1833), `1836-pushkin-kapitanskaya-dochka` (1836), `1935-nabokov-dar` (1935–1938) |
+| `person-sakharov` | sync (±3 г.) | 1945–1953 | `REFORMS_ECO` | `1949-reform-nuclear` (1945–1953) |
 | `person-saltykov-shchedrin-mikhail` | sync (±3 г.) | 1826–1889 | `WRITERS_BIO`, `WRITERS_WORKS` | `1826-saltykov-shchedrin-mikhail` (1826–1889), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1875-shchedrin-gospoda-golovlevy` (1875–1880) |
 | `person-sholokhov-mikhail` | sync (±3 г.) | 1905–1984 | `WRITERS_BIO`, `WRITERS_WORKS` | `1905-sholokhov-mikhail` (1905–1984), `1925-sholokhov-tikhiy-don` (1925–1940), `1932-sholokhov-podnyataya-tselina` (1932–1959), `1956-sholokhov-sudba-cheloveka` (1956) |
+| `person-sofoniy-ryazanets` | sync (±3 г.) | 1350–1405 | `WRITERS_BIO` | `1350-sofoniy-ryazanets` (вт. пол. XIV — нач. XV в.) |
 | `person-solzhenitsyn-alexander` | sync (±3 г.) | 1918–2008 | `WRITERS_BIO`, `WRITERS_WORKS` | `1918-solzhenitsyn-alexander` (1918–2008), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)), `1959-solzhenitsyn-odin-den` (1959 (опубл. 1962)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
 | `person-tolstoy-leo` | sync (±3 г.) | 1828–1910 | `WRITERS_BIO`, `WRITERS_WORKS` | `1828-tolstoy-leo` (1828–1910), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1863-tolstoy-voyna-i-mir` (1863–1869), `1873-tolstoy-anna-karenina` (1873–1877), `1896-tolstoy-khadzhi-murat` (1896–1904 (опубл. 1912)) |
+| `person-tsiolkovsky-konstantin` | sync (±3 г.) | 1857–1935 | `SCIENCE_DISCOVERIES`, `SCIENTISTS_BIO` | `1857-tsiolkovsky-konstantin` (1857–1935), `1903-tsiolkovsky-rocket-formula` (1903) |
 | `person-tsvetaeva-marina` | sync (±3 г.) | 1892–1941 | `WRITERS_BIO`, `WRITERS_WORKS` | `1892-tsvetaeva-marina` (1892–1941), `1917-tsvetaeva-lebediny-stan` (1917–1921), `1924-tsvetaeva-poema-gory-kontsa` (1924–1926) |
 | `person-turgenev-ivan` | sync (±3 г.) | 1818–1883 | `WRITERS_BIO`, `WRITERS_WORKS` | `1818-turgenev-ivan` (1818–1883), `1847-turgenev-zapiski-okhotnika` (1847–1852), `1862-turgenev-ottsy-i-deti` (1862) |
 | `person-tyutchev-fyodor` | sync (±3 г.) | 1803–1873 | `WRITERS_BIO`, `WRITERS_WORKS` | `1803-tyutchev-fyodor` (1803–1873), `1830-tyutchev-silentium` (1830), `1866-tyutchev-umom-rossiyu-ne-ponyat` (1866) |
+| `person-vavilov-nikolai` | sync (±3 г.) | 1887–1943 | `SCIENTISTS_BIO` | `1887-vavilov-nikolai` (1887–1943) |
+| `person-vernadsky-vladimir` | sync (±3 г.) | 1863–1945 | `SCIENTISTS_BIO` | `1863-vernadsky-vladimir` (1863–1945) |
 | `person-yesenin-sergey` | sync (±3 г.) | 1895–1925 | `WRITERS_BIO`, `WRITERS_WORKS` | `1895-yesenin-sergey` (1895–1925), `1921-yesenin-pugachev` (1921), `1925-yesenin-anna-snegina` (1925) |
 | `person-zhukovsky-vasily` | sync (±3 г.) | 1783–1852 | `WRITERS_BIO`, `WRITERS_WORKS` | `1783-zhukovsky-vasily` (1783–1852), `1812-zhukovsky-svetlana-pevets` (1812) |
-| `ruler-alexander-1` | ref (внеоконный) | 1811–1881 | `WRITERS_WORKS` | `1812-krylov-basni-1812` (1811–1812), `1812-zhukovsky-svetlana-pevets` (1812), `1822-griboedov-gore-ot-uma` (1822–1824), `1823-pushkin-evgeny-onegin` (1823–1831), `1837-lermontov-borodino-kalashnikov` (1837), `1863-tolstoy-voyna-i-mir` (1863–1869), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1881-leskov-levsha` (1881) |
-| `ruler-alexander-2` | ref (внеоконный) | 1847–1880 | `WRITERS_WORKS` | `1847-turgenev-zapiski-okhotnika` (1847–1852), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1858-goncharov-fregat-pallada` (1855–1858), `1859-goncharov-oblomov` (1859), `1859-ostrovsky-groza` (1859), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1862-turgenev-ottsy-i-deti` (1862), `1863-nekrasov-komu-na-rusi` (1863–1877), `1866-dostoevsky-prestuplenie-i-nakazanie` (1866), `1866-tyutchev-umom-rossiyu-ne-ponyat` (1866), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1871-dostoevsky-besy` (1871–1872), `1873-leskov-ocharovanny-strannik` (1873), `1873-tolstoy-anna-karenina` (1873–1877), `1875-shchedrin-gospoda-golovlevy` (1875–1880), `1878-ostrovsky-bespridannitsa` (1878), `1879-dostoevsky-bratya-karamazovy` (1879–1880) |
+| `reform-assignats` | sync (±3 г.) | 1769–1785 | `REFORMS_ECO` | `1769-reform-assignats` (1769–1785) |
+| `reform-chosen-council` | sync (±3 г.) | 1549–1556 | `REFORMS_ECO` | `1549-chosen-council-sudebnik` (1549–1556) |
+| `reform-church-schism` | sync (±3 г.) | 1653–1667 | `REFORMS_ECO` | `1653-church-schism-nikon` (1653–1667) |
+| `reform-customs-1754` | sync (±3 г.) | 1754–1754 | `REFORMS_ECO` | `1754-reform-customs` (1754) |
+| `reform-glinskaya-money` | sync (±3 г.) | 1535–1538 | `REFORMS_ECO` | `1535-glinskaya-money-reform` (1535–1538) |
+| `reform-great-reforms` | sync (±3 г.) | 1861–1874 | `REFORMS_ECO` | `1861-reform-emancipation` (1861–1874) |
+| `reform-industrialization` | sync (±3 г.) | 1928–1937 | `REFORMS_ECO`, `WORLD_CONTEXT` | `1928-reform-five-year` (1928–1937), `1929-great-depression` (1929–1933) |
+| `reform-kankrin-money` | sync (±3 г.) | 1837–1843 | `REFORMS_ECO` | `1839-reform-kankrin` (1837–1843) |
+| `reform-kosygin-1965` | sync (±3 г.) | 1965–1970 | `REFORMS_ECO` | `1965-kosygin-reform` (1965–1970 («Золотая восьмая пятилетка»)) |
+| `reform-market-1990s` | sync (±3 г.) | 1992–1998 | `REFORMS_ECO` | `1992-reform-market-crisis` (1992–1998) |
+| `reform-ministries` | sync (±3 г.) | 1802–1811 | `REFORMS_ECO` | `1802-reform-ministries` (1802–1811) |
+| `reform-new-trade-statute` | sync (±3 г.) | 1667–1682 | `REFORMS_ECO` | `1667-new-trade-statute` (1667–1682) |
+| `reform-nuclear-project` | sync (±3 г.) | 1945–1953 | `REFORMS_ECO` | `1949-reform-nuclear` (1945–1953) |
+| `reform-oil-boom` | sync (±3 г.) | 1973–1984 | `REFORMS_ECO` | `1973-reform-oil-boom` (1973–1984) |
+| `reform-olga-pogosts` | sync (±3 г.) | 946–947 | `REFORMS_ECO` | `946-olga-tax-reform` (946–947) |
+| `reform-oprichnina` | sync (±3 г.) | 1565–1572 | `REFORMS_ECO` | `1565-oprichnina` (1565–1572) |
+| `reform-perestroika-eco` | sync (±3 г.) | 1985–1990 | `REFORMS_ECO` | `1987-perestroika-economy` (1985–1990) |
+| `reform-peter-army` | sync (±3 г.) | 1699–1705 | `REFORMS_ECO` | `1699-reform-army` (1699–1705) |
+| `reform-poll-tax` | sync (±3 г.) | 1718–1724 | `REFORMS_ECO` | `1718-reform-poll-tax` (1718–1724) |
+| `reform-russkaya-pravda` | sync (±3 г.) | 1016–1113 | `REFORMS_ECO` | `1016-russkaya-pravda` (1016–1054), `1113-monomakh-statute` (1113) |
+| `reform-rvsn` | sync (±3 г.) | 1954–1962 | `REFORMS_ECO` | `1959-reform-rvsn` (1954–1962) |
+| `reform-sobornoye-ulozhenie` | sync (±3 г.) | 1649–1649 | `REFORMS_ECO` | `1649-sobornoye-ulozhenie` (1649 (январь)) |
+| `reform-stolypin` | sync (±3 г.) | 1905–1911 | `REFORMS_ECO` | `1906-reform-stolypin` (1905–1911) |
+| `reform-sudebnik-1497` | sync (±3 г.) | 1497–1497 | `REFORMS_ECO` | `1497-sudebnik-ivan3` (1497 (сентябрь)) |
+| `reform-war-communism` | sync (±3 г.) | 1917–1928 | `REFORMS_ECO` | `1918-reform-war-communism` (1917–1920), `1921-nep-reform` (1921–1928) |
+| `reform-witte-transsib` | sync (±3 г.) | 1891–1903 | `REFORMS_ECO` | `1891-reform-transsib` (1891–1903) |
+| `ruler-alexander-1` | ref (внеоконный) | 1811–1881 | `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1812-krylov-basni-1812` (1811–1812), `1812-zhukovsky-svetlana-pevets` (1812), `1819-antarctica-discovery` (1819–1821), `1822-griboedov-gore-ot-uma` (1822–1824), `1823-pushkin-evgeny-onegin` (1823–1831), `1837-lermontov-borodino-kalashnikov` (1837), `1863-tolstoy-voyna-i-mir` (1863–1869), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1881-leskov-levsha` (1881) |
+| `ruler-alexander-2` | ref (внеоконный) | 1847–1880 | `DIPLOMACY_TREATIES`, `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1847-turgenev-zapiski-okhotnika` (1847–1852), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1858-goncharov-fregat-pallada` (1855–1858), `1858-aigun-beijing` (1858–1867), `1859-goncharov-oblomov` (1859), `1859-ostrovsky-groza` (1859), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1862-turgenev-ottsy-i-deti` (1862), `1863-nekrasov-komu-na-rusi` (1863–1877), `1866-dostoevsky-prestuplenie-i-nakazanie` (1866), `1866-tyutchev-umom-rossiyu-ne-ponyat` (1866), `1869-mendeleev-periodic-law` (1869), `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870), `1871-dostoevsky-besy` (1871–1872), `1873-leskov-ocharovanny-strannik` (1873), `1873-tolstoy-anna-karenina` (1873–1877), `1875-shchedrin-gospoda-golovlevy` (1875–1880), `1878-ostrovsky-bespridannitsa` (1878), `1878-san-stefano-berlin` (1878 (февраль — июль)), `1879-dostoevsky-bratya-karamazovy` (1879–1880) |
 | `ruler-alexander-3` | ref (внеоконный) | 1883–1895 | `WRITERS_WORKS` | `1883-fet-vechernie-ogni` (1883–1891), `1892-chekhov-palata-6-sakhalin` (1892–1895) |
+| `ruler-alexey-mikhailovich` | ref (внеоконный) | 1618–1682 | `DIPLOMACY_TREATIES`, `REFORMS_ECO`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1618-thirty-years-westphalia` (1618–1648), `1649-sobornoye-ulozhenie` (1649 (январь)), `1653-church-schism-nikon` (1653–1667), `1654-pereyaslav-andrusovo` (1654–1667), `1667-new-trade-statute` (1667–1682), `1672-avvakum-zhitie` (1672–1675) |
+| `ruler-anna-ioannovna` | ref (внеоконный) | 1733–1743 | `SCIENCE_DISCOVERIES` | `1733-great-northern-expedition` (1733–1743) |
 | `ruler-boris-godunov` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826), `1825-pushkin-boris-godunov` (1825) |
-| `ruler-catherine-2` | ref (внеоконный) | 1782–1921 | `WRITERS_WORKS` | `1782-derzhavin-felitsa` (1782), `1782-fonvizin-nedorosl` (1782), `1791-derzhavin-vodopad` (1791–1794), `1836-pushkin-kapitanskaya-dochka` (1836), `1921-yesenin-pugachev` (1921) |
-| `ruler-dmitry-donskoy` | ref (внеоконный) | 1816–1908 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826), `1908-blok-na-pole-kulikovom` (1908) |
+| `ruler-brezhnev` | ref (внеоконный) | 1963–1979 | `DIPLOMACY_TREATIES`, `REFORMS_ECO` | `1972-salt1-abm-treaty` (1963–1979), `1965-kosygin-reform` (1965–1970 («Золотая восьмая пятилетка»)) |
+| `ruler-catherine-1` | ref (внеоконный) | 1724–1725 | `SCIENCE_DISCOVERIES` | `1724-st-petersburg-academy-of-sciences` (1724–1725) |
+| `ruler-catherine-2` | ref (внеоконный) | 1782–1921 | `DIPLOMACY_TREATIES`, `WRITERS_WORKS` | `1782-derzhavin-felitsa` (1782), `1782-fonvizin-nedorosl` (1782), `1791-derzhavin-vodopad` (1791–1794), `1791-jassy-treaty` (1791–1795), `1836-pushkin-kapitanskaya-dochka` (1836), `1921-yesenin-pugachev` (1921) |
+| `ruler-dmitry-donskoy` | ref (внеоконный) | 1380–1908 | `WRITERS_WORKS` | `1380-zadonshchina` (1380-е), `1816-karamzin-history-state` (1816–1826), `1908-blok-na-pole-kulikovom` (1908) |
+| `ruler-elizabeth` | ref (внеоконный) | 1755–1755 | `SCIENCE_DISCOVERIES` | `1755-moscow-university-founded` (1755) |
 | `ruler-false-dmitry-1` | ref (внеоконный) | 1825–1825 | `WRITERS_WORKS` | `1825-pushkin-boris-godunov` (1825) |
-| `ruler-ivan-3` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
-| `ruler-ivan-4` | ref (внеоконный) | 1816–1837 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826), `1837-lermontov-borodino-kalashnikov` (1837) |
-| `ruler-khrushchev` | ref (внеоконный) | 1956–1962 | `WRITERS_WORKS` | `1956-sholokhov-sudba-cheloveka` (1956), `1959-solzhenitsyn-odin-den` (1959 (опубл. 1962)) |
-| `ruler-lenin` | ref (внеоконный) | 1917–1973 | `WRITERS_WORKS` | `1917-tsvetaeva-lebediny-stan` (1917–1921), `1918-blok-dvenadtsat` (1918 (январь)), `1918-bunin-okayannye-dni` (1918–1920 (изд. 1925)), `1923-bulgakov-belaya-gvardiya` (1923–1925), `1925-sholokhov-tikhiy-don` (1925–1940), `1925-yesenin-anna-snegina` (1925), `1927-mayakovsky-khorosho` (1927), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)) |
-| `ruler-nicholas-1` | ref (внеоконный) | 1823–1904 | `WRITERS_WORKS` | `1823-pushkin-evgeny-onegin` (1823–1831), `1842-gogol-mertvye-dushi` (1835–1842), `1836-gogol-revizor` (1836), `1840-lermontov-geroy-nashego-vremeni` (1838–1840), `1847-turgenev-zapiski-okhotnika` (1847–1852), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1858-goncharov-fregat-pallada` (1855–1858), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1871-nekrasov-russkie-zhenshchiny` (1871–1872), `1881-leskov-levsha` (1881), `1896-tolstoy-khadzhi-murat` (1896–1904 (опубл. 1912)) |
-| `ruler-nicholas-2` | ref (внеоконный) | 1896–1991 | `WRITERS_WORKS` | `1896-chekhov-chayka-tri-sestry` (1896–1901), `1902-gorky-na-dne` (1902), `1903-chekhov-vishnevy-sad` (1903–1904), `1906-gorky-mat` (1906–1907), `1908-blok-na-pole-kulikovom` (1908), `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1925-sholokhov-tikhiy-don` (1925–1940), `1926-nabokov-mashenka` (1926), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
+| `ruler-fyodor-3` | ref (внеоконный) | 1667–1689 | `DIPLOMACY_TREATIES`, `REFORMS_ECO` | `1667-new-trade-statute` (1667–1682), `1686-eternal-peace-nerchinsk` (1686–1689) |
+| `ruler-gorbachev` | ref (внеоконный) | 1985–2000 | `REFORMS_ECO`, `SCIENCE_DISCOVERIES` | `1987-perestroika-economy` (1985–1990), `1986-mir-orbital-station` (1986–2000) |
+| `ruler-igor` | ref (внеоконный) | 911–944 | `DIPLOMACY_TREATIES` | `911-byzantine-treaties` (911 и 944) |
+| `ruler-ivan-3` | ref (внеоконный) | 1439–1826 | `DIPLOMACY_TREATIES`, `REFORMS_ECO`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1453-fall-of-constantinople` (1439–1453), `1489-habsburg-embassy` (1489–1517), `1492-columbus-reformation` (1492–1553), `1497-sudebnik-ivan3` (1497 (сентябрь)), `1816-karamzin-history-state` (1816–1826) |
+| `ruler-ivan-4` | ref (внеоконный) | 1492–1837 | `REFORMS_ECO`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1492-columbus-reformation` (1492–1553), `1535-glinskaya-money-reform` (1535–1538), `1549-chosen-council-sudebnik` (1549–1556), `1565-oprichnina` (1565–1572), `1816-karamzin-history-state` (1816–1826), `1837-lermontov-borodino-kalashnikov` (1837) |
+| `ruler-izyaslav-1` | ref (внеоконный) | 1054–1054 | `WORLD_CONTEXT` | `1054-great-schism` (1054 (июль)) |
+| `ruler-khrushchev` | ref (внеоконный) | 1949–1979 | `DIPLOMACY_TREATIES`, `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1949-rds1-obninsk-nuclear` (1949–1954), `1956-sholokhov-sudba-cheloveka` (1956), `1957-sputnik-1-launch` (1957), `1959-solzhenitsyn-odin-den` (1959 (опубл. 1962)), `1961-gagarin-vostok-1` (1961), `1972-salt1-abm-treaty` (1963–1979) |
+| `ruler-lenin` | ref (внеоконный) | 1917–1973 | `REFORMS_ECO`, `WRITERS_WORKS` | `1917-tsvetaeva-lebediny-stan` (1917–1921), `1918-blok-dvenadtsat` (1918 (январь)), `1918-bunin-okayannye-dni` (1918–1920 (изд. 1925)), `1921-nep-reform` (1921–1928), `1923-bulgakov-belaya-gvardiya` (1923–1925), `1925-sholokhov-tikhiy-don` (1925–1940), `1925-yesenin-anna-snegina` (1925), `1927-mayakovsky-khorosho` (1927), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)) |
+| `ruler-mikhail-romanov` | ref (внеоконный) | 1617–1648 | `DIPLOMACY_TREATIES`, `WORLD_CONTEXT` | `1617-stolbovo-deulino` (1617–1634), `1618-thirty-years-westphalia` (1618–1648) |
+| `ruler-monomakh` | ref (внеоконный) | 1097–1113 | `DIPLOMACY_TREATIES`, `REFORMS_ECO` | `1097-liubech-congress` (1097–1103), `1113-monomakh-statute` (1113) |
+| `ruler-nicholas-1` | ref (внеоконный) | 1823–1904 | `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1823-pushkin-evgeny-onegin` (1823–1831), `1826-non-euclidean-geometry` (1826–1829), `1842-gogol-mertvye-dushi` (1835–1842), `1836-gogol-revizor` (1836), `1840-lermontov-geroy-nashego-vremeni` (1838–1840), `1847-turgenev-zapiski-okhotnika` (1847–1852), `1854-pirogov-field-surgery` (1854–1855), `1855-tolstoy-sevastopolskie-rasskazy` (1855–1856), `1858-goncharov-fregat-pallada` (1855–1858), `1860-dostoevsky-zapiski-mertvogo-doma` (1860–1862), `1871-nekrasov-russkie-zhenshchiny` (1871–1872), `1881-leskov-levsha` (1881), `1896-tolstoy-khadzhi-murat` (1896–1904 (опубл. 1912)) |
+| `ruler-nicholas-2` | ref (внеоконный) | 1895–1991 | `DIPLOMACY_TREATIES`, `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1895-popov-radio-invention` (1895–1896), `1896-chekhov-chayka-tri-sestry` (1896–1901), `1902-gorky-na-dne` (1902), `1903-chekhov-vishnevy-sad` (1903–1904), `1903-tsiolkovsky-rocket-formula` (1903), `1904-pavlov-nobel-physiology` (1904), `1905-portsmouth-treaty` (1905–1907), `1906-gorky-mat` (1906–1907), `1908-blok-na-pole-kulikovom` (1908), `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1925-sholokhov-tikhiy-don` (1925–1940), `1926-nabokov-mashenka` (1926), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
+| `ruler-oleg` | ref (внеоконный) | 911–1113 | `DIPLOMACY_TREATIES`, `WRITERS_WORKS` | `911-byzantine-treaties` (911 и 944), `1113-povest-vremennykh-let` (1113) |
+| `ruler-olga` | ref (внеоконный) | 946–947 | `REFORMS_ECO` | `946-olga-tax-reform` (946–947) |
 | `ruler-paul-1` | ref (внеоконный) | 1869–1870 | `WRITERS_WORKS` | `1869-shchedrin-istoriya-odnogo-goroda` (1869–1870) |
-| `ruler-peter-1` | ref (внеоконный) | 1833–1833 | `WRITERS_WORKS` | `1833-pushkin-medny-vsadnik` (1833) |
+| `ruler-peter-1` | ref (внеоконный) | 1686–1833 | `DIPLOMACY_TREATIES`, `SCIENCE_DISCOVERIES`, `WRITERS_WORKS` | `1686-eternal-peace-nerchinsk` (1686–1689), `1724-st-petersburg-academy-of-sciences` (1724–1725), `1833-pushkin-medny-vsadnik` (1833) |
 | `ruler-provisional-govt` | ref (внеоконный) | 1917–1991 | `WRITERS_WORKS` | `1917-pasternak-sestra-moya-zhizn` (1917 (изд. 1922)), `1925-yesenin-anna-snegina` (1925), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
+| `ruler-rurik` | ref (внеоконный) | 1113–1113 | `WRITERS_WORKS` | `1113-povest-vremennykh-let` (1113) |
 | `ruler-ryurik` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
-| `ruler-stalin` | ref (внеоконный) | 1924–1973 | `WRITERS_WORKS` | `1924-tsvetaeva-poema-gory-kontsa` (1924–1926), `1925-bulgakov-sobachye-serdtse` (1925), `1927-mayakovsky-khorosho` (1927), `1928-bulgakov-master-i-margarita` (1928–1940 (опубл. 1966)), `1932-sholokhov-podnyataya-tselina` (1932–1959), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1956-sholokhov-sudba-cheloveka` (1956), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)), `1959-solzhenitsyn-odin-den` (1959 (опубл. 1962)) |
-| `ruler-vladimir-1` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
-| `ruler-yaroslav-wise` | ref (внеоконный) | 1816–1826 | `WRITERS_WORKS` | `1816-karamzin-history-state` (1816–1826) |
+| `ruler-sophia` | ref (внеоконный) | 1687–1687 | `SCIENCE_DISCOVERIES` | `1687-slavic-greek-latin-academy` (1687) |
+| `ruler-stalin` | ref (внеоконный) | 1921–1973 | `DIPLOMACY_TREATIES`, `REFORMS_ECO`, `SCIENCE_DISCOVERIES`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1921-nep-reform` (1921–1928), `1924-tsvetaeva-poema-gory-kontsa` (1924–1926), `1925-bulgakov-sobachye-serdtse` (1925), `1927-mayakovsky-khorosho` (1927), `1928-bulgakov-master-i-margarita` (1928–1940 (опубл. 1966)), `1929-great-depression` (1929–1933), `1932-sholokhov-podnyataya-tselina` (1932–1959), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1937-kapitsa-landau-superfluidity` (1937–1941), `1939-molotov-ribbentrop` (1939–1941), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-yalta-potsdam-treaties` (1943–1945), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1949-rds1-obninsk-nuclear` (1949–1954), `1956-sholokhov-sudba-cheloveka` (1956), `1968-solzhenitsyn-arkhipelag-gulag` (1958–1968 (изд. 1973)), `1959-solzhenitsyn-odin-den` (1959 (опубл. 1962)) |
+| `ruler-svyatopolk-2` | ref (внеоконный) | 1097–1103 | `DIPLOMACY_TREATIES` | `1097-liubech-congress` (1097–1103) |
+| `ruler-svyatoslav-1` | ref (внеоконный) | 1113–1113 | `WRITERS_WORKS` | `1113-povest-vremennykh-let` (1113) |
+| `ruler-vasily-2` | ref (внеоконный) | 1439–1453 | `WORLD_CONTEXT` | `1453-fall-of-constantinople` (1439–1453) |
+| `ruler-vasily-3` | ref (внеоконный) | 1489–1517 | `DIPLOMACY_TREATIES` | `1489-habsburg-embassy` (1489–1517) |
+| `ruler-vladimir-1` | ref (внеоконный) | 1113–1826 | `WRITERS_WORKS` | `1113-povest-vremennykh-let` (1113), `1816-karamzin-history-state` (1816–1826) |
+| `ruler-vladimir-monomakh` | ref (внеоконный) | 1113–1113 | `WRITERS_WORKS` | `1113-povest-vremennykh-let` (1113) |
+| `ruler-vsevolod-big-nest` | ref (внеоконный) | 1185–1215 | `WORLD_CONTEXT`, `WRITERS_WORKS` | `1185-slovo-o-polku-igoreve` (1185–1187), `1204-fourth-crusade` (1204–1215) |
+| `ruler-yaroslav-wise` | ref (внеоконный) | 1016–1826 | `REFORMS_ECO`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1016-russkaya-pravda` (1016–1054), `1054-great-schism` (1054 (июль)), `1113-povest-vremennykh-let` (1113), `1816-karamzin-history-state` (1816–1826) |
+| `ruler-yeltsin` | ref (внеоконный) | 1986–2000 | `SCIENCE_DISCOVERIES` | `1986-mir-orbital-station` (1986–2000) |
 | `smuta` | sync (±3 г.) | 1609–1618 | `WAR_CONTINENTAL` | `1609-time-of-troubles-intervention` (1609–1618) |
 | `topic-silver-age` | sync (±3 г.) | 1870–1966 | `WRITERS_BIO`, `WRITERS_WORKS` | `1870-bunin-ivan` (1870–1953), `1880-blok-alexander` (1880–1921), `1889-akhmatova-anna` (1889–1966), `1890-pasternak-boris` (1890–1960), `1892-tsvetaeva-marina` (1892–1941), `1893-mayakovsky-vladimir` (1893–1930), `1895-yesenin-sergey` (1895–1925), `1908-blok-na-pole-kulikovom` (1908), `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1917-pasternak-sestra-moya-zhizn` (1917 (изд. 1922)), `1917-tsvetaeva-lebediny-stan` (1917–1921), `1918-blok-dvenadtsat` (1918 (январь)), `1918-bunin-okayannye-dni` (1918–1920 (изд. 1925)), `1921-yesenin-pugachev` (1921), `1924-tsvetaeva-poema-gory-kontsa` (1924–1926), `1925-yesenin-anna-snegina` (1925), `1927-mayakovsky-khorosho` (1927), `1935-akhmatova-rekviem` (1935–1940 (опубл. 1963/1987)), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)) |
+| `treaty-aigun-beijing` | sync (±3 г.) | 1858–1867 | `DIPLOMACY_TREATIES` | `1858-aigun-beijing` (1858–1867) |
+| `treaty-belovezha` | sync (±3 г.) | 1991–1997 | `DIPLOMACY_TREATIES` | `1991-belovezha-budapest` (1991–1997) |
+| `treaty-brest-1918` | sync (±3 г.) | 1918–1922 | `DIPLOMACY_TREATIES` | `1918-brest-molotov` (1918–1922) |
+| `treaty-byzantium-911` | sync (±3 г.) | 911–944 | `DIPLOMACY_TREATIES` | `911-byzantine-treaties` (911 и 944) |
+| `treaty-eternal-peace-1686` | sync (±3 г.) | 1686–1689 | `DIPLOMACY_TREATIES` | `1686-eternal-peace-nerchinsk` (1686–1689) |
+| `treaty-jassy-1791` | sync (±3 г.) | 1791–1795 | `DIPLOMACY_TREATIES` | `1791-jassy-treaty` (1791–1795) |
+| `treaty-kuchuk-kainarji` | sync (±3 г.) | 1774–1783 | `DIPLOMACY_TREATIES` | `1774-kuchuk-kainarji` (1774–1783) |
+| `treaty-liubech-1097` | sync (±3 г.) | 1097–1103 | `DIPLOMACY_TREATIES` | `1097-liubech-congress` (1097–1103) |
+| `treaty-molotov-ribbentrop` | sync (±3 г.) | 1939–1941 | `DIPLOMACY_TREATIES` | `1939-molotov-ribbentrop` (1939–1941) |
+| `treaty-moscow-sovereignty` | sync (±3 г.) | 1489–1517 | `DIPLOMACY_TREATIES` | `1489-habsburg-embassy` (1489–1517) |
+| `treaty-nerchinsk-1689` | sync (±3 г.) | 1686–1689 | `DIPLOMACY_TREATIES` | `1686-eternal-peace-nerchinsk` (1686–1689) |
+| `treaty-nystad` | sync (±3 г.) | 1721–1721 | `DIPLOMACY_TREATIES` | `1721-nystad-treaty` (1721 (30 августа)) |
+| `treaty-paris-berlin` | sync (±3 г.) | 1856–1878 | `DIPLOMACY_TREATIES` | `1856-paris-berlin` (1856–1871), `1878-san-stefano-berlin` (1878 (февраль — июль)) |
+| `treaty-pereyaslav-andrusovo` | sync (±3 г.) | 1654–1667 | `DIPLOMACY_TREATIES` | `1654-pereyaslav-andrusovo` (1654–1667) |
+| `treaty-portsmouth-1905` | sync (±3 г.) | 1905–1907 | `DIPLOMACY_TREATIES` | `1905-portsmouth-treaty` (1905–1907) |
+| `treaty-salt-abm` | sync (±3 г.) | 1963–1979 | `DIPLOMACY_TREATIES` | `1972-salt1-abm-treaty` (1963–1979) |
+| `treaty-stolbovo-deulino` | sync (±3 г.) | 1617–1634 | `DIPLOMACY_TREATIES` | `1617-stolbovo-deulino` (1617–1634) |
+| `treaty-tilsit` | sync (±3 г.) | 1807–1812 | `DIPLOMACY_TREATIES` | `1807-tilsit-treaty` (1807–1812) |
+| `treaty-yalta-potsdam` | sync (±3 г.) | 1943–1945 | `DIPLOMACY_TREATIES` | `1945-yalta-potsdam-treaties` (1943–1945) |
+| `war-crimean` | sync (±3 г.) | 1856–1871 | `DIPLOMACY_TREATIES` | `1856-paris-berlin` (1856–1871) |
+| `war-great-northern` | sync (±3 г.) | 1721–1721 | `DIPLOMACY_TREATIES` | `1721-nystad-treaty` (1721 (30 августа)) |
+| `war-rus-byzantine` | sync (±3 г.) | 911–944 | `DIPLOMACY_TREATIES` | `911-byzantine-treaties` (911 и 944) |
+| `war-rus-jap` | sync (±3 г.) | 1905–1907 | `DIPLOMACY_TREATIES` | `1905-portsmouth-treaty` (1905–1907) |
+| `war-rus-turk-1877` | sync (±3 г.) | 1878–1878 | `DIPLOMACY_TREATIES` | `1878-san-stefano-berlin` (1878 (февраль — июль)) |
+| `war-ww2-eastern` | sync (±3 г.) | 1943–1945 | `DIPLOMACY_TREATIES` | `1945-yalta-potsdam-treaties` (1943–1945) |
+| `world-austrian-succession` | sync (±3 г.) | 1740–1748 | `WORLD_CONTEXT` | `1740-world-austrian` (1740–1748) |
+| `world-axis-munich` | sync (±3 г.) | 1933–1938 | `WORLD_CONTEXT` | `1933-world-axis` (1933–1938) |
+| `world-constantinople-1453` | sync (±3 г.) | 1439–1453 | `WORLD_CONTEXT` | `1453-fall-of-constantinople` (1439–1453) |
+| `world-crusade-1204` | sync (±3 г.) | 1204–1215 | `WORLD_CONTEXT` | `1204-fourth-crusade` (1204–1215) |
+| `world-discovery-reformation` | sync (±3 г.) | 1492–1553 | `WORLD_CONTEXT` | `1492-columbus-reformation` (1492–1553) |
+| `world-entente-1907` | sync (±3 г.) | 1891–1907 | `WORLD_CONTEXT` | `1907-world-entente` (1891–1907) |
+| `world-french-rev` | sync (±3 г.) | 1775–1794 | `WORLD_CONTEXT` | `1776-world-usa-france` (1775–1794) |
+| `world-german-unification` | sync (±3 г.) | 1870–1871 | `WORLD_CONTEXT` | `1871-world-germany` (1870–1871) |
+| `world-glorious-rev` | sync (±3 г.) | 1688–1697 | `WORLD_CONTEXT` | `1688-world-glorious` (1688–1697) |
+| `world-great-depression` | sync (±3 г.) | 1929–1933 | `WORLD_CONTEXT` | `1929-great-depression` (1929–1933) |
+| `world-great-schism-1054` | sync (±3 г.) | 1054–1054 | `WORLD_CONTEXT` | `1054-great-schism` (1054 (июль)) |
+| `world-helsinki-1975` | sync (±3 г.) | 1963–1979 | `DIPLOMACY_TREATIES`, `WORLD_CONTEXT` | `1972-salt1-abm-treaty` (1963–1979), `1975-world-helsinki` (1973–1979) |
+| `world-nato-1999` | sync (±3 г.) | 1989–1999 | `WORLD_CONTEXT` | `1999-world-nato-expansion` (1989–1999) |
+| `world-spanish-succession` | sync (±3 г.) | 1701–1714 | `WORLD_CONTEXT` | `1701-world-spanish-succ` (1701–1714) |
+| `world-spring-of-nations` | sync (±3 г.) | 1848–1849 | `WORLD_CONTEXT` | `1848-world-spring` (1848–1849) |
+| `world-versailles` | sync (±3 г.) | 1919–1922 | `WORLD_CONTEXT` | `1919-world-versailles` (1919–1922) |
+| `world-vienna-congress` | sync (±3 г.) | 1814–1815 | `WORLD_CONTEXT` | `1815-world-vienna` (1814–1815) |
+| `world-warsaw-pact` | sync (±3 г.) | 1955–1961 | `WORLD_CONTEXT` | `1955-world-warsaw-pact` (1955–1961) |
+| `world-westphalia-1648` | sync (±3 г.) | 1618–1648 | `WORLD_CONTEXT` | `1618-thirty-years-westphalia` (1618–1648) |
+| `world-yalta-nato` | sync (±3 г.) | 1946–1949 | `WORLD_CONTEXT` | `1945-world-yalta-nato` (1946–1949) |
 | `ww1` | sync + ref | 1914–1991 | `WAR_CONTINENTAL`, `WRITERS_WORKS` | `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1914-ww1` (1914–1918), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1925-sholokhov-tikhiy-don` (1925–1940), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
-| `ww2` | sync + ref | 1918–1962 | `DIPLOMACY_TREATIES`, `WAR_CONTINENTAL`, `WORLD_CONTEXT`, `WRITERS_WORKS` | `1918-brest-molotov` (1918 / 1939), `1940-akhmatova-poema-bez-geroya` (1940–1962), `1941-ww2` (1941–1945), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1945-world-yalta-nato` (1945–1949), `1956-sholokhov-sudba-cheloveka` (1956) |
+| `ww2` | sync + ref | 1940–1962 | `WAR_CONTINENTAL`, `WRITERS_WORKS` | `1940-akhmatova-poema-bez-geroya` (1940–1962), `1941-ww2` (1941–1945), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1956-sholokhov-sudba-cheloveka` (1956) |
 
 ---
 
@@ -147,17 +265,17 @@
 
 | `id` | Диапазон | Название | Событий | Правителей |
 | :--- | :--- | :--- | :---: | :---: |
-| `ERA_1` | до 1223 | Период I: Генезис и Древняя Русь | 11 | 25 |
-| `ERA_2` | 1223–1462 | Период II: Эпоха монгольского владычества | 9 | 18 |
-| `ERA_3` | 1462–1605 | Период III: Между Азией и Европой | 8 | 6 |
-| `ERA_4` | 1605–1682 | Период IV: Век Смуты и первых Романовых | 7 | 7 |
-| `ERA_5` | 1682–1725 | Период V: Азиатская европеизация | 14 | 1 |
-| `ERA_6` | 1725–1762 | Период VI: Эпоха цариц | 10 | 4 |
-| `ERA_7` | 1762–1855 | Период VII: Первая сверхдержава | 80 | 4 |
-| `ERA_8` | 1855–1894 | Период VIII: Эпоха Великих реформ | 49 | 2 |
-| `ERA_9` | 1894–1917 | Период IX: Агония и крах империи | 33 | 2 |
-| `ERA_10` | 1917–1992 | Период X: СССР | 85 | 7 |
-| `ERA_11` | 1992–2000 | Период XI: Новая история | 11 | 1 |
+| `ERA_1` | до 1223 | Период I: Генезис и Древняя Русь | 21 | 25 |
+| `ERA_2` | 1223–1462 | Период II: Эпоха монгольского владычества | 12 | 18 |
+| `ERA_3` | 1462–1605 | Период III: Между Азией и Европой | 14 | 6 |
+| `ERA_4` | 1605–1682 | Период IV: Век Смуты и первых Романовых | 15 | 7 |
+| `ERA_5` | 1682–1725 | Период V: Азиатская европеизация | 19 | 1 |
+| `ERA_6` | 1725–1762 | Период VI: Эпоха цариц | 14 | 4 |
+| `ERA_7` | 1762–1855 | Период VII: Первая сверхдержава | 90 | 4 |
+| `ERA_8` | 1855–1894 | Период VIII: Эпоха Великих реформ | 61 | 2 |
+| `ERA_9` | 1894–1917 | Период IX: Агония и крах империи | 47 | 2 |
+| `ERA_10` | 1917–1992 | Период X: СССР | 107 | 7 |
+| `ERA_11` | 1992–2000 | Период XI: Новая история | 13 | 1 |
 
 ---
 
@@ -242,32 +360,95 @@
 
 Используйте эти `id` в поле `linksTo[].targetId`, если нужно связать события из разных веток напрямую (особенно при разрыве больше 3 лет, когда теги `syncTags` не срабатывают).
 
-### `DIPLOMACY_TREATIES` — Дипломатия и договоры (`diplomacy/treaties`, 6)
+### `DIPLOMACY_TREATIES` — Дипломатия, союзы и мирные договоры (`diplomacy/treaties`, 19)
 
-- `1721-nystad-treaty` (1721 (август)) — Ништадтский мирный договор и провозглашение Империи — теги: `#northern-war`
-- `1774-kuchuk-kainarji` (1774 / 1783) — Кючук-Кайнарджийский мир и Георгиевский трактат
-- `1807-tilsit-treaty` (1807 (июнь)) — Тильзитский мир и союз Александра I с Наполеоном — теги: `#napoleonic`
-- `1856-paris-berlin` (1856 / 1878) — Парижский трактат (1856) и Берлинский конгресс (1878)
-- `1918-brest-molotov` (1918 / 1939) — Брестский мир (1918) и пакт Молотова — Риббентропа (1939) — теги: `#ww2`
-- `1991-belovezha-budapest` (1991 / 1994 / 1997) — Беловежские соглашения (1991), создание ОДКБ и Будапештский меморандум (1994)
+- `911-byzantine-treaties` (911 и 944) — Русско-византийские договоры князей Олега (911) и Игоря (944) — теги: `#treaty-byzantium-911` `#war-rus-byzantine` · отсылки: `@era-1` `@ruler-oleg` `@ruler-igor`
+- `1097-liubech-congress` (1097–1103) — Любечский (1097) и Долобский (1103) съезды русских князей — теги: `#treaty-liubech-1097` · отсылки: `@era-1` `@ruler-svyatopolk-2` `@ruler-monomakh`
+- `1489-habsburg-embassy` (1489–1517) — Выход Москвы на европейскую арену: посольства к Габсбургам и Вечный мир с Литвой (1503) — теги: `#treaty-moscow-sovereignty` · отсылки: `@era-3` `@ruler-ivan-3` `@ruler-vasily-3`
+- `1617-stolbovo-deulino` (1617–1634) — Столбовский мир (1617), Деулинское перемирие (1618) и Поляновский мир (1634) — теги: `#treaty-stolbovo-deulino` · отсылки: `@era-5` `@ruler-mikhail-romanov`
+- `1654-pereyaslav-andrusovo` (1654–1667) — Переяславская рада (1654) и Андрусовское перемирие (1667) — теги: `#treaty-pereyaslav-andrusovo` · отсылки: `@era-5` `@ruler-alexey-mikhailovich`
+- `1686-eternal-peace-nerchinsk` (1686–1689) — «Вечный мир» с Речью Посполитой (1686) и Нерчинский договор с Китаем (1689) — теги: `#treaty-eternal-peace-1686` `#treaty-nerchinsk-1689` · отсылки: `@era-5` `@ruler-fyodor-3` `@ruler-peter-1`
+- `1721-nystad-treaty` (1721 (30 августа)) — Ништадтский мирный договор и провозглашение Российской империи — теги: `#treaty-nystad` `#war-great-northern`
+- `1774-kuchuk-kainarji` (1774–1783) — Кючук-Кайнарджийский мир (1774), присоединение Крыма и Георгиевский трактат (1783) — теги: `#treaty-kuchuk-kainarji`
+- `1791-jassy-treaty` (1791–1795) — Ясский мирный договор (1791) и разделы Речи Посполитой (1772, 1793, 1795) — теги: `#treaty-jassy-1791` · отсылки: `@era-7` `@ruler-catherine-2`
+- `1807-tilsit-treaty` (1807–1812) — Тильзитский мир (1807), Фридрихсгамский (1809) и Бухарестский мир (1812) — теги: `#treaty-tilsit`
+- `1856-paris-berlin` (1856–1871) — Парижский трактат (1856) и Лондонская конвенция А. М. Горчакова (1871) — теги: `#treaty-paris-berlin` `#war-crimean`
+- `1858-aigun-beijing` (1858–1867) — Айгунский (1858) и Пекинский (1860) договоры с Китаем; продажа Аляски (1867) — теги: `#treaty-aigun-beijing` · отсылки: `@era-8` `@ruler-alexander-2`
+- `1878-san-stefano-berlin` (1878 (февраль — июль)) — Сан-Стефанский прелиминарный мир и Берлинский конгресс (1878) — теги: `#treaty-paris-berlin` `#war-rus-turk-1877` · отсылки: `@era-8` `@ruler-alexander-2`
+- `1905-portsmouth-treaty` (1905–1907) — Портсмутский мир с Японией (1905) и англо-русская конвенция (Антанта, 1907) — теги: `#treaty-portsmouth-1905` `#war-rus-jap` · отсылки: `@era-8` `@ruler-nicholas-2`
+- `1918-brest-molotov` (1918–1922) — Брестский мир (1918), Рижский мир (1921) и Рапалльский договор (1922) — теги: `#treaty-brest-1918`
+- `1939-molotov-ribbentrop` (1939–1941) — Договор о ненападении с Германией (1939) и пакт о нейтралитете с Японией (1941) — теги: `#treaty-molotov-ribbentrop` · отсылки: `@era-9` `@ruler-stalin`
+- `1945-yalta-potsdam-treaties` (1943–1945) — Тегеранская (1943), Ялтинская и Потсдамская (1945) конференции «Большой тройки» — теги: `#treaty-yalta-potsdam` `#war-ww2-eastern` · отсылки: `@era-9` `@ruler-stalin`
+- `1972-salt1-abm-treaty` (1963–1979) — Договоры о ядерном сдерживании и Разрядка: ПРО, ОСВ-1 (1972), Хельсинки (1975) и ОСВ-2 — теги: `#treaty-salt-abm` `#world-helsinki-1975` · отсылки: `@era-10` `@ruler-khrushchev` `@ruler-brezhnev`
+- `1991-belovezha-budapest` (1991–1997) — Беловежские соглашения (1991), статус РФ как правопреемника СССР в СБ ООН и Договор о создании Союзного государства — теги: `#treaty-belovezha`
 
-### `REFORMS_ECO` — Экономика и реформы (`feat/reforms-eco`, 15)
+### `REFORMS_ECO` — Экономика, право и госреформы (`economy/reforms`, 28)
 
-- `1699-reform-army` (1699–1705) — Военная реформа Петра I и введение рекрутской повинности
-- `1718-reform-poll-tax` (1718–1724) — Введение подушной подати, Коллегий и Табели о рангах
-- `1754-reform-customs` (1754–1762) — Отмена внутренних таможен и Манифест о вольности дворянства
-- `1769-reform-assignats` (1769–1785) — Введение бумажных ассигнаций и Губернская реформа Екатерины II
-- `1802-reform-ministries` (1802–1811) — Учреждение Министерств и реформы М. М. Сперанского
-- `1839-reform-kankrin` (1839–1843) — Денежная реформа Е. Ф. Канкрина и начало строительства железных дорог
-- `1861-reform-emancipation` (1861–1874) — Великие реформы Александра II и военная реформа Д. А. Милютина
-- `1891-reform-transsib` (1891–1903) — Строительство Транссиба, КВЖД и золотой рубль С. Ю. Витте
-- `1906-reform-stolypin` (1905–1911) — Манифест 17 октября, учреждение Госдумы и аграрная реформа П. А. Столыпина
-- `1918-reform-war-communism` (1918–1921) — Политика «Военного коммунизма» и переход к НЭПу (1921)
-- `1928-reform-five-year` (1928–1937) — Форсированная индустриализация, коллективизация и создание ВПК СССР
-- `1949-reform-nuclear` (1949 (август)) — Советский атомный проект: испытание РДС-1
-- `1959-reform-rvsn` (1957–1961) — Создание РВСН, космический прорыв и сокращение обычных вооруженных сил
-- `1973-reform-oil-boom` (1970-е — 1986) — Освоение нефти Западной Сибири, военный паритет и перегрузка ВПК
-- `1992-reform-market-crisis` (1992–1998) — Рыночные реформы, раздел советского военного наследия и дефолт 1998 г.
+- `946-olga-tax-reform` (946–947) — Налоговая реформа княгини Ольги («Уроки и погосты») — теги: `#reform-olga-pogosts` · отсылки: `@era-1` `@ruler-olga`
+- `1016-russkaya-pravda` (1016–1054) — «Русская Правда» Ярослава Мудрого и Правда Ярославичей — теги: `#reform-russkaya-pravda` · отсылки: `@era-1` `@ruler-yaroslav-wise`
+- `1113-monomakh-statute` (1113) — «Устав Владимира Мономаха» о резах и закупах — теги: `#reform-russkaya-pravda` · отсылки: `@era-1` `@ruler-monomakh`
+- `1497-sudebnik-ivan3` (1497 (сентябрь)) — Судебник Ивана III и правило Юрьева дня — теги: `#reform-sudebnik-1497` · отсылки: `@era-3` `@ruler-ivan-3`
+- `1535-glinskaya-money-reform` (1535–1538) — Денежная и губная реформы Елены Глинской — теги: `#reform-glinskaya-money` · отсылки: `@era-4` `@ruler-ivan-4`
+- `1549-chosen-council-sudebnik` (1549–1556) — Реформы Избранной рады: первый Земский собор, Судебник 1550 г. и Уложение о службе — теги: `#reform-chosen-council` · отсылки: `@era-4` `@ruler-ivan-4`
+- `1565-oprichnina` (1565–1572) — Опричнина Ивана Грозного и введение «заповедных лет» — теги: `#reform-oprichnina` · отсылки: `@era-4` `@ruler-ivan-4`
+- `1649-sobornoye-ulozhenie` (1649 (январь)) — Соборное уложение царя Алексея Михайловича — теги: `#reform-sobornoye-ulozhenie` · отсылки: `@era-5` `@ruler-alexey-mikhailovich`
+- `1653-church-schism-nikon` (1653–1667) — Церковная реформа патриарха Никона и Раскол Русской церкви — теги: `#reform-church-schism` `#person-avvakum-petrov` · отсылки: `@era-5` `@ruler-alexey-mikhailovich`
+- `1667-new-trade-statute` (1667–1682) — Новоторговый устав А. Л. Ордина-Нащокина и отмена местничества (1682) — теги: `#reform-new-trade-statute` · отсылки: `@era-5` `@ruler-alexey-mikhailovich` `@ruler-fyodor-3`
+- `1699-reform-army` (1699–1705) — Военная реформа Петра I и введение рекрутской повинности — теги: `#reform-peter-army`
+- `1718-reform-poll-tax` (1718–1724) — Подушная подать, коллегии и «Табель о рангах» Петра I — теги: `#reform-poll-tax`
+- `1754-reform-customs` (1754) — Таможенная реформа П. И. Шувалова и первые Государственные банки — теги: `#reform-customs-1754`
+- `1769-reform-assignats` (1769–1785) — Введение ассигнаций, Губернская реформа и Жалованные грамоты Екатерины II — теги: `#reform-assignats`
+- `1802-reform-ministries` (1802–1811) — Учреждение министерств, Госсовета и реформы М. М. Сперанского — теги: `#reform-ministries`
+- `1839-reform-kankrin` (1837–1843) — Денежная реформа Е. Ф. Канкрина, реформа П. Д. Киселёва и начало железных дорог — теги: `#reform-kankrin-money`
+- `1861-reform-emancipation` (1861–1874) — Великие реформы Александра II: отмена крепостного права, земства, суд и всеобщая воинская повинность — теги: `#reform-great-reforms`
+- `1891-reform-transsib` (1891–1903) — Индустриальный рывок С. Ю. Витте, Транссиб и золотой стандарт рубля (1897) — теги: `#reform-witte-transsib` `#person-mendeleev`
+- `1906-reform-stolypin` (1905–1911) — Манифест 17 октября, Государственная дума и Столыпинская аграрная реформа — теги: `#reform-stolypin`
+- `1918-reform-war-communism` (1917–1920) — Первые декреты советской власти и политика «военного коммунизма» — теги: `#reform-war-communism`
+- `1921-nep-reform` (1921–1928) — Новая экономическая политика (НЭП) и денежная реформа Г. Я. Сокольникова — теги: `#reform-war-communism` · отсылки: `@era-9` `@ruler-lenin` `@ruler-stalin`
+- `1928-reform-five-year` (1928–1937) — Первые пятилетки: форсированная индустриализация и сплошная коллективизация — теги: `#reform-industrialization`
+- `1949-reform-nuclear` (1945–1953) — Атомный проект СССР, послевоенное восстановление и денежная реформа 1947 года — теги: `#reform-nuclear-project` `#person-kurchatov` `#person-sakharov`
+- `1959-reform-rvsn` (1954–1962) — Освоение целины, массовое жилищное строительство («хрущёвки») и создание РВСН — теги: `#reform-rvsn`
+- `1965-kosygin-reform` (1965–1970 («Золотая восьмая пятилетка»)) — Косыгинская экономическая реформа (хозрасчёт и рентабельность) — теги: `#reform-kosygin-1965` · отсылки: `@era-10` `@ruler-brezhnev`
+- `1973-reform-oil-boom` (1973–1984) — Освоение нефтегазовой провинции Западной Сибири, БАМ и «нефтедолларовый» бум — теги: `#reform-oil-boom`
+- `1987-perestroika-economy` (1985–1990) — Экономические реформы Перестройки: законы о госпредприятии и кооперации — теги: `#reform-perestroika-eco` · отсылки: `@era-11` `@ruler-gorbachev`
+- `1992-reform-market-crisis` (1992–1998) — Рыночные реформы 1990-х, Конституция 1993 года, приватизация и дефолт 1998 года — теги: `#reform-market-1990s`
+
+### `SCIENCE_DISCOVERIES` — Научные открытия, академии и прорывы (`science/discoveries`, 16)
+
+- `1687-slavic-greek-latin-academy` (1687) — Основание Славяно-греко-латинской академии в Москве — отсылки: `@era-5` `@ruler-sophia`
+- `1724-st-petersburg-academy-of-sciences` (1724–1725) — Учреждение Петербургской Академии наук и художеств — теги: `#person-euler-leonhard` · отсылки: `@era-5` `@ruler-peter-1` `@ruler-catherine-1`
+- `1733-great-northern-expedition` (1733–1743) — Великая Северная (Вторая Камчатская) экспедиция Витуса Беринга — отсылки: `@era-6` `@ruler-anna-ioannovna`
+- `1755-moscow-university-founded` (1755) — Основание Императорского Московского университета — теги: `#person-lomonosov-mikhail` · отсылки: `@era-6` `@ruler-elizabeth`
+- `1819-antarctica-discovery` (1819–1821) — Открытие Антарктиды экспедицией Ф. Ф. Беллинсгаузена и М. П. Лазарева — отсылки: `@era-7` `@ruler-alexander-1`
+- `1826-non-euclidean-geometry` (1826–1829) — Создание неевклидовой геометрии Н. И. Лобачевским — теги: `#person-lobachevsky-nikolai` · отсылки: `@era-7` `@ruler-nicholas-1`
+- `1854-pirogov-field-surgery` (1854–1855) — Система военно-полевой хирургии и сортировки раненых Н. И. Пирогова в Севастополе — теги: `#person-pirogov-nikolai` · отсылки: `@era-7` `@ruler-nicholas-1`
+- `1869-mendeleev-periodic-law` (1869) — Открытие Периодического закона химических элементов Д. И. Менделеевым — теги: `#person-mendeleev-dmitry` · отсылки: `@era-8` `@ruler-alexander-2`
+- `1895-popov-radio-invention` (1895–1896) — Изобретение радиосвязи А. С. Поповым — теги: `#person-popov-alexander` · отсылки: `@era-9` `@ruler-nicholas-2`
+- `1903-tsiolkovsky-rocket-formula` (1903) — Формула Циолковского и теоретическое обоснование космонавтики — теги: `#person-tsiolkovsky-konstantin` · отсылки: `@era-9` `@ruler-nicholas-2`
+- `1904-pavlov-nobel-physiology` (1904) — Нобелевская премия И. П. Павлова и открытие условных рефлексов — теги: `#person-pavlov-ivan` · отсылки: `@era-9` `@ruler-nicholas-2`
+- `1937-kapitsa-landau-superfluidity` (1937–1941) — Открытие П. Л. Капицей и квантовая теория Л. Д. Ландау сверхтекучести гелия — теги: `#person-kapitsa-pyotr` `#person-landau-lev` · отсылки: `@era-10` `@ruler-stalin`
+- `1949-rds1-obninsk-nuclear` (1949–1954) — Советский атомный проект: испытание РДС-1 (1949) и пуск первой в мире Обнинской АЭС (1954) — теги: `#person-kurchatov-igor` · отсылки: `@era-10` `@ruler-stalin` `@ruler-khrushchev`
+- `1957-sputnik-1-launch` (1957) — Запуск Первого искусственного спутника Земли («Спутник-1») — теги: `#person-korolev-sergei` · отсылки: `@era-10` `@ruler-khrushchev`
+- `1961-gagarin-vostok-1` (1961) — Первый полёт человека в космос: Юрий Гагарин на корабле «Восток-1» — теги: `#person-korolev-sergei` · отсылки: `@era-10` `@ruler-khrushchev`
+- `1986-mir-orbital-station` (1986–2000) — Орбитальный научно-исследовательский комплекс «Мир» — теги: `#person-alferov-zhores` · отсылки: `@era-10` `@era-11` `@ruler-gorbachev` `@ruler-yeltsin`
+
+### `SCIENTISTS_BIO` — Выдающиеся учёные и инженеры (`science/people`, 15)
+
+- `1707-euler-leonhard` (1707–1783) — Леонард Эйлер — теги: `#person-euler-leonhard`
+- `1711-lomonosov-mikhail` (1711–1765) — Михаил Васильевич Ломоносов — теги: `#person-lomonosov-mikhail`
+- `1792-lobachevsky-nikolai` (1792–1856) — Николай Иванович Лобачевский — теги: `#person-lobachevsky-nikolai`
+- `1810-pirogov-nikolai` (1810–1881) — Николай Иванович Пирогов — теги: `#person-pirogov-nikolai`
+- `1834-mendeleev-dmitry` (1834–1907) — Дмитрий Иванович Менделеев — теги: `#person-mendeleev-dmitry`
+- `1849-pavlov-ivan` (1849–1936) — Иван Петрович Павлов — теги: `#person-pavlov-ivan`
+- `1857-tsiolkovsky-konstantin` (1857–1935) — Константин Эдуардович Циолковский — теги: `#person-tsiolkovsky-konstantin`
+- `1859-popov-alexander` (1859–1906) — Александр Степанович Попов — теги: `#person-popov-alexander`
+- `1863-vernadsky-vladimir` (1863–1945) — Владимир Иванович Вернадский — теги: `#person-vernadsky-vladimir`
+- `1887-vavilov-nikolai` (1887–1943) — Николай Иванович Вавилов — теги: `#person-vavilov-nikolai`
+- `1894-kapitsa-pyotr` (1894–1984) — Пётр Леонидович Капица — теги: `#person-kapitsa-pyotr`
+- `1903-kurchatov-igor` (1903–1960) — Игорь Васильевич Курчатов — теги: `#person-kurchatov-igor`
+- `1907-korolev-sergei` (1907–1966) — Сергей Павлович Королёв — теги: `#person-korolev-sergei`
+- `1908-landau-lev` (1908–1968) — Лев Давидович Ландау — теги: `#person-landau-lev`
+- `1930-alferov-zhores` (1930–2000) — Жорес Иванович Алфёров — теги: `#person-alferov-zhores`
 
 ### `WAR_CONTINENTAL` — Войны: Большие и мировые войны (`war/continental`, 21)
 
@@ -415,25 +596,34 @@
 - `1992-tajikistan` (1992–1997) — Гражданская война в Таджикистане
 - `1999-pristina` (1999 (июнь)) — Марш-бросок на Приштину (Косово)
 
-### `WORLD_CONTEXT` — События в других странах (`world/events`, 14)
+### `WORLD_CONTEXT` — Мировой геополитический контекст (`world/context`, 20)
 
-- `1688-world-glorious` (1688–1689) — «Славная революция» в Англии и война Аугсбургской лиги
-- `1701-world-spanish-succ` (1701–1714) — Война за испанское наследство в Европе
-- `1740-world-austrian` (1740–1748) — Возвышение Пруссии Фридриха II и Война за австрийское наследство
-- `1776-world-usa-france` (1776 / 1789) — Война за независимость США и Великая французская революция
-- `1815-world-vienna` (1814–1815) — Венский конгресс и рождение «Европейского концерта» держав — теги: `#napoleonic`
-- `1848-world-spring` (1848–1849) — «Весна народов»: волна революций в Европе
-- `1871-world-germany` (1870–1871) — Франко-прусская война и образование Германской империи
-- `1907-world-entente` (1907) — Англо-русская конвенция и окончательное оформление Антанты
-- `1919-world-versailles` (1918–1919) — Распад четырех империй и Версальско-Вашингтонская система
-- `1933-world-axis` (1931–1939) — Захват Японией Маньчжурии (1931), приход нацистов к власти в Германии (1933) и кризис Версаля
-- `1945-world-yalta-nato` (1945–1949) — Ялтинско-Потсдамская система, создание ООН и образование НАТО (1949) — теги: `#ww2`
-- `1955-world-warsaw-pact` (1955–1960) — Создание Организации Варшавского договора (ОВД) и крушение колониальной системы в Африке
-- `1975-world-helsinki` (1975 / 1989) — Хельсинкский акт (1975) и бархатные революции в Восточной Европе (1989)
-- `1999-world-nato-expansion` (1999 (март)) — Первая волна расширения НАТО на восток и операция Альянса против Югославии
+- `1054-great-schism` (1054 (июль)) — Великая схизма: разделение Христианской церкви на Православную и Католическую — теги: `#world-great-schism-1054` · отсылки: `@era-1` `@ruler-yaroslav-wise` `@ruler-izyaslav-1`
+- `1204-fourth-crusade` (1204–1215) — Захват Константинополя крестоносцами (1204) и Великая хартия вольностей в Англии (1215) — теги: `#world-crusade-1204` · отсылки: `@era-2` `@ruler-vsevolod-big-nest`
+- `1453-fall-of-constantinople` (1439–1453) — Флорентийская уния (1439), автокефалия Русской церкви (1448) и падение Константинополя (1453) — теги: `#world-constantinople-1453` · отсылки: `@era-3` `@ruler-vasily-2` `@ruler-ivan-3`
+- `1492-columbus-reformation` (1492–1553) — Великие географические открытия (1492), Реформация в Европе (1517) и открытие морского пути в Архангельск (1553) — теги: `#world-discovery-reformation` · отсылки: `@era-3` `@era-4` `@ruler-ivan-3` `@ruler-ivan-4`
+- `1618-thirty-years-westphalia` (1618–1648) — Тридцатилетняя война в Европе и Вестфальский мир (1648) — теги: `#world-westphalia-1648` · отсылки: `@era-5` `@ruler-mikhail-romanov` `@ruler-alexey-mikhailovich`
+- `1688-world-glorious` (1688–1697) — «Славная революция» в Англии и Война Аугсбургской лиги в Европе — теги: `#world-glorious-rev`
+- `1701-world-spanish-succ` (1701–1714) — Война за испанское наследство в Западной Европе — теги: `#world-spanish-succession`
+- `1740-world-austrian` (1740–1748) — Война за австрийское наследство и возвышение Пруссии Фридриха II — теги: `#world-austrian-succession`
+- `1776-world-usa-france` (1775–1794) — Война за независимость США (1776), «Вооружённый нейтралитет» Екатерины II и Великая французская революция (1789) — теги: `#world-french-rev`
+- `1815-world-vienna` (1814–1815) — Венский конгресс и создание «Священного союза» монархов Европы — теги: `#world-vienna-congress`
+- `1848-world-spring` (1848–1849) — «Весна народов»: волна европейских революций 1848–1849 годов — теги: `#world-spring-of-nations`
+- `1871-world-germany` (1870–1871) — Франко-прусская война и провозглашение Германской империи в Версале — теги: `#world-german-unification`
+- `1907-world-entente` (1891–1907) — Раскол Европы на два военных блока: Тройственный союз и Антанта — теги: `#world-entente-1907`
+- `1919-world-versailles` (1919–1922) — Версальско-Вашингтонская система и создание Лиги Наций — теги: `#world-versailles`
+- `1929-great-depression` (1929–1933) — «Великая депрессия»: мировой экономический кризис на Западе — теги: `#world-great-depression` `#reform-industrialization` · отсылки: `@era-9` `@ruler-stalin`
+- `1933-world-axis` (1933–1938) — Приход Гитлера к власти (1933), ось Берлин — Рим — Токио и Мюнхенский сговор (1938) — теги: `#world-axis-munich`
+- `1945-world-yalta-nato` (1946–1949) — Начало Холодной войны: Фултонская речь Черчилля, план Маршалла и создание блока НАТО (1949) — теги: `#world-yalta-nato`
+- `1955-world-warsaw-pact` (1955–1961) — Создание Организации Варшавского договора (1955), распад колониальной системы и Берлинская стена (1961) — теги: `#world-warsaw-pact`
+- `1975-world-helsinki` (1973–1979) — Мировой нефтяной шок (1973) и Хельсинкский Заключительный акт СБСЕ (1975) — теги: `#world-helsinki-1975`
+- `1999-world-nato-expansion` (1989–1999) — Падение Берлинской стены (1989), первая волна расширения НАТО на Восток и бомбардировки Югославии (1999) — теги: `#world-nato-1999`
 
-### `WRITERS_BIO` — Русские писатели-классики (`culture/writers`, 32)
+### `WRITERS_BIO` — Русские писатели и летописцы (`culture/writers`, 35)
 
+- `1056-nestor-chronicler` (1056–1114) — Нестор Летописец — теги: `#person-nestor-chronicler`
+- `1350-sofoniy-ryazanets` (вт. пол. XIV — нач. XV в.) — Софоний Рязанец и Епифаний Премудрый — теги: `#person-sofoniy-ryazanets`
+- `1620-avvakum-petrov` (1620–1682) — Протопоп Аввакум Петров — теги: `#person-avvakum-petrov`
 - `1743-derzhavin-gavrila` (1743–1816) — Гаврила Романович Державин — теги: `#person-derzhavin-gavrila`
 - `1745-fonvizin-denis` (1745–1792) — Денис Иванович Фонвизин — теги: `#person-fonvizin-denis`
 - `1766-karamzin-nikolay` (1766–1826) — Николай Михайлович Карамзин — теги: `#person-karamzin-nikolay`
@@ -467,8 +657,12 @@
 - `1905-sholokhov-mikhail` (1905–1984) — Михаил Александрович Шолохов — теги: `#person-sholokhov-mikhail`
 - `1918-solzhenitsyn-alexander` (1918–2008) — Александр Исаевич Солженицын — теги: `#person-solzhenitsyn-alexander`
 
-### `WRITERS_WORKS` — Ключевые произведения литературы (`culture/books`, 71)
+### `WRITERS_WORKS` — Ключевые произведения литературы (`culture/books`, 75)
 
+- `1113-povest-vremennykh-let` (1113) — Нестор Летописец — «Повесть временных лет» — теги: `#person-nestor-chronicler` · отсылки: `@era-1` `@ruler-rurik` `@ruler-oleg` `@ruler-svyatoslav-1` `@ruler-vladimir-1` `@ruler-yaroslav-wise` `@ruler-vladimir-monomakh`
+- `1185-slovo-o-polku-igoreve` (1185–1187) — «Слово о полку Игореве» — отсылки: `@era-1` `@ruler-vsevolod-big-nest`
+- `1380-zadonshchina` (1380-е) — Софоний Рязанец — «Задонщина» — отсылки: `@era-2` `@ruler-dmitry-donskoy`
+- `1672-avvakum-zhitie` (1672–1675) — Протопоп Аввакум — «Житие протопопа Аввакума, им самим написанное» — теги: `#person-avvakum-petrov` · отсылки: `@era-4` `@ruler-alexey-mikhailovich`
 - `1782-derzhavin-felitsa` (1782) — Г. Р. Державин — ода «Фелица» — теги: `#person-derzhavin-gavrila` · отсылки: `@ruler-catherine-2` `@era-7`
 - `1782-fonvizin-nedorosl` (1782) — Д. И. Фонвизин — «Недоросль» — теги: `#person-fonvizin-denis` · отсылки: `@ruler-catherine-2` `@era-7`
 - `1791-derzhavin-vodopad` (1791–1794) — Г. Р. Державин — «Водопад» и ода «На взятие Измаила» — теги: `#person-derzhavin-gavrila` · отсылки: `@event-1787-rus-turk` `@ruler-catherine-2` `@era-7`

@@ -342,4 +342,11 @@ export interface AboutWorkEntry {
   yearGap: number;
 }
 
+export interface ModalHistoryItem {
+  kind: 'card' | 'ruler' | 'era';
+  id: string;
+  label: string;
+}
+
+
 

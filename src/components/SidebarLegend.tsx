@@ -75,7 +75,7 @@ export function SidebarLegend({
                     </span>
                   )}
                 </div>
-                <div className="text-xs font-semibold group-hover:text-amber-300 truncate mt-0.5">
+                <div className="font-serif text-sm font-bold group-hover:text-amber-300 truncate mt-0.5">
                   {r.ruler}
                 </div>
               </div>
@@ -96,13 +96,13 @@ export function SidebarLegend({
           <div className="flex items-center gap-2">
             <span className="w-4 h-1 bg-slate-300 rounded shrink-0" />
             <span>
-              <strong className="text-slate-200">Ось времени (центр)</strong> — главный ствол (годы → месяцы → дни).
+              <strong className="text-slate-200">Ось времени (центр)</strong> — главный хронологический ствол (годы → месяцы → дни).
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-4 h-1 bg-amber-400 rounded shrink-0" />
             <span>
-              <strong className="text-slate-200">Сплошная рельса / ветвление</strong> — длительность правления или процесса (при раздробленности параллельные князья идут по отдельным рельсам).
+              <strong className="text-slate-200">Сплошная линия / ветвление</strong> — длительность правления или процесса (при раздробленности параллельные центры власти идут по отдельным линиям).
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -112,19 +112,19 @@ export function SidebarLegend({
               <span className="w-0.5 h-3 bg-orange-400/60 rounded-full" />
             </span>
             <span>
-              <strong className="text-slate-200">Параллельные под-ветки</strong> — при 2, 3, 4+ одновременных событиях ветки каждое идёт по своей нити.
+              <strong className="text-slate-200">Параллельные под-ветки</strong> — при одновременных событиях одной сферы каждое идёт по своей нити.
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rotate-45 border-2 border-sky-400 bg-slate-950 shrink-0 ml-0.5 mr-1" />
             <span>
-              <strong className="text-slate-200">Ромб на ветке</strong> — атомарное (точечное) событие без слияния.
+              <strong className="text-slate-200">Ромб на ветке</strong> — точечное историческое событие.
             </span>
           </div>
           <div className="flex items-center gap-2">
             <span className="w-4 h-2 rounded border border-emerald-400 bg-emerald-950/60 shrink-0" />
             <span>
-              <strong className="text-emerald-300">Изумрудный контур</strong> — явная sync-связь при наведении.
+              <strong className="text-emerald-300">Изумрудный контур</strong> — причинно-следственная или культурная связь при наведении.
             </span>
           </div>
         </div>
@@ -133,7 +133,7 @@ export function SidebarLegend({
           {visibleLanes.map((lane) => (
             <div key={lane.id} className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
-              <span className="font-mono text-[10px] text-slate-300 shrink-0">{lane.gitName}</span>
+              <span className="font-mono text-[10px] font-semibold text-slate-200 shrink-0">{lane.short}</span>
               <span className="text-slate-500 truncate">— {lane.label}</span>
             </div>
           ))}

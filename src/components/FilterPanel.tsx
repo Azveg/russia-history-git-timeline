@@ -1,366 +1,214 @@
-import { useRef } from 'react';
-import { BookOpen, Flame, Link2, Search, X } from 'lucide-react';
+import { CalendarRange, Crown, Link2, RotateCcw, Search, Sparkles, X } from 'lucide-react';
+import { useMemo } from 'react';
 import { resolveMacroEras } from '../engine/timelineEngine';
-import type { DynamicWindowHotspot, MacroEra, RulerPeriod, YearRangeStep } from '../types/timeline';
+import type { MacroEra, RulerPeriod } from '../types/timeline';
 
 interface FilterPanelProps {
   yearFrom: number;
   yearTo: number;
-  minYear?: number;
-  maxYear?: number;
-  onYearRangeChange: (from: number, to: number, recordHistory?: boolean) => void;
-  onRecordZoomStep: (from: number, to: number) => void;
-  onQuickWindowSelect: (from: number, to: number) => void;
-  hotspots: DynamicWindowHotspot[];
+  minYear: number;
+  maxYear: number;
+  selectedRulerId: string;
   searchQuery: string;
-  onSearchChange: (q: string) => void;
-  selectedEra: string;
-  onSelectEra: (eraId: string) => void;
-  onOpenEraModal: (eraId: string) => void;
-  selectedReign: string;
-  onSelectReign: (rulerId: string) => void;
-  onResetAll: () => void;
-  hasActiveFilters: boolean;
-  macroEras: MacroEra[];
-  eraCounts: Record<string, number>;
+  onlySynced: boolean;
   rulers: RulerPeriod[];
-  matchingRulersCount: number;
-  matchingEventsCount: number;
-  onlyWithSyncLinks: boolean;
-  onToggleOnlyWithSyncLinks: () => void;
-  syncLinkedCount: number;
+  eras: MacroEra[];
+  onChangeYearFrom: (year: number) => void;
+  onChangeYearTo: (year: number) => void;
+  onSelectYearRange: (from: number, to: number) => void;
+  onChangeRuler: (rulerId: string) => void;
+  onChangeSearch: (query: string) => void;
+  onToggleOnlySynced: () => void;
+  onOpenEraModal: (eraId: string) => void;
+  onResetFilters: () => void;
 }
+
+const CENTURY_PRESETS = [
+  { label: 'IX–XII вв. (Русь)', from: 862, to: 1237, hot: false },
+  { label: 'XIII–XV вв. (Орда и Москва)', from: 1237, to: 1505, hot: false },
+  { label: 'XVI–XVII вв. (Царство и Смута)', from: 1505, to: 1682, hot: false },
+  { label: 'XVIII в. (Империя)', from: 1700, to: 1800, hot: false },
+  { label: 'XIX в. (Реформы и культура)', from: 1801, to: 1900, hot: false },
+  { label: 'XX в. (СССР и РФ)', from: 1901, to: 2000, hot: false },
+  { label: 'Пётр I и реформы (1689–1725)', from: 1689, to: 1725, hot: true },
+  { label: 'Великие реформы (1855–1881)', from: 1855, to: 1881, hot: true },
+  { label: 'Излом 1914–1924', from: 1914, to: 1924, hot: true },
+  { label: 'ВОВ и Атомный проект (1941–1953)', from: 1941, to: 1953, hot: true },
+];
 
 export function FilterPanel({
   yearFrom,
   yearTo,
-  minYear = 862,
-  maxYear = 2000,
-  onYearRangeChange,
-  onRecordZoomStep,
-  onQuickWindowSelect,
-  hotspots,
+  minYear,
+  maxYear,
+  selectedRulerId,
   searchQuery,
-  onSearchChange,
-  selectedEra,
-  onSelectEra,
-  onOpenEraModal,
-  selectedReign,
-  onSelectReign,
-  onResetAll,
-  hasActiveFilters,
-  macroEras,
-  eraCounts,
+  onlySynced,
   rulers,
-  matchingRulersCount,
-  matchingEventsCount,
-  onlyWithSyncLinks,
-  onToggleOnlyWithSyncLinks,
-  syncLinkedCount,
+  eras,
+  onSelectYearRange,
+  onChangeRuler,
+  onChangeSearch,
+  onToggleOnlySynced,
+  onOpenEraModal,
+  onResetFilters,
 }: FilterPanelProps) {
-  const centuryWindows = [
-    { label: 'Весь период', from: minYear, to: maxYear },
-    { label: 'IX–XIII вв.', from: Math.max(minYear, 862), to: 1300 },
-    { label: 'XIV–XVII вв.', from: 1301, to: 1699 },
-    { label: 'XVIII в.', from: 1700, to: 1800 },
-    { label: 'XIX в.', from: 1801, to: 1900 },
-    { label: 'XX в.', from: 1901, to: Math.min(2000, maxYear) },
-  ].filter((w) => w.from <= maxYear && w.to >= minYear);
-  const spanYears = Math.max(1, yearTo - yearFrom);
-  const sliderOriginRef = useRef<YearRangeStep | null>(null);
-
-  const handleSliderStart = () => {
-    sliderOriginRef.current = { from: yearFrom, to: yearTo };
-  };
-
-  const handleSliderCommit = () => {
-    const origin = sliderOriginRef.current;
-    sliderOriginRef.current = null;
-    if (origin && (origin.from !== yearFrom || origin.to !== yearTo)) {
-      onRecordZoomStep(origin.from, origin.to);
-    }
-  };
+  const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
+  const isFullRange = yearFrom === minYear && yearTo === maxYear && !selectedRulerId && !searchQuery && !onlySynced;
 
   return (
     <section
-      aria-label="Фильтры и диапазон времени"
-      className="border-b border-slate-800/70 bg-[#070b16]"
+      aria-label="Консоль поиска, эпох и исторических срезов"
+      className="rounded-2xl bg-slate-900/65 border border-slate-800/80 p-3.5 sm:p-4 space-y-3"
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 space-y-3">
-        <div className="bg-slate-900/60 border border-slate-800/80 rounded-xl p-3.5 space-y-3">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="text-xs font-mono font-semibold text-slate-300">
-                Фильтр временного окна:
-              </span>
-              <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1 font-mono text-xs">
-                <span className="text-slate-400">с</span>
-                <input
-                  type="number"
-                  min={minYear}
-                  max={maxYear}
-                  value={yearFrom}
-                  aria-label="Начало окна лет"
-                  onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
-                  className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-white font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
-                />
-                <span className="text-slate-400">по</span>
-                <input
-                  type="number"
-                  min={minYear}
-                  max={maxYear}
-                  value={yearTo}
-                  aria-label="Конец окна лет"
-                  onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
-                  className="w-16 bg-slate-900 border border-slate-700 rounded px-2 py-0.5 text-white font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
-                />
-                <span className="text-slate-500">гг.</span>
-              </div>
-              <span className="text-[11px] font-mono tabular-nums text-slate-400">
-                {yearFrom}–{yearTo} ({spanYears} лет) · {matchingEventsCount} событий · {matchingRulersCount} правлений
-              </span>
-            </div>
+      {/* Первая строка: Поиск + Выбор правителя + Фильтр причинно-следственных связей + Сброс */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center">
+        <div className="lg:col-span-5 relative">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(e) => onChangeSearch(e.target.value)}
+            placeholder="Поиск по событиям, личностям, итогам, договорам, книгам, открытиям..."
+            className="w-full rounded-xl bg-slate-950/90 border border-slate-700/80 pl-9 pr-8 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => onChangeSearch('')}
+              aria-label="Очистить поисковый запрос"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative flex-1 sm:w-56">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => onSearchChange(e.target.value)}
-                  placeholder="Поиск войны, реформы, правителя..."
-                  className="w-full pl-9 pr-8 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500/60"
-                />
-                {searchQuery.trim() !== '' && (
-                  <button
-                    type="button"
-                    onClick={() => onSearchChange('')}
-                    aria-label="Очистить поиск"
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-
-              <select
-                value={selectedReign}
-                onChange={(e) => onSelectReign(e.target.value)}
-                aria-label="Фильтр по правителю"
-                className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500/60 max-w-[215px]"
-              >
-                <option value="ALL">Все правители ({rulers.length})</option>
-                {rulers.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.reignPeriod} — {r.shortRuler}{r.center ? ` [${r.center}]` : ''}
-                  </option>
-                ))}
-              </select>
-
-              {hasActiveFilters && (
-                <button
-                  type="button"
-                  onClick={onResetAll}
-                  className="px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 text-xs font-mono font-semibold whitespace-nowrap cursor-pointer"
-                >
-                  Сбросить всё
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-0.5">
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-mono tabular-nums text-slate-400 w-24 shrink-0">
-                Начало ({yearFrom}):
-              </span>
-              <input
-                type="range"
-                min={minYear}
-                max={maxYear}
-                value={yearFrom}
-                aria-label="Ползунок начала окна"
-                onPointerDown={handleSliderStart}
-                onPointerUp={handleSliderCommit}
-                onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo, false)}
-                className="w-full accent-amber-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
-              />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-mono tabular-nums text-slate-400 w-24 shrink-0">
-                Конец ({yearTo}):
-              </span>
-              <input
-                type="range"
-                min={minYear}
-                max={maxYear}
-                value={yearTo}
-                aria-label="Ползунок конца окна"
-                onPointerDown={handleSliderStart}
-                onPointerUp={handleSliderCommit}
-                onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value), false)}
-                className="w-full accent-sky-400 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
-              />
-            </div>
-          </div>
-
-          <div className="pt-0.5 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            <span className="text-[11px] font-mono text-slate-400 shrink-0 mr-1">Быстрые окна:</span>
-
-            {centuryWindows.map((w) => {
-              const isActive = yearFrom === w.from && yearTo === w.to;
-              return (
-                <button
-                  key={w.label}
-                  type="button"
-                  onClick={() => onQuickWindowSelect(w.from, w.to)}
-                  className={`px-2.5 py-1 rounded-md border text-[11px] font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                    isActive
-                      ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-semibold'
-                      : 'bg-slate-950 hover:bg-slate-800 border-slate-800 text-slate-300'
-                  }`}
-                >
-                  {w.label}
-                </button>
-              );
-            })}
-
-            {hotspots.length > 0 ? (
-              <>
-                <span aria-hidden="true" className="h-4 w-px bg-slate-800 mx-1 shrink-0" />
-                <span
-                  className="text-[11px] font-mono text-slate-500 inline-flex items-center gap-1 shrink-0 mr-0.5"
-                  title="Автоматически вычисленные отрезки максимальной плотности для выбранных веток"
-                >
-                  <Flame className="w-3 h-3 text-rose-400" />
-                  <span>Пики веток:</span>
-                </span>
-                {hotspots.map((h) => {
-                  const isActive = yearFrom === h.fromYear && yearTo === h.toYear;
-                  const detailHint =
-                    h.resolution === 'day'
-                      ? 'дни'
-                      : h.resolution === 'month'
-                        ? 'мес.'
-                        : `${h.eventCount} соб.`;
-                  return (
-                    <button
-                      key={h.id}
-                      type="button"
-                      onClick={() => onQuickWindowSelect(h.fromYear, h.toYear)}
-                      title={`Топ-период по выбранным веткам (${h.peakCount} одновр., всего ${h.eventCount} соб.): ${h.previewTitles.join(', ')}`}
-                      className={`px-2.5 py-1 rounded-md border text-[11px] font-mono tabular-nums whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                        isActive
-                          ? 'bg-rose-500/25 border-rose-400 text-rose-100 font-semibold'
-                          : 'bg-slate-950 hover:bg-slate-800 border-rose-500/30 text-rose-200'
-                      }`}
-                    >
-                      {h.fromYear}–{h.toYear} · {detailHint}
-                    </button>
-                  );
-                })}
-              </>
-            ) : (
-              <>
-                <span aria-hidden="true" className="h-4 w-px bg-slate-800 mx-1 shrink-0" />
-                <span className="text-[11px] font-mono text-slate-500 whitespace-nowrap shrink-0">
-                  Включите тематические ветки для расчёта пиковых окон
-                </span>
-              </>
-            )}
+        <div className="lg:col-span-4 flex items-center gap-2">
+          <div className="relative flex-1 min-w-0">
+            <Crown className="w-3.5 h-3.5 text-amber-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <select
+              aria-label="Фильтр по периоду правления"
+              value={selectedRulerId}
+              onChange={(e) => onChangeRuler(e.target.value)}
+              className="w-full rounded-xl bg-slate-950/90 border border-slate-700/80 pl-8 pr-3 py-2 text-xs sm:text-sm text-white focus:outline-none focus:border-amber-400 transition-colors truncate cursor-pointer"
+            >
+              <option value="">Все правители ({minYear}–{maxYear}, {rulers.length} узлов)</option>
+              {rulers.map((r) => (
+                <option key={r.id} value={r.id}>
+                  {r.reignPeriod} — {r.ruler}
+                  {r.center ? ` [${r.center}]` : ''}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 
-        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5">
-          <div className="flex flex-wrap items-center gap-1.5">
+        <div className="lg:col-span-3 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={onToggleOnlySynced}
+            className={`flex-1 lg:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ${
+              onlySynced
+                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-bold'
+                : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+            }`}
+            title="Оставить только события с причинно-следственными и культурными связями"
+          >
+            <Link2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span>Узловые связи</span>
+          </button>
+
+          {!isFullRange && (
             <button
               type="button"
-              onClick={() => onSelectEra('ALL')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                selectedEra === 'ALL'
-                  ? 'bg-amber-500 text-slate-950 shadow-sm'
-                  : 'bg-slate-900 text-slate-300 hover:bg-slate-800 border border-slate-800'
+              onClick={onResetFilters}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-xs font-mono font-semibold text-amber-300 transition-colors cursor-pointer whitespace-nowrap"
+              title="Сбросить поисковый запрос, фильтр правителя и вернуть диапазон 862–2000"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Все века</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Вторая строка: Быстрые срезы веков и ключевых исторических узлов */}
+      <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-800/60">
+        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-slate-400 mr-1">
+          <CalendarRange className="w-3.5 h-3.5 text-amber-400" />
+          <span>Срезы эпох:</span>
+        </span>
+        {CENTURY_PRESETS.map((preset) => {
+          const isActive = yearFrom === preset.from && yearTo === preset.to && !selectedRulerId;
+          return (
+            <button
+              key={preset.label}
+              type="button"
+              onClick={() => onSelectYearRange(preset.from, preset.to)}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-all cursor-pointer ${
+                isActive
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
+                  : preset.hot
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
+                    : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
               }`}
             >
-              Все периоды · {minYear}–{maxYear}
+              {preset.hot && !isActive && <Sparkles className="w-3 h-3 inline mr-1 text-amber-400" />}
+              {preset.label}
             </button>
-            {resolveMacroEras(macroEras).map((era) => {
-              const active = selectedEra === era.id;
-              const count = eraCounts[era.id] || 0;
-              const isOutsideLoadedData = count === 0 && era.endYear < minYear;
+          );
+        })}
+      </div>
+
+      {/* Третья строка: 11 макро-периодов истории России (клик = фокус лет, кнопка «Сводка» = модальное досье периода) */}
+      {resolvedEras.length > 0 && (
+        <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
+            <span>
+              Макро-периоды ({minYear}–{maxYear}) — клик фокусирует окно времени, кнопка «Досье» открывает обзор эпохи и лиц времени:
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-1.5">
+            {resolvedEras.map((era) => {
+              const isEraSelected = yearFrom === era.startYear && yearTo === era.endYear;
               return (
                 <div
                   key={era.id}
-                  className={`inline-flex items-stretch rounded-lg border shrink-0 overflow-hidden transition-colors ${
-                    active
-                      ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
-                      : isOutsideLoadedData
-                        ? 'bg-slate-900/50 text-slate-400 border-slate-800/70'
-                        : 'bg-slate-900 text-slate-300 border-slate-800'
+                  onDoubleClick={() => onOpenEraModal(era.id)}
+                  className={`flex items-center justify-between gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-all ${
+                    isEraSelected
+                      ? 'bg-amber-500/15 border-amber-400 text-white shadow-sm'
+                      : 'bg-slate-950/60 border-slate-800/90 text-slate-300 hover:border-slate-700'
                   }`}
                 >
                   <button
                     type="button"
-                    onClick={() => (isOutsideLoadedData ? onOpenEraModal(era.id) : onSelectEra(active ? 'ALL' : era.id))}
-                    title={
-                      isOutsideLoadedData
-                        ? `${era.title} · ${era.period} (модули до ${minYear} г. пока не подключены — откроется карточка периода)`
-                        : `${era.title} · ${era.period}`
-                    }
-                    className={`px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 cursor-pointer ${
-                      active ? 'hover:bg-amber-400/40' : 'hover:bg-slate-800'
-                    }`}
+                    onClick={() => onSelectYearRange(era.startYear, era.endYear)}
+                    className="min-w-0 flex-1 text-left cursor-pointer"
+                    title={`${era.title} (${era.period}) — сфокусировать окно времени`}
                   >
-                    <span className="font-bold max-w-[220px] truncate">{era.displayShortTitle}</span>
-                    <span className="text-[11px] opacity-65 tabular-nums">{era.period}</span>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums ${
-                        active ? 'bg-slate-950/20 text-slate-950' : 'bg-slate-800/90 text-slate-400'
-                      }`}
-                    >
-                      {count}
-                    </span>
+                    <div className="font-mono text-[10px] text-amber-300 font-bold tabular-nums">
+                      {era.period}
+                    </div>
+                    <div className="font-semibold truncate text-[11px] text-white">
+                      {era.displayShortTitle}
+                    </div>
                   </button>
                   <button
                     type="button"
                     onClick={() => onOpenEraModal(era.id)}
-                    aria-label={`Открыть карточку периода: ${era.displayShortTitle}`}
-                    title={`Открыть динамическую карточку периода «${era.displayShortTitle}»`}
-                    className={`px-2 flex items-center justify-center border-l cursor-pointer transition-colors ${
-                      active
-                        ? 'border-slate-950/20 hover:bg-slate-950/15 text-slate-950'
-                        : 'border-slate-800 hover:bg-slate-800 text-amber-400 hover:text-amber-300'
-                    }`}
+                    className="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-amber-500 hover:text-slate-950 border border-slate-700/80 text-[10px] font-mono text-amber-300 shrink-0 transition-colors cursor-pointer"
+                    title={`Открыть полное досье макро-периода «${era.displayShortTitle}»`}
                   >
-                    <BookOpen className="w-3.5 h-3.5" />
+                    Досье
                   </button>
                 </div>
               );
             })}
           </div>
-
-          <button
-            type="button"
-            onClick={onToggleOnlyWithSyncLinks}
-            className={`text-[11px] font-mono px-2.5 py-1.5 rounded-lg border flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 self-start transition-colors ${
-              onlyWithSyncLinks
-                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-bold'
-                : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-emerald-500/40 hover:text-emerald-300'
-            }`}
-            title="Показать только события, имеющие явные причинно-следственные связи (crossLinks)"
-          >
-            <Link2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Только со связями (sync)</span>
-            <span
-              className={`px-1.5 py-0.5 rounded text-[10px] tabular-nums ${
-                onlyWithSyncLinks ? 'bg-emerald-950 text-emerald-200' : 'bg-slate-800 text-slate-400'
-              }`}
-            >
-              {syncLinkedCount}
-            </span>
-          </button>
         </div>
-      </div>
+      )}
     </section>
   );
 }

@@ -6,7 +6,6 @@ import {
   findMacroEraForYear,
   formatAxisGutterDate,
   getDirectChildBranches,
-  getGitHash,
   hasChildBranches,
   isBranchOrDescendantActive,
   parsePreciseDate,
@@ -527,7 +526,7 @@ export function GitTimeline({
             <span aria-hidden="true" className="hidden md:inline text-slate-600">
               ·
             </span>
-            <span className="text-amber-300/90 font-semibold">Клик = git show</span>
+            <span className="text-amber-300/90 font-semibold">Клик — паспорт события</span>
           </div>
         </div>
 
@@ -722,7 +721,7 @@ export function GitTimeline({
                       Карточка периода →
                     </button>
                   </div>
-                  <h2 className="text-base sm:text-xl font-extrabold text-white mt-1.5 [text-wrap:balance]">
+                  <h2 className="font-serif text-lg sm:text-2xl font-bold tracking-tight text-white mt-1.5 [text-wrap:balance]">
                     {resolvedEra.title}
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-300 mt-1">{resolvedEra.thesis}</p>
@@ -774,7 +773,7 @@ export function GitTimeline({
                   <span aria-hidden="true" className="text-slate-700">
                     ·
                   </span>
-                  <span className="text-slate-500">ось time/main</span>
+                  <span className="text-slate-500">хронологический рубеж</span>
                 </div>
               </div>
             );
@@ -782,7 +781,6 @@ export function GitTimeline({
 
           if (item.rowType === 'RULER_COMMIT') {
             const r = item.rulerObj;
-            const commitHash = getGitHash(r.id);
             const rSlot = rulerLayout.slotByRulerId.get(r.id) ?? 0;
             const rx = rulerLayout.railXs[rSlot] ?? 16;
             const rColor = rulerLayout.colorByRulerId.get(r.id) ?? item.rulerColor;
@@ -879,17 +877,15 @@ export function GitTimeline({
                       <span aria-hidden="true" className="text-slate-600">
                         ·
                       </span>
-                      <span className="text-sm sm:text-base font-extrabold text-white">{r.ruler}</span>
+                      <span className="font-serif text-base sm:text-lg font-bold text-white tracking-tight">
+                        {r.ruler}
+                      </span>
                       <span aria-hidden="true" className="text-slate-600">
                         ·
                       </span>
                       <span className="text-[11px] font-mono text-slate-400 tabular-nums">
-                        ветка {r.reignPeriod}
+                        правление {r.reignPeriod}
                       </span>
-                      <span aria-hidden="true" className="text-slate-600">
-                        ·
-                      </span>
-                      <span className="text-[11px] font-mono text-slate-500">rulers #{commitHash}</span>
                     </div>
 
                     <div className="flex items-center gap-1.5">
@@ -1052,7 +1048,6 @@ export function GitTimeline({
             const forkOriginX = hasBasePassingAtRow ? baseX : timeSpineX;
             const isCompact = cardDensity === 'compact';
             const commitY = isCompact ? 22 : 34;
-            const commitHash = getGitHash(ev.id);
             const hasMultipleRulers = ev.overlappingRulers.length > 1;
             const dateSummary = axisResolution === 'year' ? ev.period : `${item.dateLabel} (${ev.period})`;
 
@@ -1287,7 +1282,7 @@ export function GitTimeline({
                           {isFocusedTarget ? 'В фокусе' : 'Фокус'}
                         </button>
                         <span className="text-amber-400 font-semibold hidden sm:inline whitespace-nowrap">
-                          git show →
+                          Паспорт →
                         </span>
                       </div>
                     </div>
@@ -1321,13 +1316,17 @@ export function GitTimeline({
                         </div>
 
                         <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-slate-400 shrink-0 whitespace-nowrap">
-                          <span className="max-w-[150px] truncate" style={{ color: origBranchObj.color }}>
+                          <span className="max-w-[170px] truncate font-semibold" style={{ color: origBranchObj.color }}>
                             {origBranchObj.short}
                           </span>
-                          <span aria-hidden="true" className="text-slate-600">
-                            ·
-                          </span>
-                          <span className="text-slate-500">#{commitHash}</span>
+                          {ev.region && (
+                            <>
+                              <span aria-hidden="true" className="text-slate-600">
+                                ·
+                              </span>
+                              <span className="text-slate-400 max-w-[140px] truncate">{ev.region}</span>
+                            </>
+                          )}
                         </div>
                       </div>
 
@@ -1390,7 +1389,7 @@ export function GitTimeline({
 
                           <span className="text-amber-400 font-semibold group-hover:underline inline-flex items-center gap-1">
                             <GitCommitHorizontal className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">git show →</span>
+                            <span className="hidden sm:inline">Паспорт →</span>
                           </span>
                         </div>
                       </div>
@@ -1559,22 +1558,31 @@ export function GitTimeline({
             {hoveredCardTooltip.ev.subtitle}
           </p>
 
-          {hoveredCardTooltip.ev.details && hoveredCardTooltip.ev.details !== hoveredCardTooltip.ev.subtitle && (
-            <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed line-clamp-4">
-              {hoveredCardTooltip.ev.details}
-            </p>
+          {hoveredCardTooltip.ev.outcome && (
+            <div className="mt-2 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-1.5 text-[11px] text-amber-100 leading-snug">
+              <span className="font-mono font-bold text-amber-300">Итог: </span>
+              {hoveredCardTooltip.ev.outcome}
+            </div>
           )}
+
+          {hoveredCardTooltip.ev.details &&
+            hoveredCardTooltip.ev.details !== hoveredCardTooltip.ev.subtitle &&
+            !hoveredCardTooltip.ev.outcome && (
+              <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed line-clamp-3">
+                {hoveredCardTooltip.ev.details}
+              </p>
+            )}
 
           <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
             <span className="truncate">
               {hoveredCardTooltip.ev.ruler
                 ? `Правитель: ${hoveredCardTooltip.ev.ruler}`
-                : `Источник: ${hoveredCardTooltip.ev.sourceFile}`}
+                : hoveredCardTooltip.branchLabel}
             </span>
             <span className="text-amber-300 shrink-0">
               {hoveredCardTooltip.ev.explicitLinks.length > 0
-                ? `Связей: ${hoveredCardTooltip.ev.explicitLinks.length} · Клик = детали`
-                : 'Клик = карточка'}
+                ? `Связей: ${hoveredCardTooltip.ev.explicitLinks.length} · Клик — паспорт`
+                : 'Клик — паспорт события'}
             </span>
           </div>
         </div>

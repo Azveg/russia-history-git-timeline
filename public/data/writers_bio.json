@@ -12,7 +12,7 @@
       "short": "lit/all",
       "category": "other",
       "sourceFile": "data/writers_bio.json",
-      "description": "Объединённая линия русских писателей-классиков и их ключевых произведений XVIII–XX вв.",
+      "description": "Объединённая линия русских летописцев, писателей-классиков и их ключевых произведений XI–XX вв.",
       "color": "#d946ef",
       "badgeClass": "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
       "isMilitary": false,
@@ -22,12 +22,12 @@
     {
       "id": "WRITERS_BIO",
       "gitName": "culture/writers",
-      "label": "Русские писатели-классики",
+      "label": "Русские писатели и летописцы",
       "short": "writers",
       "parentBranchId": "LITERATURE_ALL",
       "category": "other",
       "sourceFile": "data/writers_bio.json",
-      "description": "Годы жизни, биографии и творческий путь ключевых русских писателей и поэтов XVIII–XX веков",
+      "description": "Годы жизни, биографии и творческий путь ключевых русских летописцев, писателей и поэтов XI–XX веков",
       "color": "#e879f9",
       "badgeClass": "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/40",
       "isMilitary": false,
@@ -35,6 +35,109 @@
     }
   ],
   "nodes": [
+    {
+      "id": "1056-nestor-chronicler",
+      "startYear": 1056,
+      "endYear": 1114,
+      "period": "1056–1114",
+      "title": "Нестор Летописец",
+      "subtitle": "Монах Киево-Печерского монастыря, создатель первой редакции «Повести временных лет» и древнерусской агиографии",
+      "details": "Древнерусский книжник и агиограф Киево-Печерской обители. Около 1110–1113 годов составил свод «Повести временных лет», вписавший историю Руси в мировую библейско-византийскую хронологию, а также написал жития князей Бориса и Глеба и преподобного Феодосия Печерского.",
+      "outcome": "Заложил фундамент русского летописания, исторического самосознания и книжной традиции Древней Руси",
+      "keyFigures": [
+        "Нестор Летописец",
+        "Святополк Изяславич",
+        "Владимир Мономах"
+      ],
+      "task": "WRITERS_BIO",
+      "region": "Киев (Киево-Печерский монастырь)",
+      "type": "Летописец и агиограф",
+      "syncTags": [
+        "person-nestor-chronicler"
+      ],
+      "subEvents": [
+        {
+          "year": 1073,
+          "title": "Постриг в Киево-Печерском монастыре",
+          "text": "Принял монашество при игумене Стефане, стал хранителем монастырской книжной традиции."
+        },
+        {
+          "year": 1088,
+          "title": "Жития Бориса и Глеба и Феодосия Печерского",
+          "text": "Создал первые канонические памятники древнерусской житийной литературы."
+        },
+        {
+          "year": 1113,
+          "title": "Составление «Повести временных лет»",
+          "text": "Обобщил предшествующие киевские и новгородские своды, византийские хроники и договоры Руси с греками."
+        }
+      ]
+    },
+    {
+      "id": "1350-sofoniy-ryazanets",
+      "startYear": 1350,
+      "endYear": 1405,
+      "period": "вт. пол. XIV — нач. XV в.",
+      "title": "Софоний Рязанец и Епифаний Премудрый",
+      "subtitle": "Книжники эпохи Куликовской битвы и духовного возрождения Руси, авторы «Задонщины» и житий Сергия Радонежского и Стефана Пермского",
+      "details": "Древнерусские мастера слова эпохи Дмитрия Донского и Сергия Радонежского. Рязанский боярин и иерей Софоний создал поэтическую «Задонщину», воспевшую победу на Куликовом поле в традициях «Слова о полку Игореве», а ученик Сергия Радонежского Епифаний Премудрый создал экспрессивный стиль «плетения словес».",
+      "outcome": "Оформили литературный канон Московского возрождения XIV–XV веков и идею единства Русской земли вокруг Москвы",
+      "keyFigures": "Софоний Рязанец, Епифаний Премудрый, Сергий Радонежский, Дмитрий Донской",
+      "task": "WRITERS_BIO",
+      "region": "Рязань / Москва / Троице-Сергиев монастырь",
+      "type": "Книжники и агиографы",
+      "syncTags": [
+        "person-sofoniy-ryazanets"
+      ],
+      "linksTo": [
+        {
+          "targetId": "1378-vozha-kulikovo",
+          "type": "sync_context",
+          "label": "Современники и летописцы победы на Куликовом поле"
+        }
+      ]
+    },
+    {
+      "id": "1620-avvakum-petrov",
+      "startYear": 1620,
+      "endYear": 1682,
+      "startDate": "1620-11-20",
+      "endDate": "1682-04-14",
+      "period": "1620–1682",
+      "title": "Протопоп Аввакум Петров",
+      "subtitle": "Духовный вождь старообрядчества, писатель-полемист и создатель первой русской автобиографии",
+      "details": "Протопоп из Григорова на Нижегородчине, входивший в кружок «ревнителей благочестия», а затем возглавивший непримиримое сопротивление церковной реформе патриарха Никона. В сибирской ссылке и земляной тюрьме в Пустозерске создал «Житие протопопа Аввакума, им самим написанное» — шедевр живой разговорной русской речи XVII века.",
+      "outcome": "Превратил житийный канон в страстную исповедальную автобиографию и впервые ввёл живую народную речь в высокую словесность",
+      "keyFigures": [
+        "Протопоп Аввакум",
+        "Патриарх Никон",
+        "Царь Алексей Михайлович",
+        "Боярыня Феодосия Морозова"
+      ],
+      "task": "WRITERS_BIO",
+      "region": "Москва / Тобольск / Даурия / Пустозерск",
+      "type": "Писатель и религиозный деятель",
+      "syncTags": [
+        "person-avvakum-petrov"
+      ],
+      "subEvents": [
+        {
+          "year": 1653,
+          "title": "Разрыв с патриархом Никоном и ссылка в Сибирь",
+          "text": "Выступил против исправления книг по новогреческим образцам и был сослан с семьёй в Тобольск и Забайкалье."
+        },
+        {
+          "year": 1667,
+          "title": "Анафема Большого Московского собора и ссылка в Пустозерск",
+          "text": "Отказался покориться собору и был заточён в земляной сруб за Полярным кругом, где написал «Житие»."
+        },
+        {
+          "year": 1682,
+          "title": "Казнь в Пустозерске",
+          "text": "По царскому указу сожжён в срубе вместе с соузниками Лазарем, Епифанием и Феодором."
+        }
+      ]
+    },
     {
       "id": "1743-derzhavin-gavrila",
       "startYear": 1743,
@@ -48,7 +151,9 @@
       "task": "WRITERS_BIO",
       "region": "Казань / Санкт-Петербург",
       "type": "Поэт и государственный деятель",
-      "syncTags": ["person-derzhavin-gavrila"],
+      "syncTags": [
+        "person-derzhavin-gavrila"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -80,7 +185,9 @@
       "task": "WRITERS_BIO",
       "region": "Москва / Санкт-Петербург",
       "type": "Драматург и публицист",
-      "syncTags": ["person-fonvizin-denis"],
+      "syncTags": [
+        "person-fonvizin-denis"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -105,7 +212,9 @@
       "task": "WRITERS_BIO",
       "region": "Симбирск / Москва / Санкт-Петербург",
       "type": "Писатель и историк",
-      "syncTags": ["person-karamzin-nikolay"],
+      "syncTags": [
+        "person-karamzin-nikolay"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -130,7 +239,9 @@
       "task": "WRITERS_BIO",
       "region": "Москва / Санкт-Петербург",
       "type": "Поэт и баснописец",
-      "syncTags": ["person-krylov-ivan"],
+      "syncTags": [
+        "person-krylov-ivan"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -155,7 +266,9 @@
       "task": "WRITERS_BIO",
       "region": "Тульская губерния / Санкт-Петербург",
       "type": "Поэт и переводчик",
-      "syncTags": ["person-zhukovsky-vasily"],
+      "syncTags": [
+        "person-zhukovsky-vasily"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -187,7 +300,9 @@
       "task": "WRITERS_BIO",
       "region": "Москва / Кавказ / Персия",
       "type": "Драматург и дипломат",
-      "syncTags": ["person-griboedov-aleksandr"],
+      "syncTags": [
+        "person-griboedov-aleksandr"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -219,7 +334,9 @@
       "task": "WRITERS_BIO",
       "region": "Москва / Санкт-Петербург / Михайловское",
       "type": "Поэт, прозаик и драматург",
-      "syncTags": ["person-pushkin-alexander"],
+      "syncTags": [
+        "person-pushkin-alexander"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -251,7 +368,9 @@
       "task": "WRITERS_BIO",
       "region": "Орловская губерния / Мюнхен / Санкт-Петербург",
       "type": "Поэт-философ и дипломат",
-      "syncTags": ["person-tyutchev-fyodor"],
+      "syncTags": [
+        "person-tyutchev-fyodor"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -276,7 +395,9 @@
       "task": "WRITERS_BIO",
       "region": "Полтавская губерния / Санкт-Петербург / Рим",
       "type": "Прозаик и драматург",
-      "syncTags": ["person-gogol-nikolay"],
+      "syncTags": [
+        "person-gogol-nikolay"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -301,7 +422,9 @@
       "task": "WRITERS_BIO",
       "region": "Симбирск / Санкт-Петербург",
       "type": "Прозаик",
-      "syncTags": ["person-goncharov-ivan"],
+      "syncTags": [
+        "person-goncharov-ivan"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -326,7 +449,9 @@
       "task": "WRITERS_BIO",
       "region": "Москва / Санкт-Петербург / Кавказ",
       "type": "Поэт, прозаик и драматург",
-      "syncTags": ["person-lermontov-mikhail"],
+      "syncTags": [
+        "person-lermontov-mikhail"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -358,7 +483,9 @@
       "task": "WRITERS_BIO",
       "region": "Орловская губерния / Санкт-Петербург / Париж",
       "type": "Прозаик и драматург",
-      "syncTags": ["person-turgenev-ivan"],
+      "syncTags": [
+        "person-turgenev-ivan"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -390,7 +517,9 @@
       "task": "WRITERS_BIO",
       "region": "Орловская губерния / Москва",
       "type": "Поэт и переводчик",
-      "syncTags": ["person-fet-afanasy"],
+      "syncTags": [
+        "person-fet-afanasy"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -415,7 +544,9 @@
       "task": "WRITERS_BIO",
       "region": "Ярославская губерния / Санкт-Петербург",
       "type": "Поэт и издатель",
-      "syncTags": ["person-nekrasov-nikolay"],
+      "syncTags": [
+        "person-nekrasov-nikolay"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -440,7 +571,9 @@
       "task": "WRITERS_BIO",
       "region": "Москва / Омск / Санкт-Петербург",
       "type": "Прозаик и мыслитель",
-      "syncTags": ["person-dostoevsky-fyodor"],
+      "syncTags": [
+        "person-dostoevsky-fyodor"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -472,7 +605,9 @@
       "task": "WRITERS_BIO",
       "region": "Москва / Костромская губерния",
       "type": "Драматург и театральный деятель",
-      "syncTags": ["person-ostrovsky-aleksandr"],
+      "syncTags": [
+        "person-ostrovsky-aleksandr"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -497,7 +632,9 @@
       "task": "WRITERS_BIO",
       "region": "Тверская губерния / Санкт-Петербург",
       "type": "Писатель-сатирик и государственный служащий",
-      "syncTags": ["person-saltykov-shchedrin-mikhail"],
+      "syncTags": [
+        "person-saltykov-shchedrin-mikhail"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -522,7 +659,9 @@
       "task": "WRITERS_BIO",
       "region": "Ясная Поляна / Москва",
       "type": "Прозаик, драматург и мыслитель",
-      "syncTags": ["person-tolstoy-leo"],
+      "syncTags": [
+        "person-tolstoy-leo"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -559,7 +698,9 @@
       "task": "WRITERS_BIO",
       "region": "Орловская губерния / Киев / Санкт-Петербург",
       "type": "Прозаик",
-      "syncTags": ["person-leskov-nikolay"],
+      "syncTags": [
+        "person-leskov-nikolay"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -584,7 +725,9 @@
       "task": "WRITERS_BIO",
       "region": "Таганрог / Москва / Мелихово / Ялта",
       "type": "Прозаик, драматург и врач",
-      "syncTags": ["person-chekhov-anton"],
+      "syncTags": [
+        "person-chekhov-anton"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -609,7 +752,9 @@
       "task": "WRITERS_BIO",
       "region": "Нижний Новгород / Сорренто / Москва",
       "type": "Прозаик, драматург и общественный деятель",
-      "syncTags": ["person-gorky-maxim"],
+      "syncTags": [
+        "person-gorky-maxim"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -634,7 +779,10 @@
       "task": "WRITERS_BIO",
       "region": "Воронеж / Москва / Париж / Грасс",
       "type": "Прозаик и поэт",
-      "syncTags": ["person-bunin-ivan", "topic-silver-age"],
+      "syncTags": [
+        "person-bunin-ivan",
+        "topic-silver-age"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -659,7 +807,10 @@
       "task": "WRITERS_BIO",
       "region": "Санкт-Петербург / Шахматово",
       "type": "Поэт и драматург",
-      "syncTags": ["person-blok-alexander", "topic-silver-age"],
+      "syncTags": [
+        "person-blok-alexander",
+        "topic-silver-age"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -691,7 +842,10 @@
       "task": "WRITERS_BIO",
       "region": "Царское Село / Санкт-Петербург (Ленинград)",
       "type": "Поэт и переводчик",
-      "syncTags": ["person-akhmatova-anna", "topic-silver-age"],
+      "syncTags": [
+        "person-akhmatova-anna",
+        "topic-silver-age"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -716,7 +870,10 @@
       "task": "WRITERS_BIO",
       "region": "Москва / Переделкино",
       "type": "Поэт, прозаик и переводчик",
-      "syncTags": ["person-pasternak-boris", "topic-silver-age"],
+      "syncTags": [
+        "person-pasternak-boris",
+        "topic-silver-age"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -741,7 +898,9 @@
       "task": "WRITERS_BIO",
       "region": "Киев / Москва",
       "type": "Прозаик и драматург",
-      "syncTags": ["person-bulgakov-mikhail"],
+      "syncTags": [
+        "person-bulgakov-mikhail"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -773,7 +932,10 @@
       "task": "WRITERS_BIO",
       "region": "Москва / Прага / Париж / Елабуга",
       "type": "Поэт, прозаик и переводчик",
-      "syncTags": ["person-tsvetaeva-marina", "topic-silver-age"],
+      "syncTags": [
+        "person-tsvetaeva-marina",
+        "topic-silver-age"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -798,7 +960,10 @@
       "task": "WRITERS_BIO",
       "region": "Кутаисская губерния / Москва",
       "type": "Поэт и драматург",
-      "syncTags": ["person-mayakovsky-vladimir", "topic-silver-age"],
+      "syncTags": [
+        "person-mayakovsky-vladimir",
+        "topic-silver-age"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -823,7 +988,10 @@
       "task": "WRITERS_BIO",
       "region": "Рязанская губерния / Петроград / Москва",
       "type": "Поэт",
-      "syncTags": ["person-yesenin-sergey", "topic-silver-age"],
+      "syncTags": [
+        "person-yesenin-sergey",
+        "topic-silver-age"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -848,7 +1016,9 @@
       "task": "WRITERS_BIO",
       "region": "Санкт-Петербург / Берлин / США / Монтрё",
       "type": "Прозаик, поэт и энтомолог",
-      "syncTags": ["person-nabokov-vladimir"],
+      "syncTags": [
+        "person-nabokov-vladimir"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -873,7 +1043,9 @@
       "task": "WRITERS_BIO",
       "region": "Область Войска Донского (Вёшенская)",
       "type": "Прозаик",
-      "syncTags": ["person-sholokhov-mikhail"],
+      "syncTags": [
+        "person-sholokhov-mikhail"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",
@@ -910,7 +1082,9 @@
       "task": "WRITERS_BIO",
       "region": "Кисловодск / Рязань / Вермонт (США) / Москва",
       "type": "Прозаик, публицист и историк",
-      "syncTags": ["person-solzhenitsyn-alexander"],
+      "syncTags": [
+        "person-solzhenitsyn-alexander"
+      ],
       "subEvents": [
         {
           "title": "Жизненный путь",

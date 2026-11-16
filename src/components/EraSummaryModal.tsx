@@ -1,566 +1,678 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, CalendarRange, ChevronLeft, ChevronRight, Crown, Feather, History, RotateCcw, X } from 'lucide-react';
-import { getMacroEraSummaryData, resolveEventBranch, resolveMacroEras } from '../engine/timelineEngine';
-import { useOverlayScrollLock } from '../utils/scrollIsolation';
-import type { BranchDefinition, EnrichedEvent, MacroEra, RulerPeriod } from '../types/timeline';
+import {
+  ArrowLeft,
+  ArrowRight,
+  BookMarked,
+  BookOpen,
+  Crown,
+  Feather,
+  Flame,
+  FlaskConical,
+  Layers,
+  Link2,
+  MapPin,
+  ScrollText,
+  Sparkles,
+  Users,
+  X,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  getLeafBranches,
+  getMacroEraSummaryData,
+  resolveMacroEra,
+  resolveMacroEras,
+} from '../engine/timelineEngine';
+import type {
+  BranchDefinition,
+  EnrichedEvent,
+  MacroEra,
+  ModalHistoryItem,
+  RulerPeriod,
+} from '../types/timeline';
 
 interface EraSummaryModalProps {
-  eraId: string | null;
-  macroEras: MacroEra[];
-  minYear?: number;
-  maxYear?: number;
+  era: MacroEra | null;
+  eras: MacroEra[];
   rulers: RulerPeriod[];
   enrichedEvents: EnrichedEvent[];
   branches: BranchDefinition[];
+  modalHistory?: ModalHistoryItem[];
   onClose: () => void;
-  onSelectEraModal: (eraId: string) => void;
-  onFilterByEraOnTimeline: (eraId: string) => void;
-  onOpenRulerModal: (rulerId: string) => void;
-  onOpenCardModal: (eventId: string) => void;
+  onNavigateBack?: () => void;
+  onSelectEra: (eraId: string) => void;
+  onSelectRuler: (rulerId: string) => void;
+  onSelectEvent: (eventId: string) => void;
+  onFilterByEraRange: (startYear: number, endYear: number) => void;
 }
 
+type EraFiguresRoleFilter = 'all' | 'writers' | 'scientists';
+
 export function EraSummaryModal({
-  eraId,
-  macroEras,
-  minYear = 862,
-  maxYear = 2000,
+  era,
+  eras,
   rulers,
   enrichedEvents,
   branches,
+  modalHistory = [],
   onClose,
-  onSelectEraModal,
-  onFilterByEraOnTimeline,
-  onOpenRulerModal,
-  onOpenCardModal,
+  onNavigateBack,
+  onSelectEra,
+  onSelectRuler,
+  onSelectEvent,
+  onFilterByEraRange,
 }: EraSummaryModalProps) {
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const [selectedBranchId, setSelectedBranchId] = useState<string>('ALL');
-  const [selectedEventType, setSelectedEventType] = useState<string>('ALL');
-
-  const resolvedEras = useMemo(() => resolveMacroEras(macroEras), [macroEras]);
-  const idx = eraId ? resolvedEras.findIndex((e) => e.id === eraId) : -1;
-  const eraObj = idx !== -1 ? resolvedEras[idx] : undefined;
-  const isModalOpen = Boolean(eraId && eraObj);
-
-  useOverlayScrollLock(isModalOpen, [bodyRef]);
+  const [roleFilter, setRoleFilter] = useState<EraFiguresRoleFilter>('all');
 
   useEffect(() => {
-    setSelectedBranchId('ALL');
-    setSelectedEventType('ALL');
-    if (bodyRef.current) {
-      bodyRef.current.scrollTop = 0;
-    }
-  }, [eraId]);
+    if (!era) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [era, onClose]);
+
+  const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
 
   const summary = useMemo(() => {
-    if (!eraObj) return null;
-    return getMacroEraSummaryData(eraObj, rulers, enrichedEvents, branches);
-  }, [eraObj, rulers, enrichedEvents, branches]);
+    if (!era) return null;
+    const resolved =
+      resolvedEras.find((e) => e.id === era.id) ??
+      resolveMacroEra(era, eras.findIndex((e) => e.id === era.id));
+    return getMacroEraSummaryData(resolved, rulers, enrichedEvents, branches);
+  }, [era, resolvedEras, eras, rulers, enrichedEvents, branches]);
 
-  const filteredEvents = useMemo(() => {
-    if (!summary) return [];
-    return summary.events.filter((ev) => {
-      if (selectedBranchId !== 'ALL') {
-        const b = resolveEventBranch(ev, branches);
-        if (b.id !== selectedBranchId) return false;
-      }
-      if (selectedEventType !== 'ALL') {
-        const typeLabel = (ev.type || 'Событие').trim();
-        if (typeLabel !== selectedEventType) return false;
-      }
-      return true;
-    });
-  }, [summary, selectedBranchId, selectedEventType, branches]);
+  if (!era || !summary) return null;
 
-  if (!isModalOpen || !eraObj || !summary) return null;
+  const {
+    era: resolvedEra,
+    eraRulers,
+    eraEvents,
+    contemporaryWriters,
+    contemporaryScientists,
+    worksWrittenInPeriod,
+    discoveriesInPeriod,
+    worksAboutPeriod,
+    carryOverInEvents,
+    carryOverOutEvents,
+    branchBreakdown,
+    centers,
+    peakInterval,
+    topConnectedEvents,
+    totalDurationYears,
+    totalSyncLinks,
+  } = summary;
 
-  const prevEra = idx > 0 ? resolvedEras[idx - 1] : null;
-  const nextEra = idx < resolvedEras.length - 1 ? resolvedEras[idx + 1] : null;
-  const hasLocalFilter = selectedBranchId !== 'ALL' || selectedEventType !== 'ALL';
+  const currentIdx = resolvedEras.findIndex((e) => e.id === resolvedEra.id);
+  const prevEra = currentIdx > 0 ? resolvedEras[currentIdx - 1] : null;
+  const nextEra =
+    currentIdx >= 0 && currentIdx < resolvedEras.length - 1 ? resolvedEras[currentIdx + 1] : null;
+
+  const leafBranches = getLeafBranches(branches).filter((b) => !b.isTimeAxis);
+  const lastHistoryItem = modalHistory.length > 0 ? modalHistory[modalHistory.length - 1] : null;
+
+  const totalFiguresCount = contemporaryWriters.length + contemporaryScientists.length;
+  const displayedFigures = [
+    ...(roleFilter === 'all' || roleFilter === 'writers'
+      ? contemporaryWriters.map((w) => ({ item: w, role: 'writer' as const }))
+      : []),
+    ...(roleFilter === 'all' || roleFilter === 'scientists'
+      ? contemporaryScientists.map((s) => ({ item: s, role: 'scientist' as const }))
+      : []),
+  ].sort((a, b) => a.item.startYear - b.item.startYear);
 
   return (
     <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="era-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-4xl w-full overflow-hidden shadow-2xl max-h-[92vh] flex flex-col animate-modal"
-      >
-        <div className="p-6 bg-gradient-to-b from-slate-800/80 to-slate-900 border-b border-slate-800 relative shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть карточку периода"
-            className="absolute right-4 top-4 w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 pr-10 mb-2">
-            <div className="inline-flex flex-wrap items-center gap-2 text-xs font-mono">
-              <span className="px-2.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black tabular-nums">
-                {eraObj.period}
-              </span>
-              <span className="text-amber-300 font-semibold">{eraObj.displayShortTitle}</span>
-              <span aria-hidden="true" className="text-slate-600">
-                ·
-              </span>
-              <span className="text-slate-400 tabular-nums">
-                Период {idx + 1} из {resolvedEras.length}
-              </span>
-            </div>
-
-            {eraObj.endYear >= minYear || summary.events.length > 0 || summary.rulers.length > 0 ? (
+      <div className="w-full max-w-5xl max-h-[92vh] rounded-2xl bg-[#0b1325] border border-amber-500/40 shadow-2xl flex flex-col overflow-hidden">
+        {/* Верхняя панель с кнопкой «Назад», номером макро-периода и быстрым фильтром */}
+        <div className="px-5 py-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-xs font-mono text-amber-400 flex-wrap min-w-0">
+            {lastHistoryItem && onNavigateBack && (
               <button
                 type="button"
-                onClick={() => {
-                  onFilterByEraOnTimeline(eraObj.id);
-                  onClose();
-                }}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 text-xs font-mono font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                onClick={onNavigateBack}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-semibold transition-colors cursor-pointer"
+                title={`Вернуться назад: ${lastHistoryItem.label}`}
               >
-                <CalendarRange className="w-3.5 h-3.5" />
-                <span>Показать период на графике</span>
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span className="truncate max-w-[200px]">Назад: {lastHistoryItem.label}</span>
               </button>
-            ) : (
-              <span className="text-[11px] font-mono text-slate-400 whitespace-nowrap shrink-0">
-                График сейчас охватывает {minYear}–{maxYear} гг.
-              </span>
             )}
+            <ScrollText className="w-4 h-4 shrink-0" />
+            <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black tabular-nums">
+              {resolvedEra.displayShortTitle}
+            </span>
+            <span className="font-bold text-amber-200 tabular-nums">{resolvedEra.period}</span>
+            <span className="text-slate-500 hidden sm:inline">· Досье макро-периода</span>
           </div>
 
-          <h2 className="text-xl sm:text-2xl font-extrabold text-white [text-wrap:balance]">
-            {eraObj.title}
-          </h2>
-          <p className="text-sm text-slate-300 mt-1.5 leading-relaxed">{eraObj.thesis}</p>
-
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-slate-400 tabular-nums">
-            <span>
-              Правителей: <strong className="text-slate-100">{summary.rulers.length}</strong>
-            </span>
-            <span aria-hidden="true" className="text-slate-700">
-              ·
-            </span>
-            <span>
-              Событий: <strong className="text-slate-100">{summary.events.length}</strong>
-            </span>
-            <span aria-hidden="true" className="text-slate-700">
-              ·
-            </span>
-            <span>
-              Писателей эпохи:{' '}
-              <strong className="text-fuchsia-300">{summary.contemporaryWriters.length}</strong>
-            </span>
-            <span aria-hidden="true" className="text-slate-700">
-              ·
-            </span>
-            <span>
-              Книг периода:{' '}
-              <strong className="text-purple-300">{summary.worksWrittenInPeriod.length}</strong>
-            </span>
-            <span aria-hidden="true" className="text-slate-700">
-              ·
-            </span>
-            <span>
-              Книг об эпохе:{' '}
-              <strong className="text-amber-300">{summary.worksAboutPeriod.length}</strong>
-            </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                onFilterByEraRange(resolvedEra.startYear, resolvedEra.endYear);
+                onClose();
+              }}
+              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer"
+            >
+              Сфокусировать окно ({resolvedEra.startYear}–{resolvedEra.endYear})
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Закрыть досье макро-периода"
+              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        <div ref={bodyRef} className="p-6 flex-1 overflow-y-auto overscroll-contain space-y-6">
+        {/* Тело модального окна */}
+        <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
+          {/* Заголовок и исторический тезис */}
           <div>
-            <div className="text-xs font-mono font-bold text-slate-400 mb-2.5">
-              Правители, вошедшие в период ({summary.rulers.length}):
-            </div>
+            <h3
+              id="era-modal-title"
+              className="font-serif text-2xl sm:text-3xl font-bold text-white leading-tight tracking-tight"
+            >
+              {resolvedEra.title}
+            </h3>
+            <p className="text-sm sm:text-base text-slate-200 mt-2 leading-relaxed">
+              {resolvedEra.thesis}
+            </p>
 
-            {summary.rulers.length === 0 ? (
-              <div className="p-4 rounded-xl bg-slate-950/70 border border-slate-800 text-xs text-slate-400">
-                {eraObj.endYear < minYear
-                  ? `Данные о правителях этого периода появятся после подключения модулей до ${minYear} г.`
-                  : 'В этом макро-периоде не найдено пересекающихся правлений.'}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {summary.rulers.map(({ ruler, eventCount }) => (
-                  <button
-                    key={ruler.id}
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenRulerModal(ruler.id);
-                    }}
-                    title={`Открыть карточку правителя: ${ruler.ruler} (${ruler.reignPeriod})`}
-                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-slate-800 hover:border-amber-500/45 transition-colors cursor-pointer group"
+            {centers.length > 0 && (
+              <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs font-mono">
+                <span className="inline-flex items-center gap-1 text-slate-400">
+                  <MapPin className="w-3.5 h-3.5 text-amber-400" />
+                  Политические центры и столицы эпохи:
+                </span>
+                {centers.map((center) => (
+                  <span
+                    key={center}
+                    className="px-2 py-0.5 rounded-md bg-slate-900 border border-amber-500/30 text-amber-200 font-semibold"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="inline-flex items-center gap-1.5 text-xs font-bold text-white group-hover:text-amber-200 truncate">
-                        <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                        <span className="truncate">{ruler.shortRuler}</span>
-                      </span>
-                      <span className="text-[11px] font-mono text-slate-400 tabular-nums shrink-0">
-                        {eventCount} соб.
-                      </span>
-                    </div>
-                    <div className="text-[11px] font-mono text-amber-300/90 tabular-nums mt-1">
-                      {ruler.reignPeriod}
-                    </div>
-                  </button>
+                    {center}
+                  </span>
                 ))}
               </div>
             )}
           </div>
 
-          {summary.contemporaryWriters.length > 0 && (
-            <div className="pt-4 border-t border-slate-800/80">
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-fuchsia-300 mb-2.5">
-                <Feather className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  Лица эпохи · Писатели и поэты, жившие в этот период ({summary.contemporaryWriters.length}):
-                </span>
+          {/* 4 сводных индикатора эпохи */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono">
+            <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-3">
+              <div className="text-slate-400">Длительность</div>
+              <div className="text-lg font-extrabold text-amber-300 mt-0.5 tabular-nums">
+                {totalDurationYears} л.
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {summary.contemporaryWriters.map((writer) => (
-                  <button
-                    key={writer.id}
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenCardModal(writer.id);
-                    }}
-                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-fuchsia-500/25 hover:border-fuchsia-400/60 transition-colors cursor-pointer group"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-white group-hover:text-fuchsia-200 truncate">
-                        {writer.title}
-                      </span>
-                      <span className="text-[11px] font-mono text-fuchsia-300 tabular-nums shrink-0">
-                        {writer.period}
-                      </span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                      {writer.subtitle}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {summary.worksWrittenInPeriod.length > 0 && (
-            <div className="pt-4 border-t border-slate-800/80">
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-purple-300 mb-2.5">
-                <BookOpen className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  Книги и произведения, написанные в этот период ({summary.worksWrittenInPeriod.length}):
-                </span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {summary.worksWrittenInPeriod.map((work) => (
-                  <button
-                    key={work.id}
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenCardModal(work.id);
-                    }}
-                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-purple-500/25 hover:border-purple-400/60 transition-colors cursor-pointer group"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-mono text-purple-300 font-semibold tabular-nums">
-                        {work.period}
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-400 truncate max-w-[160px]">
-                        {work.type}
-                      </span>
-                    </div>
-                    <div className="text-xs font-bold text-white group-hover:text-purple-200 mt-1">
-                      {work.title}
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                      {work.subtitle}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {summary.worksAboutPeriod.length > 0 && (
-            <div className="pt-4 border-t border-slate-800/80">
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-300 mb-2.5">
-                <History className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  Книги и произведения об этом историческом периоде ({summary.worksAboutPeriod.length}):
-                </span>
-              </div>
-              <div className="space-y-2">
-                {summary.worksAboutPeriod.map(({ work, relationLabel, yearGap }) => (
-                  <button
-                    key={work.id}
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenCardModal(work.id);
-                    }}
-                    className="w-full text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-amber-500/25 hover:border-amber-400/60 transition-colors cursor-pointer group"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-xs font-bold text-white group-hover:text-amber-200">
-                        <span className="font-mono text-amber-300 mr-2 tabular-nums">
-                          {work.period}
-                        </span>
-                        {work.title}
-                      </div>
-                      <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/35 text-[10px] font-mono text-amber-200 tabular-nums shrink-0">
-                        {yearGap > 0 ? `+${yearGap} л. спустя` : 'современник эпохи'}
-                      </span>
-                    </div>
-                    <div className="text-[11px] font-mono text-amber-200/85 mt-1">
-                      {relationLabel}
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                      {work.subtitle}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="pt-4 border-t border-slate-800/80 space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-mono font-bold text-slate-400">
-                Фильтр исторических событий по ветке и типу:
-              </div>
-              {hasLocalFilter && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedBranchId('ALL');
-                    setSelectedEventType('ALL');
-                  }}
-                  className="inline-flex items-center gap-1 text-[11px] font-mono text-amber-300 hover:text-amber-200 cursor-pointer whitespace-nowrap shrink-0"
-                >
-                  <RotateCcw className="w-3 h-3" />
-                  <span>Сбросить фильтры</span>
-                </button>
-              )}
+              <div className="text-[11px] text-slate-500 tabular-nums">{resolvedEra.period}</div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSelectedBranchId('ALL')}
-                className={`px-2.5 py-1 rounded-md border text-[11px] font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                  selectedBranchId === 'ALL'
-                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
-                    : 'bg-slate-950 text-slate-300 border-slate-800 hover:bg-slate-800'
-                }`}
-              >
-                Все ветки ({summary.events.length})
-              </button>
-              {summary.branchTags.map(({ branch, count }) => {
-                const active = selectedBranchId === branch.id;
-                return (
-                  <button
+            <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-3">
+              <div className="text-slate-400">Правлений в эпохе</div>
+              <div className="text-lg font-extrabold text-white mt-0.5 tabular-nums">
+                {eraRulers.length}
+              </div>
+              <div className="text-[11px] text-slate-500">узлов государственной власти</div>
+            </div>
+
+            <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-3">
+              <div className="text-slate-400">Событий и лиц эпохи</div>
+              <div className="text-lg font-extrabold text-sky-300 mt-0.5 tabular-nums">
+                {eraEvents.length} соб. · {totalFiguresCount} лиц
+              </div>
+              <div className="text-[11px] text-slate-500 tabular-nums">
+                книг: {worksWrittenInPeriod.length} · открытий: {discoveriesInPeriod.length}
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-3">
+              <div className="text-slate-400">Пик активности</div>
+              <div className="text-lg font-extrabold text-emerald-300 mt-0.5 tabular-nums">
+                {peakInterval ? peakInterval.label : '—'}
+              </div>
+              <div className="text-[11px] text-slate-500 tabular-nums">
+                {peakInterval
+                  ? `${peakInterval.count} активных узлов · связей: ${totalSyncLinks}`
+                  : `связей: ${totalSyncLinks}`}
+              </div>
+            </div>
+          </div>
+
+          {/* Распределение событий по веткам */}
+          {branchBreakdown.length > 0 && (
+            <div className="rounded-xl bg-slate-900/70 border border-slate-800 p-4 space-y-2.5">
+              <div className="text-xs font-mono uppercase tracking-wider text-slate-300 flex items-center gap-2">
+                <Layers className="w-3.5 h-3.5 text-amber-400" />
+                <span>Структура эпохи по историческим веткам</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {branchBreakdown.map(({ branch, count }) => (
+                  <div
                     key={branch.id}
-                    type="button"
-                    onClick={() => setSelectedBranchId(active ? 'ALL' : branch.id)}
-                    className={`px-2.5 py-1 rounded-md border text-[11px] font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors inline-flex items-center gap-1.5 ${
-                      active
-                        ? 'bg-slate-800 text-white border-amber-400/70 font-semibold'
-                        : 'bg-slate-950 text-slate-300 border-slate-800 hover:bg-slate-800/80'
-                    }`}
+                    className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs font-mono"
                   >
                     <span
-                      aria-hidden="true"
-                      className="w-2 h-2 rounded-xs shrink-0"
+                      className="w-2.5 h-2.5 rounded-full shrink-0"
                       style={{ backgroundColor: branch.color }}
                     />
-                    <span>{branch.label}</span>
-                    <span className="text-slate-400 tabular-nums">{count}</span>
-                  </button>
-                );
-              })}
+                    <span className="text-slate-200 font-semibold">{branch.label}</span>
+                    <span
+                      className="px-1.5 py-0.5 rounded bg-slate-900 font-bold tabular-nums"
+                      style={{ color: branch.color }}
+                    >
+                      {count}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
+          )}
 
-            {summary.typeTags.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setSelectedEventType('ALL')}
-                  className={`px-2.5 py-1 rounded-md border text-[11px] font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                    selectedEventType === 'ALL'
-                      ? 'bg-sky-500/20 text-sky-200 border-sky-400/60 font-bold'
-                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:bg-slate-800 hover:text-slate-200'
-                  }`}
-                >
-                  Все типы
-                </button>
-                {summary.typeTags.map(({ type, count }) => {
-                  const active = selectedEventType === type;
+          {/* Блок «Лица эпохи» с группировкой по ролям (Писатели и мыслители / Учёные и изобретатели) */}
+          {totalFiguresCount > 0 && (
+            <div className="rounded-xl bg-amber-950/15 border border-amber-500/35 p-4 space-y-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-mono uppercase tracking-wider text-amber-300 flex items-center gap-2 font-bold">
+                  <Users className="w-4 h-4 text-amber-400" />
+                  <span>Лица эпохи: писатели, мыслители и учёные ({totalFiguresCount})</span>
+                </div>
+
+                {/* Табы фильтрации по ролям */}
+                <div className="inline-flex items-center rounded-lg bg-slate-950/90 border border-slate-800 p-0.5 text-[11px] font-mono">
+                  <button
+                    type="button"
+                    onClick={() => setRoleFilter('all')}
+                    className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                      roleFilter === 'all'
+                        ? 'bg-amber-500 text-slate-950 font-bold'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Все ({totalFiguresCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRoleFilter('writers')}
+                    className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1 ${
+                      roleFilter === 'writers'
+                        ? 'bg-amber-500 text-slate-950 font-bold'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <Feather className="w-3 h-3" />
+                    <span>Писатели ({contemporaryWriters.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRoleFilter('scientists')}
+                    className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1 ${
+                      roleFilter === 'scientists'
+                        ? 'bg-sky-400 text-slate-950 font-bold'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <FlaskConical className="w-3 h-3" />
+                    <span>Учёные ({contemporaryScientists.length})</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                {displayedFigures.map(({ item: fig, role }) => (
+                  <button
+                    key={fig.id}
+                    type="button"
+                    onClick={() => onSelectEvent(fig.id)}
+                    className={`text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-900 border transition-all cursor-pointer space-y-1 ${
+                      role === 'scientist'
+                        ? 'border-sky-500/30 hover:border-sky-400/60'
+                        : 'border-amber-500/25 hover:border-amber-400/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                      <span
+                        className={`font-bold tabular-nums inline-flex items-center gap-1 ${
+                          role === 'scientist' ? 'text-sky-300' : 'text-amber-300'
+                        }`}
+                      >
+                        {role === 'scientist' ? (
+                          <FlaskConical className="w-3 h-3" />
+                        ) : (
+                          <Feather className="w-3 h-3" />
+                        )}
+                        {fig.period}
+                      </span>
+                      <span className="px-1.5 py-0.5 rounded bg-slate-900 text-[10px] text-slate-300">
+                        {role === 'scientist' ? 'Наука' : 'Литература'}
+                      </span>
+                    </div>
+                    <div className="font-serif text-base font-bold text-white">{fig.title}</div>
+                    <p className="text-xs text-slate-400 line-clamp-2">{fig.subtitle}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Научные открытия и технологические прорывы периода */}
+          {discoveriesInPeriod.length > 0 && (
+            <div className="rounded-xl bg-sky-950/15 border border-sky-500/35 p-4 space-y-3">
+              <div className="text-xs font-mono uppercase tracking-wider text-sky-300 flex items-center gap-2 font-bold">
+                <FlaskConical className="w-4 h-4 text-sky-400" />
+                <span>
+                  Научные открытия, академии и инженерные рубежи периода ({discoveriesInPeriod.length})
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {discoveriesInPeriod.map((disc) => (
+                  <button
+                    key={disc.id}
+                    type="button"
+                    onClick={() => onSelectEvent(disc.id)}
+                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-sky-500/25 hover:border-sky-400/60 transition-all cursor-pointer space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                      <span className="font-bold text-sky-300 tabular-nums">{disc.period}</span>
+                      {disc.explicitLinks.length > 0 && (
+                        <span className="text-emerald-300">
+                          связей: {disc.explicitLinks.length}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm font-bold text-white">{disc.title}</div>
+                    <p className="text-xs text-slate-400 line-clamp-2">{disc.subtitle}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Книги и памятники письменности, созданные в этот период */}
+          {worksWrittenInPeriod.length > 0 && (
+            <div className="rounded-xl bg-orange-950/15 border border-orange-500/35 p-4 space-y-3">
+              <div className="text-xs font-mono uppercase tracking-wider text-orange-300 flex items-center gap-2 font-bold">
+                <BookOpen className="w-4 h-4 text-orange-400" />
+                <span>
+                  Литературные памятники и книги, созданные в этот период ({worksWrittenInPeriod.length})
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {worksWrittenInPeriod.map((work) => (
+                  <button
+                    key={work.id}
+                    type="button"
+                    onClick={() => onSelectEvent(work.id)}
+                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-orange-500/25 hover:border-orange-400/60 transition-all cursor-pointer space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                      <span className="font-bold text-orange-300 tabular-nums">{work.period}</span>
+                      {work.explicitLinks.length > 0 && (
+                        <span className="text-emerald-300">
+                          связей: {work.explicitLinks.length}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm font-bold text-white">{work.title}</div>
+                    <p className="text-xs text-slate-400 line-clamp-2">{work.subtitle}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Произведения об этой эпохе, написанные позднее */}
+          {worksAboutPeriod.length > 0 && (
+            <div className="rounded-xl bg-purple-950/20 border border-purple-500/35 p-4 space-y-3">
+              <div className="text-xs font-mono uppercase tracking-wider text-purple-300 flex items-center gap-2 font-bold">
+                <BookMarked className="w-4 h-4 text-purple-400" />
+                <span>
+                  Произведения об этой эпохе (ретроспективный взгляд, {worksAboutPeriod.length})
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {worksAboutPeriod.map((work) => (
+                  <button
+                    key={work.id}
+                    type="button"
+                    onClick={() => onSelectEvent(work.id)}
+                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-purple-500/25 hover:border-purple-400/60 transition-all cursor-pointer space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                      <span className="font-bold text-purple-300 tabular-nums">
+                        Издано: {work.period}
+                      </span>
+                      <span className="text-amber-300">О событиях периода</span>
+                    </div>
+                    <div className="text-sm font-bold text-white">{work.title}</div>
+                    <p className="text-xs text-slate-400 line-clamp-2">{work.subtitle}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Сквозные процессы на границах эпохи */}
+          {(carryOverInEvents.length > 0 || carryOverOutEvents.length > 0) && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {carryOverInEvents.length > 0 && (
+                <div className="rounded-xl bg-sky-950/25 border border-sky-500/30 p-3.5 space-y-2">
+                  <div className="text-xs font-mono text-sky-300 font-bold">
+                    Начались ранее и перешли в этот период ({carryOverInEvents.length}):
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {carryOverInEvents.map((ev) => (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        onClick={() => onSelectEvent(ev.id)}
+                        className="px-2.5 py-1 rounded-md bg-slate-950 hover:bg-slate-900 border border-sky-500/35 text-xs font-mono text-sky-100 cursor-pointer text-left"
+                      >
+                        {ev.title} ({ev.period})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {carryOverOutEvents.length > 0 && (
+                <div className="rounded-xl bg-amber-950/25 border border-amber-500/30 p-3.5 space-y-2">
+                  <div className="text-xs font-mono text-amber-300 font-bold">
+                    Продолжились в следующем макро-периоде ({carryOverOutEvents.length}):
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {carryOverOutEvents.map((ev) => (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        onClick={() => onSelectEvent(ev.id)}
+                        className="px-2.5 py-1 rounded-md bg-slate-950 hover:bg-slate-900 border border-amber-500/35 text-xs font-mono text-amber-100 cursor-pointer text-left"
+                      >
+                        {ev.title} ({ev.period})
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Узловые события эпохи */}
+          {topConnectedEvents.length > 0 && (
+            <div className="rounded-xl bg-emerald-950/20 border border-emerald-500/30 p-4 space-y-3">
+              <div className="text-xs font-mono uppercase tracking-wider text-emerald-300 flex items-center gap-2 font-bold">
+                <Flame className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Ключевые узлы эпохи (наибольшее число причинно-следственных связей)</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {topConnectedEvents.map((ev) => {
+                  const b = branches.find((br) => br.id === ev.task);
                   return (
                     <button
-                      key={type}
+                      key={ev.id}
                       type="button"
-                      onClick={() => setSelectedEventType(active ? 'ALL' : type)}
-                      className={`px-2.5 py-1 rounded-md border text-[11px] font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors inline-flex items-center gap-1.5 ${
-                        active
-                          ? 'bg-sky-500/20 text-sky-100 border-sky-400/70 font-semibold'
-                          : 'bg-slate-950 text-slate-300 border-slate-800 hover:bg-slate-800/80'
-                      }`}
+                      onClick={() => onSelectEvent(ev.id)}
+                      className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-emerald-500/25 hover:border-emerald-400/60 transition-all cursor-pointer space-y-1"
                     >
-                      <span>{type}</span>
-                      <span className="text-slate-400 tabular-nums">{count}</span>
+                      <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                        <span style={{ color: b?.color ?? '#fbbf24' }} className="font-bold">
+                          {ev.period} · {b?.short ?? ev.task}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-emerald-300 font-semibold">
+                          <Link2 className="w-3 h-3" /> {ev.explicitLinks.length}
+                        </span>
+                      </div>
+                      <div className="text-sm font-bold text-white">{ev.title}</div>
+                      {ev.outcome ? (
+                        <p className="text-xs text-amber-200/90 line-clamp-2">
+                          Итог: {ev.outcome}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-slate-400 line-clamp-2">{ev.subtitle}</p>
+                      )}
                     </button>
                   );
                 })}
               </div>
-            )}
+            </div>
+          )}
+
+          {/* Правители макро-периода */}
+          <div className="space-y-2.5">
+            <div className="text-xs font-mono uppercase tracking-wider text-amber-300 flex items-center gap-2">
+              <Crown className="w-3.5 h-3.5 text-amber-400" />
+              <span>Правители и периоды власти внутри эпохи ({eraRulers.length})</span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {eraRulers.map((r) => (
+                <button
+                  key={r.id}
+                  type="button"
+                  onClick={() => onSelectRuler(r.id)}
+                  className="text-left p-3.5 rounded-xl bg-slate-900/75 hover:bg-slate-800/90 border border-slate-800 hover:border-amber-500/40 transition-all cursor-pointer space-y-1"
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs font-mono">
+                    <span className="font-bold text-amber-300 tabular-nums">{r.reignPeriod}</span>
+                    <div className="flex items-center gap-1.5">
+                      {r.center && (
+                        <span className="px-1.5 py-0.5 rounded bg-slate-950 border border-slate-700 text-[10px] text-slate-300">
+                          {r.center}
+                        </span>
+                      )}
+                      <span className="text-slate-500 tabular-nums">
+                        {Math.max(1, r.endYear - r.startYear)} л.
+                      </span>
+                    </div>
+                  </div>
+                  <div className="font-serif text-base font-bold text-white">{r.ruler}</div>
+                  <p className="text-xs text-slate-400 line-clamp-2">{r.reignThesis}</p>
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="space-y-3">
-            <div className="text-xs font-mono font-bold text-slate-400 tabular-nums">
-              Исторические события периода ({filteredEvents.length}
-              {hasLocalFilter ? ` из ${summary.events.length}` : ''}):
+          {/* Все исторические события макро-периода по веткам */}
+          <div className="space-y-4">
+            <div className="text-xs font-mono uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Исторические события макро-периода по веткам ({eraEvents.length})</span>
             </div>
 
-            {filteredEvents.length === 0 ? (
-              <div className="p-6 rounded-xl bg-slate-950/70 border border-slate-800 text-center space-y-2">
-                <p className="text-xs text-slate-400">
-                  {summary.events.length === 0 && eraObj.endYear < minYear
-                    ? `События для этого периода ещё не подключены — текущая база данных начинается с ${minYear} года.`
-                    : 'По выбранному сочетанию ветки и типа исторических событий в этом периоде нет.'}
-                </p>
-                {hasLocalFilter && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedBranchId('ALL');
-                      setSelectedEventType('ALL');
-                    }}
-                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-mono text-amber-300 cursor-pointer"
-                  >
-                    Показать все события периода
-                  </button>
-                )}
-              </div>
-            ) : (
-              filteredEvents.map((ev) => {
-                const bObj = resolveEventBranch(ev, branches);
-                const startsBefore = summary.carryOverBeforeIds.has(ev.id);
-                const continuesAfter = summary.carryOverAfterIds.has(ev.id);
-                return (
-                  <button
-                    key={ev.id}
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenCardModal(ev.id);
-                    }}
-                    className="w-full text-left p-4 rounded-xl bg-slate-950/90 hover:bg-slate-950 border border-slate-800 hover:border-amber-500/40 cursor-pointer transition-colors"
-                  >
-                    <div className="font-bold text-white text-sm sm:text-base">
-                      <span className="font-mono mr-2 tabular-nums" style={{ color: bObj.color }}>
-                        {ev.period}
-                      </span>
-                      {ev.title}
-                    </div>
+            {leafBranches.map((branch) => {
+              const items = eraEvents.filter((e) => e.task === branch.id);
+              if (items.length === 0) return null;
 
-                    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-mono text-slate-400">
-                      <span className="font-semibold" style={{ color: bObj.color }}>
-                        {bObj.label}
-                      </span>
-                      <span aria-hidden="true" className="text-slate-700">
-                        ·
-                      </span>
-                      <span className="text-slate-200">{ev.type || 'Событие'}</span>
-                      {ev.ruler && (
-                        <>
-                          <span aria-hidden="true" className="text-slate-700">
-                            ·
-                          </span>
-                          <span>{ev.ruler}</span>
-                        </>
-                      )}
-                      {ev.region && (
-                        <>
-                          <span aria-hidden="true" className="text-slate-700">
-                            ·
-                          </span>
-                          <span className="text-slate-500">{ev.region}</span>
-                        </>
-                      )}
-                      {(startsBefore || continuesAfter) && (
-                        <>
-                          <span aria-hidden="true" className="text-slate-700">
-                            ·
-                          </span>
-                          <span className="text-sky-300">
-                            {startsBefore && continuesAfter
-                              ? 'охватывает соседние периоды'
-                              : startsBefore
-                                ? `продолжается с ${ev.startYear} г.`
-                                : `переходит до ${ev.endYear} г.`}
-                          </span>
-                        </>
-                      )}
-                    </div>
+              return (
+                <div
+                  key={branch.id}
+                  className="rounded-xl bg-slate-900/60 border border-slate-800 p-4 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="font-bold" style={{ color: branch.color }}>
+                      {branch.label}
+                    </span>
+                    <span className="text-slate-400">Событий: {items.length}</span>
+                  </div>
 
-                    <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">{ev.details}</p>
-                  </button>
-                );
-              })
-            )}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {items.map((ev) => (
+                      <button
+                        key={ev.id}
+                        type="button"
+                        onClick={() => onSelectEvent(ev.id)}
+                        className="w-full text-left p-2.5 rounded-lg bg-slate-950/75 hover:bg-slate-800/90 border border-slate-800/90 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className="font-mono text-xs font-bold tabular-nums"
+                            style={{ color: branch.color }}
+                          >
+                            {ev.period}
+                          </span>
+                          <span className="text-[11px] font-mono text-slate-500">
+                            {ev.explicitLinks.length > 0 ? `связей: ${ev.explicitLinks.length}` : ''}
+                          </span>
+                        </div>
+                        <div className="text-xs sm:text-sm font-bold text-white mt-0.5">
+                          {ev.title}
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5 line-clamp-2">{ev.subtitle}</p>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        <div className="px-6 py-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-4 shrink-0">
-          <button
-            type="button"
-            disabled={!prevEra}
-            onClick={() => prevEra && onSelectEraModal(prevEra.id)}
-            title={
-              prevEra
-                ? `Предыдущий период: ${prevEra.displayShortTitle} (${prevEra.period})`
-                : 'Это первый макро-период'
-            }
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-mono font-semibold text-slate-200 transition-colors disabled:opacity-40 disabled:pointer-events-none cursor-pointer min-w-0"
-          >
-            <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
-            <span className="whitespace-nowrap">Предыдущий период</span>
-            {prevEra && (
-              <span className="hidden sm:inline text-amber-300/90 truncate max-w-[160px]">
-                · {prevEra.displayShortTitle}
+        {/* Нижняя панель переключения между макро-периодами I–XI */}
+        <div className="px-5 py-3 bg-slate-900/95 border-t border-slate-800 flex items-center justify-between gap-2 text-xs font-mono">
+          {prevEra ? (
+            <button
+              type="button"
+              onClick={() => onSelectEra(prevEra.id)}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 inline-flex items-center gap-1.5 cursor-pointer max-w-[46%] truncate"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+              <span className="truncate">
+                {prevEra.displayShortTitle} ({prevEra.period})
               </span>
-            )}
-          </button>
+            </button>
+          ) : (
+            <span className="text-slate-600">Первый макро-период (862 г.)</span>
+          )}
 
-          <span className="text-xs text-slate-400 font-mono tabular-nums shrink-0">
-            {idx + 1} / {resolvedEras.length}
+          <span className="text-slate-500 hidden sm:inline tabular-nums">
+            Период {resolvedEra.index} из {resolvedEras.length}
           </span>
 
-          <button
-            type="button"
-            disabled={!nextEra}
-            onClick={() => nextEra && onSelectEraModal(nextEra.id)}
-            title={
-              nextEra
-                ? `Следующий период: ${nextEra.displayShortTitle} (${nextEra.period})`
-                : 'Это последний макро-период'
-            }
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-mono font-semibold text-slate-200 transition-colors disabled:opacity-40 disabled:pointer-events-none cursor-pointer min-w-0"
-          >
-            {nextEra && (
-              <span className="hidden sm:inline text-amber-300/90 truncate max-w-[160px]">
-                {nextEra.displayShortTitle} ·
+          {nextEra ? (
+            <button
+              type="button"
+              onClick={() => onSelectEra(nextEra.id)}
+              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 inline-flex items-center gap-1.5 cursor-pointer max-w-[46%] truncate"
+            >
+              <span className="truncate">
+                {nextEra.displayShortTitle} ({nextEra.period})
               </span>
-            )}
-            <span className="whitespace-nowrap">Следующий период</span>
-            <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-          </button>
+              <ArrowRight className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+            </button>
+          ) : (
+            <span className="text-slate-600">Последний макро-период</span>
+          )}
         </div>
       </div>
     </div>

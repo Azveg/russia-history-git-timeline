@@ -2,6 +2,7 @@
 
 @theme {
   --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  --font-serif: "Cormorant Garamond", Georgia, Cambria, "Times New Roman", serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
@@ -10,6 +11,7 @@
     background-color: #050811;
     color: #f1f5f9;
     font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
   }
 }
 

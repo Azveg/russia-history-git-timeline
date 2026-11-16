@@ -1,348 +1,440 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, Crown, Feather, History, X } from 'lucide-react';
-import { getRulerPeriodSummaryData, resolveEventBranch } from '../engine/timelineEngine';
-import { useOverlayScrollLock } from '../utils/scrollIsolation';
-import type { BranchDefinition, EnrichedEvent, RulerPeriod } from '../types/timeline';
+import {
+  ArrowLeft,
+  BookMarked,
+  BookOpen,
+  Crown,
+  Feather,
+  FlaskConical,
+  Sparkles,
+  Users,
+  X,
+} from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { getLeafBranches, getRulerPeriodSummaryData } from '../engine/timelineEngine';
+import type {
+  BranchDefinition,
+  EnrichedEvent,
+  ModalHistoryItem,
+  RulerPeriod,
+} from '../types/timeline';
 
 interface PeriodSummaryModalProps {
-  rulerId: string | null;
-  rulers: RulerPeriod[];
+  ruler: RulerPeriod | null;
   enrichedEvents: EnrichedEvent[];
   branches: BranchDefinition[];
+  modalHistory?: ModalHistoryItem[];
   onClose: () => void;
-  onSelectRuler: (rulerId: string) => void;
-  onOpenCard: (eventId: string) => void;
+  onNavigateBack?: () => void;
+  onSelectCard: (id: string) => void;
+  onFilterByRuler: (rulerId: string) => void;
 }
 
+type EraFiguresRoleFilter = 'all' | 'writers' | 'scientists';
+
 export function PeriodSummaryModal({
-  rulerId,
-  rulers,
+  ruler,
   enrichedEvents,
   branches,
+  modalHistory = [],
   onClose,
-  onSelectRuler,
-  onOpenCard,
+  onNavigateBack,
+  onSelectCard,
+  onFilterByRuler,
 }: PeriodSummaryModalProps) {
-  const bodyRef = useRef<HTMLDivElement | null>(null);
-  const idx = rulerId ? rulers.findIndex((r) => r.id === rulerId) : -1;
-  const rulerObj = idx !== -1 ? rulers[idx] : undefined;
-  const isModalOpen = Boolean(rulerId && rulerObj);
-
-  useOverlayScrollLock(isModalOpen, [bodyRef]);
+  const [roleFilter, setRoleFilter] = useState<EraFiguresRoleFilter>('all');
 
   useEffect(() => {
-    if (bodyRef.current) {
-      bodyRef.current.scrollTop = 0;
-    }
-  }, [rulerId]);
+    if (!ruler) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [ruler, onClose]);
 
   const summary = useMemo(() => {
-    if (!rulerObj) return null;
-    return getRulerPeriodSummaryData(rulerObj, enrichedEvents, branches);
-  }, [rulerObj, enrichedEvents, branches]);
+    if (!ruler) return null;
+    return getRulerPeriodSummaryData(ruler, enrichedEvents);
+  }, [ruler, enrichedEvents]);
 
-  if (!isModalOpen || !rulerObj || !summary) return null;
-
-  const prevRuler = idx > 0 ? rulers[idx - 1] : null;
-  const nextRuler = idx < rulers.length - 1 ? rulers[idx + 1] : null;
+  if (!ruler || !summary) return null;
 
   const {
-    historicalEvents,
+    reignEvents,
     contemporaryWriters,
+    contemporaryScientists,
     worksWrittenInPeriod,
+    discoveriesInPeriod,
     worksAboutPeriod,
+    startedInReign,
+    inheritedEvents,
+    carryOverEvents,
   } = summary;
+
+  const leafBranches = getLeafBranches(branches).filter((b) => !b.isTimeAxis);
+  const lastHistoryItem = modalHistory.length > 0 ? modalHistory[modalHistory.length - 1] : null;
+
+  const totalFiguresCount = contemporaryWriters.length + contemporaryScientists.length;
+  const displayedFigures = [
+    ...(roleFilter === 'all' || roleFilter === 'writers'
+      ? contemporaryWriters.map((w) => ({ item: w, role: 'writer' as const }))
+      : []),
+    ...(roleFilter === 'all' || roleFilter === 'scientists'
+      ? contemporaryScientists.map((s) => ({ item: s, role: 'scientist' as const }))
+      : []),
+  ].sort((a, b) => a.item.startYear - b.item.startYear);
 
   return (
     <div
-      onClick={onClose}
-      className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="period-modal-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
     >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-3xl w-full overflow-hidden shadow-2xl max-h-[90vh] flex flex-col animate-modal"
-      >
-        <div className="p-6 bg-gradient-to-b from-slate-800/80 to-slate-900 border-b border-slate-800 relative shrink-0">
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть окно"
-            className="absolute right-4 top-4 w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
-
-          <div className="inline-flex flex-wrap items-center gap-2 mb-2 text-xs font-mono">
-            <span className="px-2.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black tabular-nums">
-              {rulerObj.reignPeriod}
-            </span>
-            <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
-              <Crown className="w-3.5 h-3.5" />
-              {rulerObj.ruler}
-            </span>
-            {rulerObj.center && (
-              <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-200 font-semibold">
-                {rulerObj.center}
+      <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl bg-[#0b1325] border border-amber-500/40 shadow-2xl flex flex-col overflow-hidden">
+        {/* Верхняя панель с кнопкой «Назад» и данными правителя */}
+        <div className="px-5 py-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs font-mono text-amber-400 flex-wrap min-w-0">
+            {lastHistoryItem && onNavigateBack && (
+              <button
+                type="button"
+                onClick={onNavigateBack}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-semibold transition-colors cursor-pointer"
+                title={`Вернуться назад: ${lastHistoryItem.label}`}
+              >
+                <ArrowLeft className="w-3.5 h-3.5" />
+                <span className="truncate max-w-[200px]">Назад: {lastHistoryItem.label}</span>
+              </button>
+            )}
+            <Crown className="w-4 h-4 shrink-0" />
+            <span className="font-bold">Досье правления · {ruler.reignPeriod}</span>
+            {ruler.center && (
+              <span className="px-2 py-0.5 rounded bg-slate-950 border border-amber-500/35 text-[11px] text-amber-200">
+                Центр: {ruler.center}
               </span>
             )}
           </div>
 
-          <h2 className="text-xl sm:text-2xl font-extrabold text-white [text-wrap:balance]">
-            {rulerObj.reignTitle}
-          </h2>
-          <p className="text-sm text-slate-300 mt-1.5">{rulerObj.reignThesis}</p>
-
-          <div className="mt-3 pt-3 border-t border-slate-800/80 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-slate-400 tabular-nums">
-            <span>
-              Событий: <strong className="text-slate-100">{historicalEvents.length}</strong>
-            </span>
-            <span aria-hidden="true" className="text-slate-700">
-              ·
-            </span>
-            <span>
-              Писателей эпохи:{' '}
-              <strong className="text-fuchsia-300">{contemporaryWriters.length}</strong>
-            </span>
-            <span aria-hidden="true" className="text-slate-700">
-              ·
-            </span>
-            <span>
-              Книг времени правления:{' '}
-              <strong className="text-purple-300">{worksWrittenInPeriod.length}</strong>
-            </span>
-            <span aria-hidden="true" className="text-slate-700">
-              ·
-            </span>
-            <span>
-              Книг о правлении:{' '}
-              <strong className="text-amber-300">{worksAboutPeriod.length}</strong>
-            </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                onFilterByRuler(ruler.id);
+                onClose();
+              }}
+              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer"
+            >
+              Сфокусировать таймлайн
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Закрыть досье правления"
+              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
 
-        <div ref={bodyRef} className="p-6 flex-1 overflow-y-auto overscroll-contain space-y-6">
-          {contemporaryWriters.length > 0 && (
-            <div>
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-fuchsia-300 mb-2.5">
-                <Feather className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  Лица эпохи · Писатели и поэты времени правления ({contemporaryWriters.length}):
-                </span>
+        {/* Тело модального окна */}
+        <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
+          <div>
+            <h3
+              id="period-modal-title"
+              className="font-serif text-2xl sm:text-3xl font-bold text-white leading-tight tracking-tight"
+            >
+              {ruler.reignTitle} ({ruler.reignPeriod})
+            </h3>
+            <p className="text-sm sm:text-base text-slate-200 mt-1.5 leading-relaxed">
+              {ruler.reignThesis}
+            </p>
+          </div>
+
+          {/* 3 сводных индикатора правления */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs font-mono">
+            <div className="rounded-xl bg-slate-900 border border-slate-800 p-3">
+              <div className="text-slate-400">Новых событий в правление</div>
+              <div className="text-lg font-extrabold text-amber-400 mt-0.5 tabular-nums">
+                {startedInReign.length}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {contemporaryWriters.map((writer) => (
+              <div className="text-[11px] text-slate-500 tabular-nums">
+                всего процессов в период: {reignEvents.length}
+              </div>
+            </div>
+            <div className="rounded-xl bg-slate-900 border border-slate-800 p-3">
+              <div className="text-slate-400">Лица эпохи и культура</div>
+              <div className="text-lg font-extrabold text-sky-400 mt-0.5 tabular-nums">
+                {totalFiguresCount} лиц · {worksWrittenInPeriod.length + discoveriesInPeriod.length} пам.
+              </div>
+              <div className="text-[11px] text-slate-500 tabular-nums">
+                книг: {worksWrittenInPeriod.length} · открытий: {discoveriesInPeriod.length}
+              </div>
+            </div>
+            <div className="rounded-xl bg-slate-900 border border-slate-800 p-3">
+              <div className="text-slate-400">Сквозные процессы</div>
+              <div className="text-lg font-extrabold text-emerald-400 mt-0.5 tabular-nums">
+                {inheritedEvents.length} вх. / {carryOverEvents.length} исх.
+              </div>
+              <div className="text-[11px] text-slate-500">перешли через рубежи правления</div>
+            </div>
+          </div>
+
+          {/* Блок «Лица эпохи» (Писатели и мыслители / Учёные и изобретатели) */}
+          {totalFiguresCount > 0 && (
+            <div className="rounded-xl bg-amber-950/15 border border-amber-500/35 p-4 space-y-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-mono uppercase tracking-wider text-amber-300 flex items-center gap-2 font-bold">
+                  <Users className="w-4 h-4 text-amber-400" />
+                  <span>Лица эпохи при {ruler.shortRuler} ({totalFiguresCount})</span>
+                </div>
+
+                <div className="inline-flex items-center rounded-lg bg-slate-950/90 border border-slate-800 p-0.5 text-[11px] font-mono">
                   <button
-                    key={writer.id}
                     type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenCard(writer.id);
-                    }}
-                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-fuchsia-500/25 hover:border-fuchsia-400/60 transition-colors cursor-pointer group"
+                    onClick={() => setRoleFilter('all')}
+                    className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                      roleFilter === 'all'
+                        ? 'bg-amber-500 text-slate-950 font-bold'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-bold text-white group-hover:text-fuchsia-200 truncate">
-                        {writer.title}
+                    Все ({totalFiguresCount})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRoleFilter('writers')}
+                    className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1 ${
+                      roleFilter === 'writers'
+                        ? 'bg-amber-500 text-slate-950 font-bold'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <Feather className="w-3 h-3" />
+                    <span>Писатели ({contemporaryWriters.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRoleFilter('scientists')}
+                    className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1 ${
+                      roleFilter === 'scientists'
+                        ? 'bg-sky-400 text-slate-950 font-bold'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    <FlaskConical className="w-3 h-3" />
+                    <span>Учёные ({contemporaryScientists.length})</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {displayedFigures.map(({ item: fig, role }) => (
+                  <button
+                    key={fig.id}
+                    type="button"
+                    onClick={() => onSelectCard(fig.id)}
+                    className={`text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-900 border transition-all cursor-pointer space-y-1 ${
+                      role === 'scientist'
+                        ? 'border-sky-500/30 hover:border-sky-400/60'
+                        : 'border-amber-500/25 hover:border-amber-400/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                      <span
+                        className={`font-bold tabular-nums inline-flex items-center gap-1 ${
+                          role === 'scientist' ? 'text-sky-300' : 'text-amber-300'
+                        }`}
+                      >
+                        {role === 'scientist' ? (
+                          <FlaskConical className="w-3 h-3" />
+                        ) : (
+                          <Feather className="w-3 h-3" />
+                        )}
+                        {fig.period}
                       </span>
-                      <span className="text-[11px] font-mono text-fuchsia-300 tabular-nums shrink-0">
-                        {writer.period}
+                      <span className="px-1.5 py-0.5 rounded bg-slate-900 text-[10px] text-slate-300">
+                        {role === 'scientist' ? 'Наука' : 'Литература'}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                      {writer.subtitle}
-                    </div>
+                    <div className="font-serif text-base font-bold text-white">{fig.title}</div>
+                    <p className="text-xs text-slate-400 line-clamp-2">{fig.subtitle}</p>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {worksWrittenInPeriod.length > 0 && (
-            <div className={contemporaryWriters.length > 0 ? 'pt-4 border-t border-slate-800/80' : ''}>
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-purple-300 mb-2.5">
-                <BookOpen className="w-3.5 h-3.5 shrink-0" />
+          {/* Научные открытия и институты в годы правления */}
+          {discoveriesInPeriod.length > 0 && (
+            <div className="rounded-xl bg-sky-950/15 border border-sky-500/35 p-4 space-y-3">
+              <div className="text-xs font-mono uppercase tracking-wider text-sky-300 flex items-center gap-2 font-bold">
+                <FlaskConical className="w-4 h-4 text-sky-400" />
                 <span>
-                  Книги и произведения, написанные в период правления ({worksWrittenInPeriod.length}):
+                  Научные открытия и институты в годы правления ({discoveriesInPeriod.length})
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {discoveriesInPeriod.map((disc) => (
+                  <button
+                    key={disc.id}
+                    type="button"
+                    onClick={() => onSelectCard(disc.id)}
+                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-sky-500/25 hover:border-sky-400/60 transition-all cursor-pointer space-y-1"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                      <span className="font-bold text-sky-300 tabular-nums">{disc.period}</span>
+                      {disc.explicitLinks.length > 0 && (
+                        <span className="text-emerald-300">
+                          связей: {disc.explicitLinks.length}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm font-bold text-white">{disc.title}</div>
+                    <p className="text-xs text-slate-400 line-clamp-2">{disc.subtitle}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Книги и памятники литературы, созданные в годы правления */}
+          {worksWrittenInPeriod.length > 0 && (
+            <div className="rounded-xl bg-orange-950/15 border border-orange-500/35 p-4 space-y-3">
+              <div className="text-xs font-mono uppercase tracking-wider text-orange-300 flex items-center gap-2 font-bold">
+                <BookOpen className="w-4 h-4 text-orange-400" />
+                <span>
+                  Книги и произведения, созданные в годы правления ({worksWrittenInPeriod.length})
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {worksWrittenInPeriod.map((work) => (
                   <button
                     key={work.id}
                     type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenCard(work.id);
-                    }}
-                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-purple-500/25 hover:border-purple-400/60 transition-colors cursor-pointer group"
+                    onClick={() => onSelectCard(work.id)}
+                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-orange-500/25 hover:border-orange-400/60 transition-all cursor-pointer space-y-1"
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-mono text-purple-300 font-semibold tabular-nums">
-                        {work.period}
-                      </span>
-                      <span className="text-[10px] font-mono text-slate-400 truncate max-w-[150px]">
-                        {work.type}
-                      </span>
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                      <span className="font-bold text-orange-300 tabular-nums">{work.period}</span>
+                      {work.explicitLinks.length > 0 && (
+                        <span className="text-emerald-300">
+                          связей: {work.explicitLinks.length}
+                        </span>
+                      )}
                     </div>
-                    <div className="text-xs font-bold text-white group-hover:text-purple-200 mt-1">
-                      {work.title}
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                      {work.subtitle}
-                    </div>
+                    <div className="text-sm font-bold text-white">{work.title}</div>
+                    <p className="text-xs text-slate-400 line-clamp-2">{work.subtitle}</p>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
+          {/* Произведения об этом правителе и эпохе, написанные позднее */}
           {worksAboutPeriod.length > 0 && (
-            <div
-              className={
-                contemporaryWriters.length > 0 || worksWrittenInPeriod.length > 0
-                  ? 'pt-4 border-t border-slate-800/80'
-                  : ''
-              }
-            >
-              <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-300 mb-2.5">
-                <History className="w-3.5 h-3.5 shrink-0" />
+            <div className="rounded-xl bg-purple-950/20 border border-purple-500/35 p-4 space-y-3">
+              <div className="text-xs font-mono uppercase tracking-wider text-purple-300 flex items-center gap-2 font-bold">
+                <BookMarked className="w-4 h-4 text-purple-400" />
                 <span>
-                  Книги и произведения об эпохе правления ({worksAboutPeriod.length}):
+                  Произведения об этом правителе и его времени ({worksAboutPeriod.length})
                 </span>
               </div>
-              <div className="space-y-2">
-                {worksAboutPeriod.map(({ work, relationLabel, yearGap }) => (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {worksAboutPeriod.map((work) => (
                   <button
                     key={work.id}
                     type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenCard(work.id);
-                    }}
-                    className="w-full text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-950 border border-amber-500/25 hover:border-amber-400/60 transition-colors cursor-pointer group"
+                    onClick={() => onSelectCard(work.id)}
+                    className="text-left p-3 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-purple-500/25 hover:border-purple-400/60 transition-all cursor-pointer space-y-1"
                   >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="text-xs font-bold text-white group-hover:text-amber-200">
-                        <span className="font-mono text-amber-300 mr-2 tabular-nums">
-                          {work.period}
-                        </span>
-                        {work.title}
-                      </div>
-                      <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/35 text-[10px] font-mono text-amber-200 tabular-nums shrink-0">
-                        {yearGap > 0 ? `+${yearGap} л. спустя` : 'современник правления'}
+                    <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                      <span className="font-bold text-purple-300 tabular-nums">
+                        Издано: {work.period}
                       </span>
+                      <span className="text-amber-300">О правлении / событиях</span>
                     </div>
-                    <div className="text-[11px] font-mono text-amber-200/85 mt-1">
-                      {relationLabel}
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-1 line-clamp-2">
-                      {work.subtitle}
-                    </div>
+                    <div className="text-sm font-bold text-white">{work.title}</div>
+                    <p className="text-xs text-slate-400 line-clamp-2">{work.subtitle}</p>
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          <div
-            className={
-              contemporaryWriters.length > 0 ||
-              worksWrittenInPeriod.length > 0 ||
-              worksAboutPeriod.length > 0
-                ? 'pt-4 border-t border-slate-800/80 space-y-3'
-                : 'space-y-3'
-            }
-          >
-            <div className="text-xs font-mono font-bold text-slate-400 mb-2">
-              Исторические события периода правления ({historicalEvents.length}):
+          {/* Исторические события правления по веткам */}
+          <div className="space-y-4">
+            <div className="text-xs font-mono uppercase tracking-wider text-slate-300 flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Исторические события в годы правления ({reignEvents.length})</span>
             </div>
 
-            {historicalEvents.length === 0 ? (
-              <div className="p-6 rounded-xl bg-slate-950/70 border border-slate-800 text-center text-xs text-slate-400">
-                Исторических событий, пересекающихся с этим правлением, не найдено.
-              </div>
-            ) : (
-              historicalEvents.map((ev) => {
-                const bObj = resolveEventBranch(ev, branches);
-                return (
-                  <button
-                    key={ev.id}
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenCard(ev.id);
-                    }}
-                    className="w-full text-left p-4 rounded-xl bg-slate-950/90 hover:bg-slate-950 border border-slate-800 hover:border-amber-500/40 cursor-pointer transition-colors"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-bold text-white text-sm sm:text-base">
-                        <span className="font-mono mr-2 tabular-nums" style={{ color: bObj?.color }}>
-                          {ev.period}
-                        </span>
-                        {ev.title}
-                      </div>
-                      <span className="text-[11px] font-mono text-slate-400">{bObj?.gitName}</span>
-                    </div>
-                    {ev.overlappingRulers.length > 1 && (
-                      <div className="text-[11px] font-mono text-amber-300 mt-1">
-                        Охватывает несколько правлений: {ev.ruler}
-                      </div>
-                    )}
-                    <p className="text-xs text-slate-300 mt-1.5 leading-relaxed">{ev.details}</p>
-                  </button>
-                );
-              })
-            )}
+            {leafBranches.map((branch) => {
+              const items = reignEvents.filter((e) => e.task === branch.id);
+              if (items.length === 0) return null;
+
+              return (
+                <div
+                  key={branch.id}
+                  className="rounded-xl bg-slate-900/60 border border-slate-800 p-4 space-y-2.5"
+                >
+                  <div className="flex items-center justify-between text-xs font-mono">
+                    <span className="font-bold" style={{ color: branch.color }}>
+                      {branch.label}
+                    </span>
+                    <span className="text-slate-400">Событий: {items.length}</span>
+                  </div>
+
+                  <div className="space-y-2">
+                    {items.map((ev) => {
+                      const isInherited = ev.startYear < ruler.startYear;
+                      const isCarryOver = ev.endYear > ruler.endYear;
+                      return (
+                        <button
+                          key={ev.id}
+                          type="button"
+                          onClick={() => onSelectCard(ev.id)}
+                          className="w-full text-left p-2.5 rounded-lg bg-slate-950/75 hover:bg-slate-800/90 border border-slate-800/90 transition-colors cursor-pointer"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span
+                              className="font-mono text-xs font-bold tabular-nums"
+                              style={{ color: branch.color }}
+                            >
+                              {ev.period}
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 text-[11px] font-mono">
+                              {isInherited && (
+                                <span className="px-1.5 py-0.5 rounded bg-sky-500/15 text-sky-300">
+                                  началось до {ruler.startYear}
+                                </span>
+                              )}
+                              {isCarryOver && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">
+                                  продолжилось после {ruler.endYear}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-xs sm:text-sm font-bold text-white mt-0.5">
+                            {ev.title}
+                          </div>
+                          <p className="text-xs text-slate-400 mt-0.5">{ev.subtitle}</p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </div>
-
-        <div className="px-6 py-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between gap-4 shrink-0">
-          <button
-            type="button"
-            disabled={!prevRuler}
-            onClick={() => prevRuler && onSelectRuler(prevRuler.id)}
-            title={
-              prevRuler
-                ? `Перейти к предыдущему правителю: ${prevRuler.ruler} (${prevRuler.reignPeriod})`
-                : 'Это первый правитель в списке'
-            }
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-mono font-semibold text-slate-200 transition-colors disabled:opacity-40 disabled:pointer-events-none cursor-pointer min-w-0"
-          >
-            <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
-            <span className="whitespace-nowrap">Предыдущий правитель</span>
-            {prevRuler && (
-              <span className="hidden sm:inline text-amber-300/90 truncate max-w-[140px]">
-                · {prevRuler.shortRuler}
-              </span>
-            )}
-          </button>
-
-          <span className="text-xs text-slate-400 font-mono tabular-nums shrink-0">
-            {idx + 1} / {rulers.length}
-          </span>
-
-          <button
-            type="button"
-            disabled={!nextRuler}
-            onClick={() => nextRuler && onSelectRuler(nextRuler.id)}
-            title={
-              nextRuler
-                ? `Перейти к следующему правителю: ${nextRuler.ruler} (${nextRuler.reignPeriod})`
-                : 'Это последний правитель в списке'
-            }
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-mono font-semibold text-slate-200 transition-colors disabled:opacity-40 disabled:pointer-events-none cursor-pointer min-w-0"
-          >
-            {nextRuler && (
-              <span className="hidden sm:inline text-amber-300/90 truncate max-w-[140px]">
-                {nextRuler.shortRuler} ·
-              </span>
-            )}
-            <span className="whitespace-nowrap">Следующий правитель</span>
-            <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-          </button>
         </div>
       </div>
     </div>
   );
 }
-

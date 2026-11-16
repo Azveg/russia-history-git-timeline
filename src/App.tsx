@@ -11,7 +11,6 @@ import { TopControlBar } from './components/TopControlBar';
 import {
   buildUnifiedTimelineStream,
   computeBranchPresetMap,
-  computeDynamicWindowHotspots,
   computeTimelineYearBounds,
   doesIntervalBelongToEra,
   extractBranchesFromStore,
@@ -32,6 +31,7 @@ import type {
   BranchPresetId,
   CardDensity,
   FocusScope,
+  ModalHistoryItem,
   SyncManifest,
   TimelineDataFile,
   YearRangeStep,
@@ -60,13 +60,14 @@ export default function App() {
   const [highlightedJumpId, setHighlightedJumpId] = useState<string | null>(null);
 
   const [showEndNodes, setShowEndNodes] = useState(true);
-  const [showOverlapMatrix, setShowOverlapMatrix] = useState(true);
+  const [showOverlapMatrix] = useState(true);
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(false);
   const [isLegendCollapsed, setIsLegendCollapsed] = useState(false);
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
   const [activeEraModalId, setActiveEraModalId] = useState<string | null>(null);
+  const [modalHistory, setModalHistory] = useState<ModalHistoryItem[]>([]);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -105,13 +106,18 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [highlightedJumpId]);
 
+  const handleCloseAllModals = useCallback(() => {
+    setActiveCardId(null);
+    setActivePeriodId(null);
+    setActiveEraModalId(null);
+    setModalHistory([]);
+  }, []);
+
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         if (activeCardId || activePeriodId || activeEraModalId) {
-          setActiveCardId(null);
-          setActivePeriodId(null);
-          setActiveEraModalId(null);
+          handleCloseAllModals();
         } else if (focusedEventId) {
           setFocusedEventId(null);
         }
@@ -119,24 +125,28 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeCardId, activePeriodId, activeEraModalId, focusedEventId]);
+  }, [activeCardId, activePeriodId, activeEraModalId, focusedEventId, handleCloseAllModals]);
 
   const branches = useMemo(() => {
     if (!manifest) return [];
     return extractBranchesFromStore(manifest, filesMap);
   }, [manifest, filesMap]);
 
-  // Динамическая инициализация состояния веток (включая автообнаруженные JSON-модули)
+  // Динамическая инициализация состояния веток: дефолтный стартовый пресет «Обзор истории» ('overview')
   useEffect(() => {
     if (branches.length === 0) return;
 
     setActiveBranches((prev) => {
+      if (Object.keys(prev).length === 0) {
+        return computeBranchPresetMap(branches, 'overview');
+      }
       let changed = false;
       const next = { ...prev };
+      const overviewMap = computeBranchPresetMap(branches, 'overview');
       branches.forEach((b) => {
         if (b.isGroup) return;
         if (next[b.id] === undefined) {
-          next[b.id] = b.id === 'MAIN_RULERS';
+          next[b.id] = overviewMap[b.id] ?? false;
           changed = true;
         }
       });
@@ -266,17 +276,6 @@ export default function App() {
     return extras.length > 0 ? [...visibleLanes, ...extras] : visibleLanes;
   }, [focusedEvent, visibleLanes, matchingEvents, branches, collapsedParents]);
 
-  const syncLinkedCount = useMemo(
-    () =>
-      enrichedEvents.filter(
-        (ev) =>
-          ev.explicitLinks.length > 0 &&
-          isEventBranchActive(ev, activeBranches) &&
-          intersectsTimeWindow(ev.startYear, ev.endYear, yearFrom, yearTo),
-      ).length,
-    [enrichedEvents, activeBranches, yearFrom, yearTo],
-  );
-
   const branchControls = useMemo(() => {
     const byBranchCount: Record<string, number> = {};
     enrichedEvents.forEach((ev) => {
@@ -304,28 +303,105 @@ export default function App() {
     [manifest],
   );
 
-  const eraCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    resolvedMacroEras.forEach((era) => {
-      counts[era.id] = enrichedEvents.filter(
-        (ev) =>
-          isEventBranchActive(ev, activeBranches) &&
-          doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, era),
-      ).length;
-    });
-    return counts;
-  }, [resolvedMacroEras, enrichedEvents, activeBranches]);
-
-  const dynamicWindowHotspots = useMemo(
-    () =>
-      computeDynamicWindowHotspots(
-        enrichedEvents,
-        activeBranches,
-        timelineBounds.minYear,
-        timelineBounds.maxYear,
-      ),
-    [enrichedEvents, activeBranches, timelineBounds.minYear, timelineBounds.maxYear],
+  // Текущие объекты модальных окон
+  const activeCardObj = useMemo(
+    () => (activeCardId ? enrichedEvents.find((e) => e.id === activeCardId) ?? null : null),
+    [activeCardId, enrichedEvents],
   );
+
+  const activeRulerObj = useMemo(
+    () => (activePeriodId ? rulers.find((r) => r.id === activePeriodId) ?? null : null),
+    [activePeriodId, rulers],
+  );
+
+  const activeEraObj = useMemo(
+    () => (activeEraModalId ? manifest?.macroEras.find((e) => e.id === activeEraModalId) ?? null : null),
+    [activeEraModalId, manifest],
+  );
+
+  // Стек навигации между модальными окнами («← Назад»)
+  const pushCurrentModalToHistory = useCallback(() => {
+    if (activeCardObj) {
+      setModalHistory((prev) => [
+        ...prev.slice(-9),
+        { type: 'card', id: activeCardObj.id, label: `${activeCardObj.period} ${activeCardObj.title}` },
+      ]);
+    } else if (activeRulerObj) {
+      setModalHistory((prev) => [
+        ...prev.slice(-9),
+        { type: 'ruler', id: activeRulerObj.id, label: `${activeRulerObj.shortRuler} (${activeRulerObj.reignPeriod})` },
+      ]);
+    } else if (activeEraObj) {
+      setModalHistory((prev) => [
+        ...prev.slice(-9),
+        { type: 'era', id: activeEraObj.id, label: activeEraObj.shortTitle || activeEraObj.title },
+      ]);
+    }
+  }, [activeCardObj, activeRulerObj, activeEraObj]);
+
+  const handleOpenCardModal = useCallback(
+    (cardId: string) => {
+      if (cardId === activeCardId) return;
+      if (activeCardId || activePeriodId || activeEraModalId) {
+        pushCurrentModalToHistory();
+      } else {
+        setModalHistory([]);
+      }
+      setActivePeriodId(null);
+      setActiveEraModalId(null);
+      setActiveCardId(cardId);
+    },
+    [activeCardId, activePeriodId, activeEraModalId, pushCurrentModalToHistory],
+  );
+
+  const handleOpenPeriodModal = useCallback(
+    (rulerId: string) => {
+      if (rulerId === activePeriodId) return;
+      if (activeCardId || activePeriodId || activeEraModalId) {
+        pushCurrentModalToHistory();
+      } else {
+        setModalHistory([]);
+      }
+      setActiveCardId(null);
+      setActiveEraModalId(null);
+      setActivePeriodId(rulerId);
+    },
+    [activeCardId, activePeriodId, activeEraModalId, pushCurrentModalToHistory],
+  );
+
+  const handleOpenEraModal = useCallback(
+    (eraId: string) => {
+      if (eraId === activeEraModalId) return;
+      if (activeCardId || activePeriodId || activeEraModalId) {
+        pushCurrentModalToHistory();
+      } else {
+        setModalHistory([]);
+      }
+      setActiveCardId(null);
+      setActivePeriodId(null);
+      setActiveEraModalId(eraId);
+    },
+    [activeCardId, activePeriodId, activeEraModalId, pushCurrentModalToHistory],
+  );
+
+  const handleModalNavigateBack = useCallback(() => {
+    if (modalHistory.length === 0) return;
+    const last = modalHistory[modalHistory.length - 1];
+    setModalHistory((prev) => prev.slice(0, -1));
+    if (last.type === 'card') {
+      setActivePeriodId(null);
+      setActiveEraModalId(null);
+      setActiveCardId(last.id);
+    } else if (last.type === 'ruler') {
+      setActiveCardId(null);
+      setActiveEraModalId(null);
+      setActivePeriodId(last.id);
+    } else if (last.type === 'era') {
+      setActiveCardId(null);
+      setActivePeriodId(null);
+      setActiveEraModalId(last.id);
+    }
+  }, [modalHistory]);
 
   function handleRecordZoomStep(fromVal: number, toVal: number) {
     setZoomHistory((prev) => {
@@ -351,26 +427,6 @@ export default function App() {
     setYearTo(y2);
   }
 
-  function handleZoomStepUp() {
-    if (zoomHistory.length === 0) return;
-    const prevRange = zoomHistory[zoomHistory.length - 1];
-    setZoomHistory((prev) => prev.slice(0, -1));
-    setYearFrom(prevRange.from);
-    setYearTo(prevRange.to);
-  }
-
-  function handleResetYearWindow() {
-    setZoomHistory([]);
-    setYearFrom(timelineBounds.minYear);
-    setYearTo(timelineBounds.maxYear);
-  }
-
-  function handleQuickWindowSelect(fromVal: number, toVal: number) {
-    if (selectedEra !== 'ALL') setSelectedEra('ALL');
-    if (selectedReign !== 'ALL') setSelectedReign('ALL');
-    handleYearRangeChange(fromVal, toVal, true);
-  }
-
   function handleSelectEra(eraId: string) {
     if (eraId === 'ALL') {
       setSelectedEra('ALL');
@@ -385,7 +441,7 @@ export default function App() {
         rulers.some((r) => doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, targetEra)));
 
     if (targetEra && targetEra.endYear < timelineBounds.minYear && !hasEraItems) {
-      setActiveEraModalId(targetEra.id);
+      handleOpenEraModal(targetEra.id);
       return;
     }
     setSelectedEra(eraId);
@@ -401,16 +457,17 @@ export default function App() {
   }
 
   function handleSelectReign(rulerId: string) {
-    setSelectedReign(rulerId);
-    if (rulerId !== 'ALL') {
-      const r = rulers.find((item) => item.id === rulerId);
+    const normalized = !rulerId || rulerId === 'ALL' ? 'ALL' : rulerId;
+    setSelectedReign(normalized);
+    if (normalized !== 'ALL') {
+      const r = rulers.find((item) => item.id === normalized);
       if (r) handleYearRangeChange(r.startYear, r.endYear);
     } else {
       handleYearRangeChange(timelineBounds.minYear, timelineBounds.maxYear);
     }
   }
 
-  function handleResetAll() {
+  function handleResetFiltersOnly() {
     setSelectedEra('ALL');
     setSelectedReign('ALL');
     setSearchQuery('');
@@ -419,12 +476,13 @@ export default function App() {
     setZoomHistory([]);
     setYearFrom(timelineBounds.minYear);
     setYearTo(timelineBounds.maxYear);
-    const nextActive: Record<string, boolean> = {};
+  }
+
+  function handleResetAll() {
+    handleResetFiltersOnly();
+    const nextActive = computeBranchPresetMap(branches, 'overview');
     const nextCollapsed: Record<string, boolean> = {};
     branches.forEach((b) => {
-      if (!b.isGroup) {
-        nextActive[b.id] = b.id === 'MAIN_RULERS';
-      }
       if (b.defaultCollapsedOnTimeline) {
         nextCollapsed[b.id] = true;
       }
@@ -483,7 +541,7 @@ export default function App() {
     if (adjustments.length > 0) {
       showToast(`Переход к «${target.title}» (${adjustments.join(', ')}).`);
     } else {
-      showToast(`Переход к связанному событию: «${target.title}».`);
+      showToast(`Переход к событию: «${target.title}».`);
     }
 
     window.setTimeout(() => {
@@ -563,7 +621,6 @@ export default function App() {
     });
     setActiveBranches(next);
 
-    // Если изолируется дочерняя ветка внутри свернутой родительской линии, раскрываем её предков на графе
     if (target?.parentBranchId) {
       setCollapsedParents((prev) => {
         const updated = { ...prev };
@@ -625,14 +682,6 @@ export default function App() {
   }
 
   const hideSidebar = isLegendCollapsed;
-  const hasActiveFilters =
-    selectedEra !== 'ALL' ||
-    selectedReign !== 'ALL' ||
-    searchQuery.trim() !== '' ||
-    onlyWithSyncLinks ||
-    focusedEventId !== null ||
-    yearFrom !== timelineBounds.minYear ||
-    yearTo !== timelineBounds.maxYear;
 
   return (
     <div className="min-h-screen bg-[#050811] text-slate-100">
@@ -676,64 +725,58 @@ export default function App() {
         onToggleShowEndNodes={() => setShowEndNodes((prev) => !prev)}
       />
 
-      {!isFiltersCollapsed && (
-        <FilterPanel
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-3 space-y-3">
+        {!isFiltersCollapsed && (
+          <FilterPanel
+            yearFrom={effectiveYearFrom}
+            yearTo={effectiveYearTo}
+            minYear={timelineBounds.minYear}
+            maxYear={timelineBounds.maxYear}
+            selectedRulerId={selectedReign === 'ALL' ? '' : selectedReign}
+            searchQuery={searchQuery}
+            onlySynced={onlyWithSyncLinks}
+            rulers={rulers}
+            eras={manifest.macroEras}
+            onChangeYearFrom={(y) => handleYearRangeChange(y, effectiveYearTo)}
+            onChangeYearTo={(y) => handleYearRangeChange(effectiveYearFrom, y)}
+            onSelectYearRange={(fromVal, toVal) => {
+              setSelectedEra('ALL');
+              setSelectedReign('ALL');
+              handleYearRangeChange(fromVal, toVal);
+            }}
+            onChangeRuler={handleSelectReign}
+            onChangeSearch={setSearchQuery}
+            onToggleOnlySynced={() => setOnlyWithSyncLinks((prev) => !prev)}
+            onOpenEraModal={handleOpenEraModal}
+            onResetFilters={handleResetFiltersOnly}
+          />
+        )}
+
+        <OverlapMapSection
+          matchingEvents={matchingEvents}
+          rulers={rulers}
+          branches={branches}
+          activeBranches={activeBranches}
           yearFrom={effectiveYearFrom}
           yearTo={effectiveYearTo}
           minYear={timelineBounds.minYear}
           maxYear={timelineBounds.maxYear}
-          onYearRangeChange={handleYearRangeChange}
-          onRecordZoomStep={handleRecordZoomStep}
-          onQuickWindowSelect={handleQuickWindowSelect}
-          hotspots={dynamicWindowHotspots}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          selectedEra={selectedEra}
-          onSelectEra={handleSelectEra}
-          onOpenEraModal={setActiveEraModalId}
-          selectedReign={selectedReign}
-          onSelectReign={handleSelectReign}
-          onResetAll={handleResetAll}
-          hasActiveFilters={hasActiveFilters}
-          macroEras={manifest.macroEras}
-          eraCounts={eraCounts}
-          rulers={rulers}
-          matchingRulersCount={matchingRulers.length}
-          matchingEventsCount={matchingEvents.length}
-          onlyWithSyncLinks={onlyWithSyncLinks}
-          onToggleOnlyWithSyncLinks={() => setOnlyWithSyncLinks((prev) => !prev)}
-          syncLinkedCount={syncLinkedCount}
+          hoveredEventId={hoveredEventId}
+          onHoverEvent={setHoveredEventId}
+          onOpenCardModal={handleOpenCardModal}
+          onOpenPeriodModal={handleOpenPeriodModal}
+          onSelectYearRange={(fromVal, toVal) => {
+            setSelectedEra('ALL');
+            setSelectedReign('ALL');
+            handleYearRangeChange(fromVal, toVal);
+          }}
         />
-      )}
+      </div>
 
-      <OverlapMapSection
-        yearFrom={effectiveYearFrom}
-        yearTo={effectiveYearTo}
-        minYear={timelineBounds.minYear}
-        maxYear={timelineBounds.maxYear}
-        previousYearRange={zoomHistory.length > 0 ? zoomHistory[zoomHistory.length - 1] : null}
-        canStepUp={zoomHistory.length > 0}
-        onZoomStepUp={handleZoomStepUp}
-        onResetYearWindow={handleResetYearWindow}
-        onYearRangeChange={handleYearRangeChange}
-        matchingRulers={matchingRulers}
-        matchingEvents={matchingEvents}
-        visibleLanes={displayLanes}
-        branches={branches}
-        collapsedParents={collapsedParents}
-        hoveredEventId={hoveredEventId}
-        showOverlapMatrix={showOverlapMatrix}
-        onToggleOverlapMatrix={() => setShowOverlapMatrix((prev) => !prev)}
-        onOpenCardModal={setActiveCardId}
-        onHoverEvent={setHoveredEventId}
-        onResetAll={handleResetAll}
-        hasActiveFilters={hasActiveFilters}
-      />
-
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5">
         {stream.length === 0 ? (
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-12 text-center my-8">
-            <h3 className="text-lg font-bold text-white">
+            <h3 className="font-serif text-xl font-bold text-white">
               На выбранном отрезке времени активных событий не найдено
             </h3>
             <p className="text-sm text-slate-400 mt-1 max-w-md mx-auto">
@@ -744,7 +787,7 @@ export default function App() {
               onClick={handleResetAll}
               className="mt-5 px-4 py-2 bg-amber-500 text-slate-950 font-semibold text-xs rounded-lg hover:bg-amber-400 transition-colors cursor-pointer"
             >
-              Восстановить весь график ({timelineBounds.minYear}–{timelineBounds.maxYear})
+              Восстановить обзор ({timelineBounds.minYear}–{timelineBounds.maxYear})
             </button>
           </div>
         ) : (
@@ -786,9 +829,9 @@ export default function App() {
                 highlightedJumpId={highlightedJumpId}
                 onJumpToEvent={handleJumpToEvent}
                 onHoverEvent={setHoveredEventId}
-                onOpenCardModal={setActiveCardId}
-                onOpenPeriodModal={setActivePeriodId}
-                onOpenEraModal={setActiveEraModalId}
+                onOpenCardModal={handleOpenCardModal}
+                onOpenPeriodModal={handleOpenPeriodModal}
+                onOpenEraModal={handleOpenEraModal}
                 onSelectYearRange={handleYearRangeChange}
               />
             </div>
@@ -797,39 +840,51 @@ export default function App() {
       </main>
 
       <CardDetailModal
-        eventId={activeCardId}
+        card={activeCardObj}
         enrichedEvents={enrichedEvents}
+        matchingEvents={matchingEvents}
         branches={branches}
+        eras={manifest.macroEras}
         focusedEventId={focusedEventId}
+        modalHistory={modalHistory}
+        onClose={handleCloseAllModals}
+        onNavigateBack={handleModalNavigateBack}
+        onSelectCard={handleOpenCardModal}
+        onJumpToTimelineRow={handleJumpToEvent}
         onToggleFocusEvent={handleToggleFocusEvent}
-        onClose={() => setActiveCardId(null)}
-        onSelectEvent={setActiveCardId}
-        onSelectYearRange={handleYearRangeChange}
+        onFilterByRuler={handleSelectReign}
+        onOpenRulerModal={handleOpenPeriodModal}
+        onOpenEraModal={handleOpenEraModal}
       />
 
       <PeriodSummaryModal
-        rulerId={activePeriodId}
-        rulers={rulers}
+        ruler={activeRulerObj}
         enrichedEvents={enrichedEvents}
         branches={branches}
-        onClose={() => setActivePeriodId(null)}
-        onSelectRuler={setActivePeriodId}
-        onOpenCard={setActiveCardId}
+        modalHistory={modalHistory}
+        onClose={handleCloseAllModals}
+        onNavigateBack={handleModalNavigateBack}
+        onSelectCard={handleOpenCardModal}
+        onFilterByRuler={handleSelectReign}
       />
 
       <EraSummaryModal
-        eraId={activeEraModalId}
-        macroEras={manifest.macroEras}
-        minYear={timelineBounds.minYear}
-        maxYear={timelineBounds.maxYear}
+        era={activeEraObj}
+        eras={manifest.macroEras}
         rulers={rulers}
         enrichedEvents={enrichedEvents}
         branches={branches}
-        onClose={() => setActiveEraModalId(null)}
-        onSelectEraModal={setActiveEraModalId}
-        onFilterByEraOnTimeline={handleSelectEra}
-        onOpenRulerModal={setActivePeriodId}
-        onOpenCardModal={setActiveCardId}
+        modalHistory={modalHistory}
+        onClose={handleCloseAllModals}
+        onNavigateBack={handleModalNavigateBack}
+        onSelectEra={handleOpenEraModal}
+        onSelectRuler={handleOpenPeriodModal}
+        onSelectEvent={handleOpenCardModal}
+        onFilterByEraRange={(startYear, endYear) => {
+          setSelectedEra('ALL');
+          setSelectedReign('ALL');
+          handleYearRangeChange(startYear, endYear);
+        }}
       />
     </div>
   );
