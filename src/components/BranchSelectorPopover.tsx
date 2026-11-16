@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronRight, GitBranch, GitMerge, Lock, Minus, Search, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, GitBranch, GitMerge, Lock, Minus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getDescendantBranchIds,
@@ -25,13 +25,6 @@ interface BranchSelectorPopoverProps {
   onToggleCollapseParent: (parentId: string) => void;
 }
 
-const BRANCH_PRESETS: Array<{ id: BranchPresetId; label: string; title: string }> = [
-  { id: 'all', label: 'Все ветки', title: 'Включить все ветки' },
-  { id: 'rulers_wars', label: 'Правители и войны', title: 'Оставить правителей и военные кампании' },
-  { id: 'eco_world', label: 'Экономика и мир', title: 'Сфокусироваться на реформах и мировом контексте' },
-  { id: 'rulers_only', label: 'Только правители', title: 'Показать смену правителей вдоль оси времени' },
-];
-
 export function BranchSelectorPopover({
   branchControls,
   activeBranches,
@@ -44,7 +37,7 @@ export function BranchSelectorPopover({
 }: BranchSelectorPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -125,8 +118,25 @@ export function BranchSelectorPopover({
     };
   }, [isOpen]);
 
+  const allGroupsExpanded =
+    groupedCategories.length > 0 &&
+    groupedCategories.every((g) => Boolean(expandedCategories[g.key]));
+  const anyGroupExpanded = groupedCategories.some((g) => Boolean(expandedCategories[g.key]));
+
   function toggleCategoryCollapse(key: BranchCategoryKey) {
-    setCollapsedCategories((prev) => ({ ...prev, [key]: !prev[key] }));
+    setExpandedCategories((prev) => ({ ...prev, [key]: !prev[key] }));
+  }
+
+  function handleExpandAllGroups() {
+    const next: Record<string, boolean> = {};
+    groupedCategories.forEach((g) => {
+      next[g.key] = true;
+    });
+    setExpandedCategories(next);
+  }
+
+  function handleCollapseAllGroups() {
+    setExpandedCategories({});
   }
 
   function renderBranchNode(
@@ -344,33 +354,43 @@ export function BranchSelectorPopover({
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-
-            <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] font-mono text-slate-500 mr-0.5">Наборы:</span>
-              {BRANCH_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => onApplyPreset(preset.id)}
-                  title={preset.title}
-                  className="px-2 py-1 rounded-md bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-slate-600 text-[11px] font-mono text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  {preset.label}
-                </button>
-              ))}
-            </div>
           </div>
 
-          <div className="px-3 py-2 border-b border-slate-800/80 bg-slate-900/50 flex items-center justify-between gap-2 text-[11px] font-mono">
+          <div className="px-3 py-2 border-b border-slate-800/80 bg-slate-900/50 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
             <div className="flex items-center gap-2 min-w-0">
               <span className="w-2.5 h-2.5 rounded-full bg-slate-300 shrink-0" />
               <span className="font-bold text-slate-200">time/main</span>
-              <span className="text-slate-400 truncate">Центральная ось времени</span>
+              <span className="text-slate-400 truncate hidden sm:inline">Центральная ось</span>
+              <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 shrink-0">
+                <Lock className="w-3 h-3 text-slate-500" />
+                всегда
+              </span>
             </div>
-            <span className="inline-flex items-center gap-1 text-[10px] text-slate-400 shrink-0">
-              <Lock className="w-3 h-3 text-slate-500" />
-              всегда активна
-            </span>
+
+            {groupedCategories.length > 0 && searchQuery.trim() === '' && (
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  disabled={allGroupsExpanded}
+                  onClick={handleExpandAllGroups}
+                  className="px-2 py-0.5 rounded bg-slate-800/90 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none border border-slate-700/80 text-[10px] text-slate-200 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Развернуть все группы веток"
+                >
+                  <ChevronsUpDown className="w-3 h-3 text-amber-300" />
+                  <span>Развернуть все</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!anyGroupExpanded}
+                  onClick={handleCollapseAllGroups}
+                  className="px-2 py-0.5 rounded bg-slate-800/90 hover:bg-slate-700 disabled:opacity-40 disabled:pointer-events-none border border-slate-700/80 text-[10px] text-slate-200 inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Свернуть все группы веток"
+                >
+                  <ChevronsDownUp className="w-3 h-3 text-slate-400" />
+                  <span>Свернуть все</span>
+                </button>
+              </div>
+            )}
           </div>
 
           <div
@@ -389,7 +409,7 @@ export function BranchSelectorPopover({
                   (b) => activeBranches[b.id] !== false,
                 ).length;
                 const allGroupActive = groupActiveCount === countTargetItems.length;
-                const isCollapsed = Boolean(collapsedCategories[group.key]) && searchQuery.trim() === '';
+                const isCollapsed = searchQuery.trim() === '' && !expandedCategories[group.key];
                 const branchIds = group.items.map((b) => b.id);
 
                 // Строим локальное дерево parentBranchId внутри категории

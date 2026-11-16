@@ -258,9 +258,9 @@ function generateCatalogMarkdown() {
         ? br.defaultCollapsedOnTimeline
           ? 'свёрнута'
           : 'группа'
-        : br.defaultEnabled
-          ? 'вкл'
-          : 'выкл (`defaultEnabled: false`)';
+        : br.id === 'MAIN_RULERS'
+          ? 'вкл (по умолч.)'
+          : 'выкл (по умолч.)';
     lines.push(
       `| \`${br.id}\` | \`${br.gitName}\` | ${escapeMd(br.label)} | ${br.parentBranchId ? `\`${br.parentBranchId}\`` : '—'} | ${kind} | \`${br.color}\` | ${startFlag} | ${count} | \`${br.file}\` |`,
     );

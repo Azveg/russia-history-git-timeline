@@ -21,14 +21,14 @@
 
 | `id` | `gitName` | Название (`label`) | Родитель | Тип | Цвет | Старт | Узлов | Файл |
 | :--- | :--- | :--- | :--- | :--- | :--- | :---: | :---: | :--- |
-| `DIPLOMACY_TREATIES` | `diplomacy/treaties` | Дипломатия и договоры | — | Тематическая | `#2dd4bf` | выкл (`defaultEnabled: false`) | 6 | `data/diplomacy.json` |
-| `REFORMS_ECO` | `feat/reforms-eco` | Экономика и реформы | — | Тематическая | `#10b981` | вкл | 15 | `data/economics.json` |
-| `MAIN_RULERS` | `rulers/reigns` | Правители (ветвления) | — | Тематическая | `#f59e0b` | вкл | 18 | `data/rulers.json` |
+| `DIPLOMACY_TREATIES` | `diplomacy/treaties` | Дипломатия и договоры | — | Тематическая | `#2dd4bf` | выкл (по умолч.) | 6 | `data/diplomacy.json` |
+| `REFORMS_ECO` | `feat/reforms-eco` | Экономика и реформы | — | Тематическая | `#10b981` | выкл (по умолч.) | 15 | `data/economics.json` |
+| `MAIN_RULERS` | `rulers/reigns` | Правители (ветвления) | — | Тематическая | `#f59e0b` | вкл (по умолч.) | 18 | `data/rulers.json` |
 | `WAR_ALL` | `war/all` | Военные кампании (общая ветка) | — | Группа (`isGroup`) | `#f43f5e` | группа | 0 | `data/wars.json` |
-| `SEAS` | `war/seas` | Войны: Выход к морям | `WAR_ALL` | Военная | `#38bdf8` | вкл | 20 | `data/wars.json` |
-| `PERIPHERY` | `war/periphery` | Войны: Имперская периферия | `WAR_ALL` | Военная | `#fb923c` | вкл | 32 | `data/wars.json` |
-| `INTERNAL_BUFFER` | `war/buffer-internal` | Войны: Восстания и буферные зоны | `WAR_ALL` | Военная | `#f43f5e` | вкл | 44 | `data/wars.json` |
-| `WORLD_CONTEXT` | `world/events` | События в других странах | — | Тематическая | `#a855f7` | вкл | 14 | `data/world.json` |
+| `SEAS` | `war/seas` | Войны: Выход к морям | `WAR_ALL` | Военная | `#38bdf8` | выкл (по умолч.) | 20 | `data/wars.json` |
+| `PERIPHERY` | `war/periphery` | Войны: Имперская периферия | `WAR_ALL` | Военная | `#fb923c` | выкл (по умолч.) | 32 | `data/wars.json` |
+| `INTERNAL_BUFFER` | `war/buffer-internal` | Войны: Восстания и буферные зоны | `WAR_ALL` | Военная | `#f43f5e` | выкл (по умолч.) | 44 | `data/wars.json` |
+| `WORLD_CONTEXT` | `world/events` | События в других странах | — | Тематическая | `#a855f7` | выкл (по умолч.) | 14 | `data/world.json` |
 
 ---
 

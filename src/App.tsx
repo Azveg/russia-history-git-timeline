@@ -136,7 +136,7 @@ export default function App() {
       branches.forEach((b) => {
         if (b.isGroup) return;
         if (next[b.id] === undefined) {
-          next[b.id] = b.defaultEnabled !== false;
+          next[b.id] = b.id === 'MAIN_RULERS';
           changed = true;
         }
       });
@@ -423,7 +423,7 @@ export default function App() {
     const nextCollapsed: Record<string, boolean> = {};
     branches.forEach((b) => {
       if (!b.isGroup) {
-        nextActive[b.id] = b.defaultEnabled !== false;
+        nextActive[b.id] = b.id === 'MAIN_RULERS';
       }
       if (b.defaultCollapsedOnTimeline) {
         nextCollapsed[b.id] = true;

@@ -1,11 +1,10 @@
-import { ArrowLeft, ArrowRight, Crosshair, Crown, Flag, GitBranch, GitCommitHorizontal, GitMerge, Link2, X, Zap } from 'lucide-react';
+import { Crosshair, Crown, Flag, GitBranch, GitCommitHorizontal, GitMerge, Link2, X, Zap } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   computeBranchSubLaneLayout,
   findMacroEraForYear,
   formatAxisGutterDate,
   getDirectChildBranches,
-  getEventRulerSegments,
   getGitHash,
   hasChildBranches,
   isBranchOrDescendantActive,
@@ -56,12 +55,13 @@ interface GitTimelineProps {
   onSelectYearRange: (from: number, to: number) => void;
 }
 
-const SEGMENT_TONES = [
-  'bg-amber-400/80 hover:bg-amber-300',
-  'bg-sky-400/80 hover:bg-sky-300',
-  'bg-emerald-400/80 hover:bg-emerald-300',
-  'bg-purple-400/80 hover:bg-purple-300',
-];
+interface HoveredCardTooltipState {
+  ev: EnrichedEvent;
+  branchLabel: string;
+  branchColor: string;
+  dateLabel: string;
+  rect: { top: number; bottom: number; left: number; width: number };
+}
 
 const RESOLUTION_LABELS: Record<AxisResolution, string> = {
   year: 'Годы',
@@ -100,6 +100,7 @@ export function GitTimeline({
 }: GitTimelineProps) {
   const streamContainerRef = useRef<HTMLDivElement | null>(null);
   const [activeStickyRulerId, setActiveStickyRulerId] = useState<string | null>(null);
+  const [hoveredCardTooltip, setHoveredCardTooltip] = useState<HoveredCardTooltipState | null>(null);
 
   const defaultStickyRulerId = useMemo(() => {
     if (matchingRulers.length > 0) return matchingRulers[0].id;
@@ -111,7 +112,19 @@ export function GitTimeline({
 
   useEffect(() => {
     setActiveStickyRulerId(defaultStickyRulerId);
-  }, [defaultStickyRulerId, stream.length]);
+    setHoveredCardTooltip(null);
+  }, [defaultStickyRulerId, stream.length, cardDensity]);
+
+  useEffect(() => {
+    if (!hoveredCardTooltip) return;
+    const clearTooltip = () => setHoveredCardTooltip(null);
+    window.addEventListener('scroll', clearTooltip, { passive: true });
+    window.addEventListener('resize', clearTooltip, { passive: true });
+    return () => {
+      window.removeEventListener('scroll', clearTooltip);
+      window.removeEventListener('resize', clearTooltip);
+    };
+  }, [hoveredCardTooltip]);
 
   useEffect(() => {
     const container = streamContainerRef.current;
@@ -461,7 +474,7 @@ export function GitTimeline({
   }
 
   return (
-    <div>
+    <div className="min-w-0 w-full">
       <div className="sticky top-[45px] z-20 bg-[#050811]/95 backdrop-blur-md border border-slate-800/90 rounded-t-2xl shadow-md overflow-hidden">
         <div className="px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0">
@@ -602,7 +615,7 @@ export function GitTimeline({
 
       <div
         ref={streamContainerRef}
-        className="border-x border-b border-slate-800/90 rounded-b-2xl bg-slate-950/40 divide-y divide-slate-800/50"
+        className="border-x border-b border-slate-800/90 rounded-b-2xl bg-slate-950/40 divide-y divide-slate-800/50 overflow-hidden"
       >
         {focusedEvent && (
           <div className="bg-emerald-950/35 border-b border-emerald-500/40 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
@@ -723,7 +736,7 @@ export function GitTimeline({
                   </svg>
                 </div>
 
-                <div className="flex-1 py-4 pr-4 sm:pr-6">
+                <div className="flex-1 min-w-0 overflow-hidden py-4 pr-4 sm:pr-6">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="px-2.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black tabular-nums">
@@ -786,7 +799,7 @@ export function GitTimeline({
                   </svg>
                 </div>
 
-                <div className="flex-1 py-1 pr-4 sm:pr-6 flex items-center gap-2 text-[11px] font-mono text-slate-400">
+                <div className="flex-1 min-w-0 overflow-hidden py-1 pr-4 sm:pr-6 flex items-center gap-2 text-[11px] font-mono text-slate-400">
                   <span className="font-bold text-slate-300 tabular-nums">{item.label}</span>
                   <span aria-hidden="true" className="text-slate-700">
                     ·
@@ -873,7 +886,7 @@ export function GitTimeline({
                   </svg>
                 </div>
 
-                <div className="flex-1 py-3.5 pr-4 sm:pr-6">
+                <div className="flex-1 min-w-0 overflow-hidden py-3.5 pr-4 sm:pr-6">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <span
@@ -1006,15 +1019,15 @@ export function GitTimeline({
                   </svg>
                 </div>
 
-                <div className="flex-1 py-2 pr-3 sm:pr-6">
-                  <div className="rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-                    <div className="flex flex-wrap items-center gap-2 min-w-0 font-mono">
+                <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
+                  <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 h-[36px] flex items-center justify-between gap-2 text-xs">
+                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden font-mono">
                       <GitMerge className="w-3.5 h-3.5 shrink-0" style={{ color: item.rulerColor }} />
-                      <span className="font-bold tabular-nums" style={{ color: item.rulerColor }}>
+                      <span className="font-bold tabular-nums shrink-0" style={{ color: item.rulerColor }}>
                         {item.dateLabel}
                       </span>
-                      <span className="text-slate-400">Слияние ветки правления:</span>
-                      <span className="font-sans font-semibold text-slate-200 group-hover:text-white truncate">
+                      <span className="text-slate-400 shrink-0 hidden sm:inline">Слияние ветки правления:</span>
+                      <span className="font-sans font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
                         {r.shortRuler} ({r.reignPeriod})
                       </span>
                     </div>
@@ -1051,8 +1064,7 @@ export function GitTimeline({
             const commitY = isCompact ? 22 : 34;
             const commitHash = getGitHash(ev.id);
             const hasMultipleRulers = ev.overlappingRulers.length > 1;
-            const rulerSegments = hasMultipleRulers ? getEventRulerSegments(ev) : [];
-            const concurrentPreview = ev.concurrentEvents.slice(0, 3);
+            const dateSummary = axisResolution === 'year' ? ev.period : `${item.dateLabel} (${ev.period})`;
 
             const isCrossLinked = hoveredEventId !== null && linkedEventIds.has(ev.id);
             const isOverlapping =
@@ -1076,14 +1088,36 @@ export function GitTimeline({
               cardHighlightClass = 'overlap-highlighted';
             }
 
+            const openCardTooltip = (el: HTMLElement) => {
+              const rect = el.getBoundingClientRect();
+              setHoveredCardTooltip({
+                ev,
+                branchLabel: origBranchObj.label,
+                branchColor: origBranchObj.color,
+                dateLabel: dateSummary,
+                rect: {
+                  top: rect.top,
+                  bottom: rect.bottom,
+                  left: rect.left,
+                  width: rect.width,
+                },
+              });
+            };
+
             return (
               <div
                 key={`commit-${ev.id}-${idx}`}
                 id={`row-${ev.id}`}
                 data-ruler-context={ev.overlappingRulers[0]?.id ?? ''}
-                onClick={() => onOpenCardModal(ev.id)}
+                onClick={() => {
+                  setHoveredCardTooltip(null);
+                  onOpenCardModal(ev.id);
+                }}
                 onMouseEnter={() => onHoverEvent(ev.id)}
-                onMouseLeave={() => onHoverEvent(null)}
+                onMouseLeave={() => {
+                  onHoverEvent(null);
+                  setHoveredCardTooltip(null);
+                }}
                 className="commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group"
               >
                 <div
@@ -1212,11 +1246,13 @@ export function GitTimeline({
                 </div>
 
                 {isCompact ? (
-                  <div className="flex-1 py-1 pr-3 sm:pr-6">
+                  <div className="flex-1 min-w-0 overflow-hidden py-1 pr-3 sm:pr-6">
                     <div
-                      className={`rounded-lg border px-3 py-2 min-h-[38px] flex items-center justify-between gap-3 transition-all ${cardHighlightClass}`}
+                      onMouseEnter={(e) => openCardTooltip(e.currentTarget)}
+                      onMouseLeave={() => setHoveredCardTooltip(null)}
+                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3 h-[38px] flex items-center justify-between gap-2.5 transition-all ${cardHighlightClass}`}
                     >
-                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                         <span
                           className="font-mono text-xs font-extrabold tabular-nums shrink-0"
                           style={{ color: branchObj.color }}
@@ -1226,24 +1262,19 @@ export function GitTimeline({
                         <span aria-hidden="true" className="text-slate-600 shrink-0">
                           ·
                         </span>
-                        <span className="text-xs sm:text-sm font-bold text-white group-hover:text-amber-200 truncate">
+                        <span className="text-xs sm:text-sm font-bold text-white group-hover:text-amber-200 truncate min-w-0">
                           {ev.title}
                         </span>
-                        <span className="hidden md:inline text-[11px] font-mono text-slate-400 shrink-0">
+                        <span className="hidden md:inline text-[11px] font-mono text-slate-400 shrink-0 truncate max-w-[110px]">
                           · {origBranchObj.short}
                         </span>
-                        {isAtomic && (
-                          <span className="hidden sm:inline text-[11px] font-mono text-slate-400 shrink-0">
-                            · точка
-                          </span>
-                        )}
                         {hasMultipleRulers && (
-                          <span className="hidden sm:inline text-[11px] font-mono text-amber-300 shrink-0 tabular-nums">
+                          <span className="hidden lg:inline text-[11px] font-mono text-amber-300 shrink-0 tabular-nums">
                             · {ev.overlappingRulers.length} правл.
                           </span>
                         )}
                         {ev.explicitLinks.length > 0 && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-300 shrink-0 tabular-nums">
+                          <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono text-emerald-300 shrink-0 tabular-nums">
                             · <Link2 className="w-3 h-3" /> {ev.explicitLinks.length}
                           </span>
                         )}
@@ -1256,7 +1287,7 @@ export function GitTimeline({
                             e.stopPropagation();
                             onToggleFocusEvent(ev.id);
                           }}
-                          className={`px-2 py-0.5 rounded border transition-colors cursor-pointer ${
+                          className={`px-2 py-0.5 rounded border transition-colors cursor-pointer whitespace-nowrap ${
                             isFocusedTarget
                               ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
                               : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
@@ -1265,241 +1296,91 @@ export function GitTimeline({
                         >
                           {isFocusedTarget ? 'В фокусе' : 'Фокус'}
                         </button>
-                        <span className="text-amber-400 font-semibold hidden sm:inline">git show →</span>
+                        <span className="text-amber-400 font-semibold hidden sm:inline whitespace-nowrap">
+                          git show →
+                        </span>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 py-2.5 pr-3 sm:pr-6">
-                    <div className={`rounded-xl border p-3.5 sm:p-4 transition-all ${cardHighlightClass}`}>
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
-                        <div className="space-y-1 min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span
-                              className="font-mono text-xs font-extrabold tabular-nums"
-                              style={{ color: branchObj.color }}
-                            >
-                              {axisResolution === 'year' ? ev.period : `${item.dateLabel} (${ev.period})`}
+                  <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
+                    <div
+                      onMouseEnter={(e) => openCardTooltip(e.currentTarget)}
+                      onMouseLeave={() => setHoveredCardTooltip(null)}
+                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-xl border px-3.5 py-2.5 transition-all flex flex-col justify-between gap-2 ${cardHighlightClass}`}
+                    >
+                      <div className="flex items-center justify-between gap-2.5 min-w-0 h-5">
+                        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                          <span
+                            className="font-mono text-xs font-extrabold tabular-nums shrink-0"
+                            style={{ color: branchObj.color }}
+                          >
+                            {axisResolution === 'year' ? ev.period : item.dateLabel}
+                          </span>
+                          <span aria-hidden="true" className="text-slate-600 shrink-0">
+                            ·
+                          </span>
+                          <h4 className="text-sm sm:text-[15px] font-bold text-white group-hover:text-amber-200 transition-colors truncate min-w-0">
+                            {ev.title}
+                          </h4>
+                          {!isAtomic && item.startedBeforeWindow && (
+                            <span className="hidden lg:inline text-[10px] font-mono text-amber-300 shrink-0 whitespace-nowrap">
+                              · с {ev.startYear} г.
                             </span>
-                            {isAtomic ? (
-                              <>
-                                <span aria-hidden="true" className="text-slate-600">
-                                  ·
-                                </span>
-                                <span className="text-[11px] font-mono text-slate-400">
-                                  атомарный коммит
-                                </span>
-                              </>
-                            ) : (
-                              item.startedBeforeWindow && (
-                                <>
-                                  <span aria-hidden="true" className="text-slate-600">
-                                    ·
-                                  </span>
-                                  <span className="text-[11px] font-mono text-amber-300">
-                                    идет с {ev.startYear} г.
-                                  </span>
-                                </>
-                              )
-                            )}
-                            <span aria-hidden="true" className="text-slate-600">
-                              ·
-                            </span>
-                            <h4 className="text-sm sm:text-base font-bold text-white group-hover:text-amber-200 transition-colors">
-                              {ev.title}
-                            </h4>
-                          </div>
-
-                          <p className="text-xs sm:text-sm text-slate-300 leading-snug">{ev.subtitle}</p>
+                          )}
                         </div>
 
-                        <div className="flex items-center gap-2 text-[11px] font-mono text-slate-400 shrink-0 self-start">
-                          <span style={{ color: origBranchObj.color }}>{origBranchObj.gitName}</span>
-                          <span aria-hidden="true">·</span>
+                        <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-slate-400 shrink-0 whitespace-nowrap">
+                          <span className="max-w-[150px] truncate" style={{ color: origBranchObj.color }}>
+                            {origBranchObj.short}
+                          </span>
+                          <span aria-hidden="true" className="text-slate-600">
+                            ·
+                          </span>
                           <span className="text-slate-500">#{commitHash}</span>
                         </div>
                       </div>
 
-                      {hasMultipleRulers && rulerSegments.length > 1 && (
-                        <div className="mt-2.5 pt-2 border-t border-slate-800/50 space-y-1.5">
-                          <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
-                            <span className="text-amber-300 font-semibold">
-                              Смена правителей в ходе события ({ev.overlappingRulers.length}):
-                            </span>
-                            <span className="text-slate-500 hidden sm:inline tabular-nums">
-                              {ev.startYear}–{ev.endYear} гг.
-                            </span>
-                          </div>
+                      <p className="text-xs text-slate-300 leading-[18px] h-[36px] overflow-hidden line-clamp-2">
+                        {ev.subtitle}
+                      </p>
 
-                          <div
-                            className="h-2 rounded-full bg-slate-950 border border-slate-800/90 overflow-hidden flex gap-px"
-                            role="group"
-                            aria-label="Шкала смены правителей"
-                          >
-                            {rulerSegments.map((seg, segIdx) => (
-                              <button
-                                key={seg.ruler.id}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOpenPeriodModal(seg.ruler.id);
-                                }}
-                                style={{ width: `${Math.max(8, seg.pct)}%` }}
-                                className={`h-full transition-colors cursor-pointer ${
-                                  SEGMENT_TONES[segIdx % SEGMENT_TONES.length]
-                                }`}
-                                title={`${seg.ruler.ruler} (${seg.overlapStart}–${seg.overlapEnd} гг., ~${seg.years} л.). Нажмите для сводки правления.`}
-                              />
-                            ))}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-slate-300">
-                            {rulerSegments.map((seg, segIdx) => (
-                              <span key={seg.ruler.id} className="inline-flex items-center gap-1">
-                                {segIdx > 0 && (
-                                  <span aria-hidden="true" className="text-slate-600 mr-1">
-                                    →
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onOpenPeriodModal(seg.ruler.id);
-                                  }}
-                                  className="hover:text-amber-300 hover:underline cursor-pointer tabular-nums"
-                                >
-                                  {seg.ruler.shortRuler} ({seg.years} г.)
-                                </button>
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {ev.explicitLinks.length > 0 && (
-                        <div className="mt-2.5 pt-2 border-t border-slate-800/50 flex flex-wrap items-center gap-1.5">
-                          <span className="text-[10px] font-mono text-emerald-400 font-semibold mr-0.5 inline-flex items-center gap-1">
-                            <Link2 className="w-3 h-3" />
-                            Связи:
-                          </span>
-                          {ev.explicitLinks.map((lnk) => {
-                            const target = lnk.targetEvent;
-                            const targetBranch = branches.find((b) => b.id === target.task);
-                            const isOutgoing = lnk.direction === 'outgoing';
-                            const isLaterTarget = target.startYear >= ev.startYear;
-                            const retroGap = lnk.yearGap && lnk.yearGap > 0 ? ` (${isLaterTarget ? '+' : '−'}${lnk.yearGap} л.)` : '';
-                            return (
-                              <button
-                                key={lnk.id}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onJumpToEvent(target.id);
-                                }}
-                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-[11px] font-mono transition-colors cursor-pointer text-left max-w-full ${
-                                  lnk.isRetrospective
-                                    ? 'bg-violet-950/45 hover:bg-violet-900/60 border-violet-500/35 hover:border-violet-400 text-violet-100'
-                                    : 'bg-emerald-950/45 hover:bg-emerald-900/60 border-emerald-500/35 hover:border-emerald-400 text-emerald-100'
-                                }`}
-                                title={`${lnk.label} — Нажмите для перехода к узлу в ленте`}
-                              >
-                                {isOutgoing ? (
-                                  <ArrowRight className={`w-3 h-3 shrink-0 ${lnk.isRetrospective ? 'text-violet-400' : 'text-emerald-400'}`} />
-                                ) : (
-                                  <ArrowLeft className={`w-3 h-3 shrink-0 ${lnk.isRetrospective ? 'text-violet-300' : 'text-sky-400'}`} />
-                                )}
-                                <span className={`shrink-0 ${lnk.isRetrospective ? 'text-violet-300' : 'text-emerald-300'}`}>
-                                  {lnk.isRetrospective
-                                    ? isLaterTarget
-                                      ? `Отражение${retroGap}:`
-                                      : `О событии${retroGap}:`
-                                    : lnk.isAutoSync
-                                      ? `#${lnk.syncTag || 'тег'}:`
-                                      : isOutgoing
-                                        ? 'Следствие:'
-                                        : 'Причина:'}
-                                </span>
-                                <span className="truncate font-semibold text-white">{target.title}</span>
-                                <span className="text-slate-400 tabular-nums shrink-0">({target.period})</span>
-                                {targetBranch && (
-                                  <span
-                                    className="hidden sm:inline text-[10px] shrink-0"
-                                    style={{ color: targetBranch.color }}
-                                  >
-                                    · {targetBranch.short}
-                                  </span>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      <div className="mt-2.5 pt-2 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
-                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono">
+                      <div className="pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-[11px] text-slate-400 min-w-0 h-[26px]">
+                        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden font-mono whitespace-nowrap">
                           {ev.ruler && (
-                            <>
-                              <span
-                                className={`inline-flex items-center gap-1 ${
-                                  hasMultipleRulers ? 'text-amber-300 font-semibold' : 'text-slate-300'
-                                }`}
-                              >
-                                <Crown className="w-3 h-3" />
-                                {hasMultipleRulers ? `${ev.overlappingRulers.length} правл.: ` : ''}
-                                {ev.ruler}
+                            <span
+                              className={`inline-flex items-center gap-1 min-w-0 truncate ${
+                                hasMultipleRulers ? 'text-amber-300 font-semibold' : 'text-slate-300'
+                              }`}
+                            >
+                              <Crown className="w-3 h-3 shrink-0" />
+                              <span className="truncate">
+                                {hasMultipleRulers ? `${ev.overlappingRulers.length} правл.` : ev.ruler}
                               </span>
-
-                              <span aria-hidden="true" className="text-slate-600">
-                                ·
-                              </span>
-                            </>
+                            </span>
                           )}
 
-                          <span className="text-slate-500" title="Исходный модульный JSON-файл">
-                            {ev.sourceFile}
-                          </span>
-
                           {ev.explicitLinks.length > 0 && (
-                            <>
-                              <span aria-hidden="true" className="text-slate-600">
-                                ·
-                              </span>
-                              <span className="inline-flex items-center gap-1 text-emerald-300 font-semibold">
-                                <Link2 className="w-3 h-3" />
-                                sync: {ev.explicitLinks.length}
-                              </span>
-                            </>
+                            <span className="inline-flex items-center gap-1 text-emerald-300 font-semibold shrink-0 tabular-nums">
+                              <Link2 className="w-3 h-3 shrink-0" />
+                              <span>{ev.explicitLinks.length}</span>
+                            </span>
                           )}
 
                           {ev.concurrentEvents.length > 0 && (
-                            <>
-                              <span aria-hidden="true" className="text-slate-600">
-                                ·
-                              </span>
-                              <span
-                                className="text-sky-300"
-                                title={`Параллельные события: ${ev.concurrentEvents.map((c) => c.title).join(', ')}`}
-                              >
-                                параллельно: {ev.concurrentEvents.length} (
-                                {concurrentPreview.map((c) => c.title.slice(0, 16) + '…').join(', ')})
-                              </span>
-                            </>
+                            <span className="hidden md:inline text-sky-300 shrink-0 tabular-nums">
+                              ∥ {ev.concurrentEvents.length}
+                            </span>
                           )}
 
                           {ev.subEvents && ev.subEvents.length > 0 && (
-                            <>
-                              <span aria-hidden="true" className="text-slate-600">
-                                ·
-                              </span>
-                              <span className="text-amber-300 font-semibold">
-                                подветок: {ev.subEvents.length}
-                              </span>
-                            </>
+                            <span className="hidden md:inline text-amber-300 font-semibold shrink-0 tabular-nums">
+                              ↳ {ev.subEvents.length}
+                            </span>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2.5 shrink-0 font-mono">
+                        <div className="flex items-center gap-2 shrink-0 font-mono whitespace-nowrap">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -1514,12 +1395,12 @@ export function GitTimeline({
                             title="Изолировать событие, его sync-связи и параллельные события"
                           >
                             <Crosshair className="w-3 h-3" />
-                            <span>{isFocusedTarget ? 'В фокусе ✓' : 'Фокус связей'}</span>
+                            <span>{isFocusedTarget ? 'В фокусе' : 'Фокус'}</span>
                           </button>
 
                           <span className="text-amber-400 font-semibold group-hover:underline inline-flex items-center gap-1">
                             <GitCommitHorizontal className="w-3.5 h-3.5" />
-                            git show →
+                            <span className="hidden sm:inline">git show →</span>
                           </span>
                         </div>
                       </div>
@@ -1616,24 +1497,24 @@ export function GitTimeline({
                 </svg>
               </div>
 
-              <div className="flex-1 py-2 pr-3 sm:pr-6">
-                <div className="rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-                  <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
+                <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 h-[36px] flex items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                     <Flag className="w-3.5 h-3.5 shrink-0" style={{ color: branchObj.color }} />
-                    <span className="font-mono font-bold tabular-nums" style={{ color: branchObj.color }}>
+                    <span className="font-mono font-bold tabular-nums shrink-0" style={{ color: branchObj.color }}>
                       {item.dateLabel}
                     </span>
-                    <span className="text-slate-400 font-mono">Слияние с осью:</span>
-                    <span className="font-semibold text-slate-200 group-hover:text-white truncate">
+                    <span className="text-slate-400 font-mono shrink-0 hidden sm:inline">Слияние с осью:</span>
+                    <span className="font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
                       {ev.title} ({ev.period})
                     </span>
                   </div>
-                  <span className="text-[11px] font-mono text-slate-400 shrink-0 tabular-nums">
+                  <span className="text-[11px] font-mono text-slate-400 shrink-0 tabular-nums whitespace-nowrap hidden sm:inline">
                     {ev.overlappingRulers.length > 1
-                      ? `Сменилось правлений: ${ev.overlappingRulers.length}`
+                      ? `Правлений: ${ev.overlappingRulers.length}`
                       : ev.duration > 0
-                        ? `Длительность: ${ev.duration} л.`
-                        : 'Завершение процесса'}
+                        ? `${ev.duration} л.`
+                        : 'Завершение'}
                   </span>
                 </div>
               </div>
@@ -1641,6 +1522,73 @@ export function GitTimeline({
           );
         })}
       </div>
+
+      {hoveredCardTooltip && (
+        <div
+          role="tooltip"
+          style={{
+            left: Math.max(
+              12,
+              Math.min(
+                hoveredCardTooltip.rect.left,
+                (typeof window !== 'undefined' ? window.innerWidth : 1280) -
+                  Math.min(440, (typeof window !== 'undefined' ? window.innerWidth : 1280) - 24) -
+                  12,
+              ),
+            ),
+            width: Math.min(440, (typeof window !== 'undefined' ? window.innerWidth : 1280) - 24),
+            ...(typeof window !== 'undefined' &&
+            hoveredCardTooltip.rect.bottom + 240 > window.innerHeight &&
+            hoveredCardTooltip.rect.top > 240
+              ? { bottom: window.innerHeight - hoveredCardTooltip.rect.top + 8 }
+              : { top: hoveredCardTooltip.rect.bottom + 8 }),
+          }}
+          className="fixed z-50 pointer-events-none rounded-xl border border-slate-700/95 bg-[#080e1d]/98 backdrop-blur-md shadow-2xl p-3.5 text-left"
+        >
+          <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: hoveredCardTooltip.branchColor }}
+              />
+              <span className="font-semibold text-slate-300 truncate">{hoveredCardTooltip.branchLabel}</span>
+            </div>
+            <span
+              className="font-extrabold tabular-nums shrink-0"
+              style={{ color: hoveredCardTooltip.branchColor }}
+            >
+              {hoveredCardTooltip.dateLabel}
+            </span>
+          </div>
+
+          <div className="mt-1.5 text-sm font-bold text-white leading-snug">
+            {hoveredCardTooltip.ev.title}
+          </div>
+
+          <p className="mt-1 text-xs text-slate-200 leading-relaxed">
+            {hoveredCardTooltip.ev.subtitle}
+          </p>
+
+          {hoveredCardTooltip.ev.details && hoveredCardTooltip.ev.details !== hoveredCardTooltip.ev.subtitle && (
+            <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed line-clamp-4">
+              {hoveredCardTooltip.ev.details}
+            </p>
+          )}
+
+          <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
+            <span className="truncate">
+              {hoveredCardTooltip.ev.ruler
+                ? `Правитель: ${hoveredCardTooltip.ev.ruler}`
+                : `Источник: ${hoveredCardTooltip.ev.sourceFile}`}
+            </span>
+            <span className="text-amber-300 shrink-0">
+              {hoveredCardTooltip.ev.explicitLinks.length > 0
+                ? `Связей: ${hoveredCardTooltip.ev.explicitLinks.length} · Клик = детали`
+                : 'Клик = карточка'}
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
