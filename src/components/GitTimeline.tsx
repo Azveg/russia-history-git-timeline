@@ -12,6 +12,8 @@ import {
   GitMerge,
   HelpCircle,
   Link2,
+  Lock,
+  LockOpen,
   Pin,
   X,
   Zap,
@@ -41,6 +43,7 @@ import type {
   BranchDefinition,
   CardDensity,
   EnrichedEvent,
+  FocusDepth,
   FocusScope,
   ResolvedMacroEra,
   RulerPeriod,
@@ -65,9 +68,16 @@ interface GitTimelineProps {
   cardDensity: CardDensity;
   focusedEvent: EnrichedEvent | null;
   focusScope: FocusScope;
+  focusDepth?: FocusDepth;
+  focusKeepWindow?: boolean;
+  outOfWindowFocusCount?: number;
+  focusDistanceMap?: Map<string, number>;
+  windowRange?: { from: number; to: number };
   auditUnlinkedMode?: boolean;
   auditCandidateMap?: Map<string, AuditCandidateInfo>;
   onChangeFocusScope: (scope: FocusScope) => void;
+  onChangeFocusDepth?: (depth: FocusDepth) => void;
+  onToggleFocusKeepWindow?: () => void;
   onToggleFocusEvent: (eventId: string) => void;
   onToggleCollapseParent: (parentId: string) => void;
   onExitFocusMode: () => void;
@@ -112,9 +122,16 @@ export function GitTimeline({
   cardDensity,
   focusedEvent,
   focusScope,
+  focusDepth = 1,
+  focusKeepWindow = false,
+  outOfWindowFocusCount = 0,
+  focusDistanceMap,
+  windowRange,
   auditUnlinkedMode = false,
   auditCandidateMap,
   onChangeFocusScope,
+  onChangeFocusDepth,
+  onToggleFocusKeepWindow,
   onToggleFocusEvent,
   onToggleCollapseParent,
   onExitFocusMode,
@@ -881,8 +898,8 @@ export function GitTimeline({
         className="border-x border-b border-slate-800/90 rounded-b-2xl bg-slate-950/40 divide-y divide-slate-800/50 overflow-hidden"
       >
         {focusedEvent && (
-          <div className="bg-emerald-950/35 border-b border-emerald-500/40 px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-            <div className="space-y-0.5 min-w-0">
+          <div className="bg-emerald-950/35 border-b border-emerald-500/40 px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            <div className="space-y-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
                 <span className="inline-flex items-center gap-1.5 text-emerald-300 font-bold">
                   <Crosshair className="w-3.5 h-3.5" />
@@ -892,8 +909,22 @@ export function GitTimeline({
                   ·
                 </span>
                 <span className="text-slate-300 tabular-nums">
-                  Прямых связей: {focusedEvent.explicitLinks.length} · параллельных: {focusedEvent.concurrentEvents.length}
+                  Прямых: {focusedEvent.explicitLinks.length}
+                  {focusDepth > 1 && focusDistanceMap
+                    ? ` · в цепочке (${focusDepth} ш.): ${Math.max(0, focusDistanceMap.size - 1)}`
+                    : ''}
+                  {' · '}параллельных: {focusedEvent.concurrentEvents.length}
                 </span>
+                {focusKeepWindow && outOfWindowFocusCount > 0 && (
+                  <>
+                    <span aria-hidden="true" className="text-slate-600">
+                      ·
+                    </span>
+                    <span className="text-amber-300 font-semibold tabular-nums">
+                      за окном: {outOfWindowFocusCount}
+                    </span>
+                  </>
+                )}
               </div>
               <div className="text-sm font-bold text-white truncate">
                 {focusedEvent.period} — {focusedEvent.title}
@@ -901,22 +932,46 @@ export function GitTimeline({
             </div>
 
             <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {onChangeFocusDepth && (
+                <div
+                  className="inline-flex items-center rounded-lg bg-slate-950 border border-emerald-500/35 p-0.5 text-[11px] font-mono"
+                  role="group"
+                  aria-label="Глубина цепочки фокуса"
+                >
+                  {([1, 2, 3] as FocusDepth[]).map((depth) => (
+                    <button
+                      key={depth}
+                      type="button"
+                      onClick={() => onChangeFocusDepth(depth)}
+                      className={`px-2 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
+                        focusDepth === depth
+                          ? 'bg-emerald-500 text-slate-950 font-bold'
+                          : 'text-slate-300 hover:text-white'
+                      }`}
+                      title={`Развернуть граф связей на ${depth} ${depth === 1 ? 'шаг' : 'шага'}`}
+                    >
+                      {depth} {depth === 1 ? 'шаг' : 'шага'}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               <div className="inline-flex items-center rounded-lg bg-slate-950 border border-emerald-500/35 p-0.5 text-[11px] font-mono">
                 <button
                   type="button"
                   onClick={() => onChangeFocusScope('sync_only')}
-                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
                     focusScope === 'sync_only'
                       ? 'bg-emerald-500 text-slate-950 font-bold'
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  Только прямые ({focusedEvent.explicitLinks.length})
+                  Только связи ({focusedEvent.explicitLinks.length})
                 </button>
                 <button
                   type="button"
                   onClick={() => onChangeFocusScope('sync_and_concurrent')}
-                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
                     focusScope === 'sync_and_concurrent'
                       ? 'bg-emerald-500 text-slate-950 font-bold'
                       : 'text-slate-300 hover:text-white'
@@ -926,10 +981,52 @@ export function GitTimeline({
                 </button>
               </div>
 
+              {onToggleFocusKeepWindow && (
+                <button
+                  type="button"
+                  onClick={onToggleFocusKeepWindow}
+                  className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
+                    focusKeepWindow
+                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-200 hover:bg-amber-500/25'
+                      : 'bg-slate-950 border-slate-700 text-slate-300 hover:text-white hover:border-slate-500'
+                  }`}
+                  title={
+                    focusKeepWindow
+                      ? 'Текущее окно лет зафиксировано (масштаб оси сохранён). Нажмите, чтобы раскрыть все годы цепочки.'
+                      : 'Удерживать текущее окно лет и детализацию оси, отсекая дальние ретроспективные отсылки.'
+                  }
+                >
+                  {focusKeepWindow ? (
+                    <>
+                      <Lock className="w-3.5 h-3.5 text-amber-400" />
+                      <span>
+                        Окно: {windowRange ? `${windowRange.from}–${windowRange.to}` : 'удержано'}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <LockOpen className="w-3.5 h-3.5 text-slate-400" />
+                      <span>Удерживать окно</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {focusKeepWindow && outOfWindowFocusCount > 0 && onToggleFocusKeepWindow && (
+                <button
+                  type="button"
+                  onClick={onToggleFocusKeepWindow}
+                  className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
+                  title="Снять удержание окна, чтобы увидеть дальние связи вне выбранного интервала"
+                >
+                  Раскрыть все годы
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={onExitFocusMode}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono font-semibold inline-flex items-center gap-1 cursor-pointer"
+                className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono font-semibold inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
                 title="Выйти из режима фокуса и вернуться к общему графику (Esc)"
               >
                 <X className="w-3.5 h-3.5" />
@@ -1376,6 +1473,7 @@ export function GitTimeline({
               ev.endYear >= hoveredEvent.startYear;
             const isSelfHovered = effectiveActiveEventId === ev.id;
             const isFocusedTarget = focusedEvent?.id === ev.id;
+            const focusDistance = focusedEvent ? focusDistanceMap?.get(ev.id) : undefined;
             const isJumpHighlighted = highlightedJumpId === ev.id;
 
             const hiddenBranchSummaries = getEventHiddenBranchSummaries(ev, activeBranches, branches);
@@ -1622,6 +1720,11 @@ export function GitTimeline({
                             · <Link2 className="w-3 h-3" /> {ev.explicitLinks.length}
                           </span>
                         )}
+                        {focusedEvent && focusDepth > 1 && focusDistance !== undefined && focusDistance >= 1 && (
+                          <span className="hidden sm:inline text-[11px] font-mono text-emerald-300 shrink-0 tabular-nums">
+                            · {focusDistance} шаг
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono">
@@ -1691,6 +1794,11 @@ export function GitTimeline({
                           {!isAtomic && item.startedBeforeWindow && (
                             <span className="hidden lg:inline text-[10px] font-mono text-amber-300 shrink-0 whitespace-nowrap">
                               · с {ev.startYear} г.
+                            </span>
+                          )}
+                          {focusedEvent && focusDepth > 1 && focusDistance !== undefined && focusDistance >= 1 && (
+                            <span className="hidden sm:inline text-[11px] font-mono text-emerald-300 shrink-0 whitespace-nowrap tabular-nums">
+                              · {focusDistance} шаг
                             </span>
                           )}
                         </div>

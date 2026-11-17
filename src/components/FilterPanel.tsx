@@ -11,12 +11,12 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { resolveMacroEras, searchPersonDossiers } from '../engine/timelineEngine';
+import { searchPersonDossiers } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
   BranchPairFilter,
-  MacroEra,
   PersonDossier,
+  SyncLinkTypeFilter,
   SyncTagOption,
 } from '../types/timeline';
 
@@ -28,7 +28,7 @@ interface FilterPanelProps {
   selectedRulerId: string;
   searchQuery: string;
   onlySynced: boolean;
-  eras: MacroEra[];
+  syncLinkTypeFilter: SyncLinkTypeFilter;
   thematicBranches: BranchDefinition[];
   syncTagOptions: SyncTagOption[];
   selectedSyncTag: string | null;
@@ -42,10 +42,10 @@ interface FilterPanelProps {
   onSelectYearRange: (from: number, to: number) => void;
   onChangeSearch: (query: string) => void;
   onToggleOnlySynced: () => void;
+  onChangeSyncLinkTypeFilter: (nextType: SyncLinkTypeFilter) => void;
   onSelectSyncTag: (tag: string | null) => void;
   onChangeBranchPair: (pair: BranchPairFilter | null) => void;
   onToggleAuditUnlinkedMode: () => void;
-  onOpenEraModal: (eraId: string) => void;
   onOpenWindowModal?: (from: number, to: number) => void;
   onOpenPersonModal?: (personKey: string) => void;
   onClearPersonFilter?: () => void;
@@ -73,7 +73,7 @@ export function FilterPanel({
   selectedRulerId,
   searchQuery,
   onlySynced,
-  eras,
+  syncLinkTypeFilter,
   thematicBranches,
   syncTagOptions,
   selectedSyncTag,
@@ -87,16 +87,15 @@ export function FilterPanel({
   onSelectYearRange,
   onChangeSearch,
   onToggleOnlySynced,
+  onChangeSyncLinkTypeFilter,
   onSelectSyncTag,
   onChangeBranchPair,
   onToggleAuditUnlinkedMode,
-  onOpenEraModal,
   onOpenWindowModal,
   onOpenPersonModal,
   onClearPersonFilter,
   onResetFilters,
 }: FilterPanelProps) {
-  const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [highlightedPersonIdx, setHighlightedPersonIdx] = useState(-1);
   const [draftBranchA, setDraftBranchA] = useState(branchPairFilter?.branchA ?? '');
@@ -134,6 +133,7 @@ export function FilterPanel({
     !selectedRulerId &&
     !searchQuery &&
     !onlySynced &&
+    syncLinkTypeFilter === 'all' &&
     !selectedPersonDossier &&
     !selectedSyncTag &&
     !branchPairFilter &&
@@ -171,9 +171,9 @@ export function FilterPanel({
       aria-label="Консоль поиска, эпох и исторических срезов"
       className="rounded-2xl bg-slate-900/65 border border-slate-800/80 p-3.5 sm:p-4 space-y-3"
     >
-      {/* Первая строка: Поиск + Досье окна + Фильтр причинно-следственных связей + Сброс */}
+      {/* Первая строка: Поиск + Досье окна + Узловые связи и тип связей + Сброс */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center">
-        <div ref={searchWrapperRef} className="lg:col-span-7 relative">
+        <div ref={searchWrapperRef} className="lg:col-span-6 relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
@@ -274,7 +274,7 @@ export function FilterPanel({
           )}
         </div>
 
-        <div className="lg:col-span-5 flex flex-wrap items-center justify-between lg:justify-end gap-2">
+        <div className="lg:col-span-6 flex flex-wrap items-center justify-between lg:justify-end gap-2">
           <div className="flex lg:hidden items-center gap-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono">
             <span className="text-slate-400">Окно:</span>
             <input
@@ -302,7 +302,7 @@ export function FilterPanel({
             <button
               type="button"
               onClick={() => onOpenWindowModal(yearFrom, yearTo)}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 border border-amber-500/40 text-xs font-mono font-bold text-amber-200 transition-colors cursor-pointer whitespace-nowrap tabular-nums"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 border border-amber-500/40 text-xs font-mono font-bold text-amber-200 transition-colors cursor-pointer whitespace-nowrap tabular-nums shrink-0"
               title={`Открыть сводное досье произвольного окна ${yearFrom}–${yearTo} гг.`}
             >
               <CalendarRange className="w-3.5 h-3.5 shrink-0" />
@@ -310,19 +310,46 @@ export function FilterPanel({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onToggleOnlySynced}
-            className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ${
-              onlySynced
-                ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-bold'
-                : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
-            }`}
-            title="Оставить только события с причинно-следственными и культурными связями"
-          >
-            <Link2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-            <span>Узловые связи</span>
-          </button>
+          <div className="inline-flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={onToggleOnlySynced}
+              className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                onlySynced || syncLinkTypeFilter !== 'all'
+                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-bold'
+                  : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+              }`}
+              title="Оставить только события с выбранным типом исторических связей"
+            >
+              <Link2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+              <span>Узловые связи</span>
+            </button>
+
+            <select
+              aria-label="Тип узловых связей"
+              value={syncLinkTypeFilter}
+              onChange={(e) => onChangeSyncLinkTypeFilter(e.target.value as SyncLinkTypeFilter)}
+              className={`rounded-xl border px-2.5 py-2 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-emerald-400 ${
+                syncLinkTypeFilter !== 'all'
+                  ? 'bg-emerald-500/15 border-emerald-400/70 text-emerald-100 font-semibold'
+                  : 'bg-slate-950/85 border-slate-800 text-slate-300 hover:border-slate-700'
+              }`}
+              title="Фильтр событий по семантическому типу связей"
+            >
+              <option value="all" className="bg-slate-950 text-slate-100">
+                Все типы связей
+              </option>
+              <option value="causal" className="bg-slate-950 text-slate-100">
+                Причинно-следственные
+              </option>
+              <option value="retrospective" className="bg-slate-950 text-slate-100">
+                Ретроспективные
+              </option>
+              <option value="sync" className="bg-slate-950 text-slate-100">
+                Синхронные
+              </option>
+            </select>
+          </div>
 
           {!isFullRange && (
             <button
@@ -548,55 +575,6 @@ export function FilterPanel({
           );
         })}
       </div>
-
-      {/* Четвёртая строка: 11 макро-периодов истории России */}
-      {resolvedEras.length > 0 && (
-        <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
-            <span>
-              Макро-периоды ({minYear}–{maxYear}) — клик фокусирует окно времени, кнопка «Досье» открывает обзор эпохи и лиц времени:
-            </span>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-1.5">
-            {resolvedEras.map((era) => {
-              const isEraSelected = yearFrom === era.startYear && yearTo === era.endYear;
-              return (
-                <div
-                  key={era.id}
-                  onDoubleClick={() => onOpenEraModal(era.id)}
-                  className={`flex items-center justify-between gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-all ${
-                    isEraSelected
-                      ? 'bg-amber-500/15 border-amber-400 text-white shadow-sm'
-                      : 'bg-slate-950/60 border-slate-800/90 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => onSelectYearRange(era.startYear, era.endYear)}
-                    className="min-w-0 flex-1 text-left cursor-pointer"
-                    title={`${era.title} (${era.period}) — сфокусировать окно времени`}
-                  >
-                    <div className="font-mono text-[10px] text-amber-300 font-bold tabular-nums">
-                      {era.period}
-                    </div>
-                    <div className="font-semibold truncate text-[11px] text-white">
-                      {era.displayShortTitle}
-                    </div>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onOpenEraModal(era.id)}
-                    className="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-amber-500 hover:text-slate-950 border border-slate-700/80 text-[10px] font-mono text-amber-300 shrink-0 transition-colors cursor-pointer"
-                    title={`Открыть полное досье макро-периода «${era.displayShortTitle}»`}
-                  >
-                    Досье
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
     </section>
   );
 }

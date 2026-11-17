@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CardDetailModal } from './components/CardDetailModal';
+import { ComparePeriodsModal } from './components/ComparePeriodsModal';
 import { DashboardHeader } from './components/DashboardHeader';
 import { EraSummaryModal } from './components/EraSummaryModal';
 import { FilterPanel } from './components/FilterPanel';
@@ -39,8 +40,11 @@ import type {
   BranchPairFilter,
   BranchPresetId,
   CardDensity,
+  ComparisonTarget,
+  FocusDepth,
   FocusScope,
   ModalHistoryItem,
+  SyncLinkTypeFilter,
   SyncManifest,
   TimelineDataFile,
   YearRangeStep,
@@ -66,10 +70,13 @@ export default function App() {
   const [branchPairFilter, setBranchPairFilter] = useState<BranchPairFilter | null>(null);
   const [auditUnlinkedMode, setAuditUnlinkedMode] = useState(false);
   const [onlyWithSyncLinks, setOnlyWithSyncLinks] = useState(false);
+  const [syncLinkTypeFilter, setSyncLinkTypeFilter] = useState<SyncLinkTypeFilter>('all');
 
   const [cardDensity, setCardDensity] = useState<CardDensity>('detailed');
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
   const [focusScope, setFocusScope] = useState<FocusScope>('sync_only');
+  const [focusDepth, setFocusDepth] = useState<FocusDepth>(1);
+  const [focusKeepWindow, setFocusKeepWindow] = useState(false);
   const [highlightedJumpId, setHighlightedJumpId] = useState<string | null>(null);
 
   const [showEndNodes, setShowEndNodes] = useState(true);
@@ -81,6 +88,10 @@ export default function App() {
   const [activeEraModalId, setActiveEraModalId] = useState<string | null>(null);
   const [activePersonKey, setActivePersonKey] = useState<string | null>(null);
   const [activeWindowRange, setActiveWindowRange] = useState<{ from: number; to: number } | null>(null);
+  const [activeComparePair, setActiveComparePair] = useState<{
+    left: ComparisonTarget;
+    right: ComparisonTarget;
+  } | null>(null);
   const [modalHistory, setModalHistory] = useState<ModalHistoryItem[]>([]);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -126,13 +137,21 @@ export default function App() {
     setActiveEraModalId(null);
     setActivePersonKey(null);
     setActiveWindowRange(null);
+    setActiveComparePair(null);
     setModalHistory([]);
   }, []);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
+        if (
+          activeCardId ||
+          activePeriodId ||
+          activeEraModalId ||
+          activePersonKey ||
+          activeWindowRange ||
+          activeComparePair
+        ) {
           handleCloseAllModals();
         } else if (focusedEventId) {
           setFocusedEventId(null);
@@ -141,7 +160,16 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, focusedEventId, handleCloseAllModals]);
+  }, [
+    activeCardId,
+    activePeriodId,
+    activeEraModalId,
+    activePersonKey,
+    activeWindowRange,
+    activeComparePair,
+    focusedEventId,
+    handleCloseAllModals,
+  ]);
 
   const branches = useMemo(() => {
     if (!manifest) return [];
@@ -285,6 +313,8 @@ export default function App() {
     effectiveYearTo,
     axisResolution,
     auditCandidateMap,
+    focusDistanceMap,
+    outOfWindowFocusCount,
   } = useMemo(() => {
     if (!manifest) {
       return {
@@ -296,6 +326,8 @@ export default function App() {
         effectiveYearTo: yearTo,
         axisResolution: 'year' as const,
         auditCandidateMap: new Map(),
+        focusDistanceMap: new Map<string, number>(),
+        outOfWindowFocusCount: 0,
       };
     }
     return buildUnifiedTimelineStream(enrichedEvents, rulers, manifest, branches, {
@@ -311,8 +343,11 @@ export default function App() {
       branchPairFilter,
       auditUnlinkedMode,
       onlyWithSyncLinks,
+      syncLinkTypeFilter,
       focusedEventId,
       focusScope,
+      focusDepth,
+      focusKeepWindow,
       showEndNodes,
       showOverlapMatrix,
     });
@@ -333,8 +368,11 @@ export default function App() {
     branchPairFilter,
     auditUnlinkedMode,
     onlyWithSyncLinks,
+    syncLinkTypeFilter,
     focusedEventId,
     focusScope,
+    focusDepth,
+    focusKeepWindow,
     showEndNodes,
     showOverlapMatrix,
   ]);
@@ -438,13 +476,30 @@ export default function App() {
           windowRange: activeWindowRange,
         },
       ]);
+    } else if (activeComparePair) {
+      setModalHistory((prev) => [
+        ...prev.slice(-9),
+        {
+          type: 'compare',
+          id: 'compare',
+          label: 'Сравнение периодов',
+          comparePair: activeComparePair,
+        },
+      ]);
     }
-  }, [activeCardObj, activeRulerObj, activeEraObj, activePersonObj, activeWindowRange]);
+  }, [activeCardObj, activeRulerObj, activeEraObj, activePersonObj, activeWindowRange, activeComparePair]);
 
   const handleOpenCardModal = useCallback(
     (cardId: string) => {
       if (cardId === activeCardId) return;
-      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
+      if (
+        activeCardId ||
+        activePeriodId ||
+        activeEraModalId ||
+        activePersonKey ||
+        activeWindowRange ||
+        activeComparePair
+      ) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
@@ -453,15 +508,31 @@ export default function App() {
       setActiveEraModalId(null);
       setActivePersonKey(null);
       setActiveWindowRange(null);
+      setActiveComparePair(null);
       setActiveCardId(cardId);
     },
-    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, pushCurrentModalToHistory],
+    [
+      activeCardId,
+      activePeriodId,
+      activeEraModalId,
+      activePersonKey,
+      activeWindowRange,
+      activeComparePair,
+      pushCurrentModalToHistory,
+    ],
   );
 
   const handleOpenPeriodModal = useCallback(
     (rulerId: string) => {
       if (rulerId === activePeriodId) return;
-      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
+      if (
+        activeCardId ||
+        activePeriodId ||
+        activeEraModalId ||
+        activePersonKey ||
+        activeWindowRange ||
+        activeComparePair
+      ) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
@@ -470,15 +541,31 @@ export default function App() {
       setActiveEraModalId(null);
       setActivePersonKey(null);
       setActiveWindowRange(null);
+      setActiveComparePair(null);
       setActivePeriodId(rulerId);
     },
-    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, pushCurrentModalToHistory],
+    [
+      activeCardId,
+      activePeriodId,
+      activeEraModalId,
+      activePersonKey,
+      activeWindowRange,
+      activeComparePair,
+      pushCurrentModalToHistory,
+    ],
   );
 
   const handleOpenEraModal = useCallback(
     (eraId: string) => {
       if (eraId === activeEraModalId) return;
-      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
+      if (
+        activeCardId ||
+        activePeriodId ||
+        activeEraModalId ||
+        activePersonKey ||
+        activeWindowRange ||
+        activeComparePair
+      ) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
@@ -487,9 +574,18 @@ export default function App() {
       setActivePeriodId(null);
       setActivePersonKey(null);
       setActiveWindowRange(null);
+      setActiveComparePair(null);
       setActiveEraModalId(eraId);
     },
-    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, pushCurrentModalToHistory],
+    [
+      activeCardId,
+      activePeriodId,
+      activeEraModalId,
+      activePersonKey,
+      activeWindowRange,
+      activeComparePair,
+      pushCurrentModalToHistory,
+    ],
   );
 
   const handleOpenPersonModal = useCallback(
@@ -498,7 +594,14 @@ export default function App() {
         resolvePersonKey(personKeyOrName, personDossiers, personRawToKey) || personKeyOrName;
       if (!personDossiers.has(resolvedKey)) return;
       if (resolvedKey === activePersonKey) return;
-      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
+      if (
+        activeCardId ||
+        activePeriodId ||
+        activeEraModalId ||
+        activePersonKey ||
+        activeWindowRange ||
+        activeComparePair
+      ) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
@@ -507,6 +610,7 @@ export default function App() {
       setActivePeriodId(null);
       setActiveEraModalId(null);
       setActiveWindowRange(null);
+      setActiveComparePair(null);
       setActivePersonKey(resolvedKey);
     },
     [
@@ -517,6 +621,7 @@ export default function App() {
       activeEraModalId,
       activePersonKey,
       activeWindowRange,
+      activeComparePair,
       pushCurrentModalToHistory,
     ],
   );
@@ -528,7 +633,14 @@ export default function App() {
       if (activeWindowRange && activeWindowRange.from === from && activeWindowRange.to === to) {
         return;
       }
-      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
+      if (
+        activeCardId ||
+        activePeriodId ||
+        activeEraModalId ||
+        activePersonKey ||
+        activeWindowRange ||
+        activeComparePair
+      ) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
@@ -537,9 +649,139 @@ export default function App() {
       setActivePeriodId(null);
       setActiveEraModalId(null);
       setActivePersonKey(null);
+      setActiveComparePair(null);
       setActiveWindowRange({ from, to });
     },
-    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, pushCurrentModalToHistory],
+    [
+      activeCardId,
+      activePeriodId,
+      activeEraModalId,
+      activePersonKey,
+      activeWindowRange,
+      activeComparePair,
+      pushCurrentModalToHistory,
+    ],
+  );
+
+  const handleOpenCompareModal = useCallback(
+    (pair: { left: ComparisonTarget; right: ComparisonTarget }) => {
+      if (
+        activeCardId ||
+        activePeriodId ||
+        activeEraModalId ||
+        activePersonKey ||
+        activeWindowRange ||
+        activeComparePair
+      ) {
+        pushCurrentModalToHistory();
+      } else {
+        setModalHistory([]);
+      }
+      setActiveCardId(null);
+      setActivePeriodId(null);
+      setActiveEraModalId(null);
+      setActivePersonKey(null);
+      setActiveWindowRange(null);
+      setActiveComparePair(pair);
+    },
+    [
+      activeCardId,
+      activePeriodId,
+      activeEraModalId,
+      activePersonKey,
+      activeWindowRange,
+      activeComparePair,
+      pushCurrentModalToHistory,
+    ],
+  );
+
+  const handleOpenCompareFromHeader = useCallback(() => {
+    const peter = rulers.find((r) => /п[её]тр\s+i\b/i.test(r.shortRuler));
+    const alex2 = rulers.find((r) => /александр\s+ii\b/i.test(r.shortRuler));
+    if (selectedReign !== 'ALL') {
+      const curRuler = rulers.find((r) => r.id === selectedReign);
+      const other =
+        (peter && peter.id !== selectedReign ? peter : undefined) ??
+        rulers.find((r) => r.id !== selectedReign) ??
+        curRuler;
+      if (curRuler && other) {
+        handleOpenCompareModal({
+          left: { kind: 'ruler', rulerId: curRuler.id },
+          right: { kind: 'ruler', rulerId: other.id },
+        });
+        return;
+      }
+    }
+    if (peter && alex2) {
+      handleOpenCompareModal({
+        left: { kind: 'ruler', rulerId: peter.id },
+        right: { kind: 'ruler', rulerId: alex2.id },
+      });
+      return;
+    }
+    if (rulers.length >= 2) {
+      handleOpenCompareModal({
+        left: { kind: 'ruler', rulerId: rulers[0].id },
+        right: { kind: 'ruler', rulerId: rulers[1].id },
+      });
+      return;
+    }
+    handleOpenCompareModal({
+      left: { kind: 'window', from: effectiveYearFrom, to: effectiveYearTo },
+      right: { kind: 'window', from: timelineBounds.minYear, to: timelineBounds.maxYear },
+    });
+  }, [
+    rulers,
+    selectedReign,
+    effectiveYearFrom,
+    effectiveYearTo,
+    timelineBounds.minYear,
+    timelineBounds.maxYear,
+    handleOpenCompareModal,
+  ]);
+
+  const handleCompareWithRuler = useCallback(
+    (rulerId: string) => {
+      const peter = rulers.find((r) => /п[её]тр\s+i\b/i.test(r.shortRuler));
+      const alex2 = rulers.find((r) => /александр\s+ii\b/i.test(r.shortRuler));
+      const counterpart =
+        (peter && peter.id !== rulerId ? peter : undefined) ??
+        (alex2 && alex2.id !== rulerId ? alex2 : undefined) ??
+        rulers.find((r) => r.id !== rulerId) ??
+        rulers[0];
+      if (!counterpart) return;
+      handleOpenCompareModal({
+        left: { kind: 'ruler', rulerId },
+        right: { kind: 'ruler', rulerId: counterpart.id },
+      });
+    },
+    [rulers, handleOpenCompareModal],
+  );
+
+  const handleCompareWithEra = useCallback(
+    (eraId: string) => {
+      const counterpart =
+        resolvedMacroEras.find((e) => e.id !== eraId) ?? resolvedMacroEras[0];
+      if (!counterpart) return;
+      handleOpenCompareModal({
+        left: { kind: 'era', eraId },
+        right: { kind: 'era', eraId: counterpart.id },
+      });
+    },
+    [resolvedMacroEras, handleOpenCompareModal],
+  );
+
+  const handleCompareWithWindow = useCallback(
+    (from: number, to: number) => {
+      const isNorthernWar = from === 1700 && to === 1721;
+      handleOpenCompareModal({
+        left: { kind: 'window', from, to },
+        right: isNorthernWar
+          ? { kind: 'window', from: 1853, to: 1856 }
+          : { kind: 'window', from: 1700, to: 1721 },
+      });
+    },
+    [handleOpenCompareModal],
   );
 
   const handleFilterTimelineByPerson = useCallback(
@@ -591,31 +833,43 @@ export default function App() {
       setActiveEraModalId(null);
       setActivePersonKey(null);
       setActiveWindowRange(null);
+      setActiveComparePair(null);
       setActiveCardId(last.id);
     } else if (last.type === 'ruler') {
       setActiveCardId(null);
       setActiveEraModalId(null);
       setActivePersonKey(null);
       setActiveWindowRange(null);
+      setActiveComparePair(null);
       setActivePeriodId(last.id);
     } else if (last.type === 'era') {
       setActiveCardId(null);
       setActivePeriodId(null);
       setActivePersonKey(null);
       setActiveWindowRange(null);
+      setActiveComparePair(null);
       setActiveEraModalId(last.id);
     } else if (last.type === 'person') {
       setActiveCardId(null);
       setActivePeriodId(null);
       setActiveEraModalId(null);
       setActiveWindowRange(null);
+      setActiveComparePair(null);
       setActivePersonKey(last.id);
     } else if (last.type === 'window' && last.windowRange) {
       setActiveCardId(null);
       setActivePeriodId(null);
       setActiveEraModalId(null);
       setActivePersonKey(null);
+      setActiveComparePair(null);
       setActiveWindowRange(last.windowRange);
+    } else if (last.type === 'compare' && last.comparePair) {
+      setActiveCardId(null);
+      setActivePeriodId(null);
+      setActiveEraModalId(null);
+      setActivePersonKey(null);
+      setActiveWindowRange(null);
+      setActiveComparePair(last.comparePair);
     }
   }, [modalHistory]);
 
@@ -676,6 +930,7 @@ export default function App() {
     const normalized = !rulerId || rulerId === 'ALL' ? 'ALL' : rulerId;
     setSelectedReign(normalized);
     if (normalized !== 'ALL') {
+      setSelectedEra('ALL');
       const r = rulers.find((item) => item.id === normalized);
       if (r) handleYearRangeChange(r.startYear, r.endYear);
     } else {
@@ -692,10 +947,28 @@ export default function App() {
     setBranchPairFilter(null);
     setAuditUnlinkedMode(false);
     setOnlyWithSyncLinks(false);
+    setSyncLinkTypeFilter('all');
     setFocusedEventId(null);
     setZoomHistory([]);
     setYearFrom(timelineBounds.minYear);
     setYearTo(timelineBounds.maxYear);
+  }
+
+  function handleToggleOnlySynced() {
+    setOnlyWithSyncLinks((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSyncLinkTypeFilter('all');
+      }
+      return next;
+    });
+  }
+
+  function handleChangeSyncLinkTypeFilter(nextType: SyncLinkTypeFilter) {
+    setSyncLinkTypeFilter(nextType);
+    if (nextType !== 'all') {
+      setOnlyWithSyncLinks(true);
+    }
   }
 
   function handleSelectSyncTag(tag: string | null) {
@@ -1056,6 +1329,11 @@ export default function App() {
         onApplyPreset={handleApplyBranchPreset}
         onIsolateBranch={handleIsolateBranch}
         onToggleCollapseParent={handleToggleCollapseParent}
+        eras={manifest.macroEras}
+        enrichedEventsForEras={enrichedEvents}
+        selectedEraId={selectedEra}
+        onSelectEra={handleSelectEra}
+        onOpenEraModal={handleOpenEraModal}
         rulers={rulers}
         matchingEvents={matchingEvents}
         selectedRulerId={selectedReign === 'ALL' ? '' : selectedReign}
@@ -1066,7 +1344,11 @@ export default function App() {
         yearTo={yearTo}
         minYear={timelineBounds.minYear}
         maxYear={timelineBounds.maxYear}
-        onYearRangeChange={handleYearRangeChange}
+        onYearRangeChange={(fromVal, toVal) => {
+          setSelectedEra('ALL');
+          setSelectedReign('ALL');
+          handleYearRangeChange(fromVal, toVal);
+        }}
         cardDensity={cardDensity}
         onChangeCardDensity={(density) =>
           preserveViewportScrollAnchor(() => setCardDensity(density))
@@ -1091,6 +1373,7 @@ export default function App() {
         maxYear={timelineBounds.maxYear}
         showEndNodes={showEndNodes}
         onToggleShowEndNodes={() => setShowEndNodes((prev) => !prev)}
+        onOpenCompareModal={handleOpenCompareFromHeader}
       />
 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-3 space-y-3">
@@ -1103,7 +1386,7 @@ export default function App() {
             selectedRulerId={selectedReign === 'ALL' ? '' : selectedReign}
             searchQuery={searchQuery}
             onlySynced={onlyWithSyncLinks}
-            eras={manifest.macroEras}
+            syncLinkTypeFilter={syncLinkTypeFilter}
             thematicBranches={thematicLeafBranches}
             syncTagOptions={syncTagOptions}
             selectedSyncTag={selectedSyncTag}
@@ -1112,19 +1395,25 @@ export default function App() {
             auditFlaggedCount={auditUnlinkedMode ? matchingEvents.length : auditCandidateMap.size}
             personDossiers={personDossiers}
             selectedPersonDossier={selectedPersonDossier}
-            onChangeYearFrom={(y) => handleYearRangeChange(y, effectiveYearTo)}
-            onChangeYearTo={(y) => handleYearRangeChange(effectiveYearFrom, y)}
+            onChangeYearFrom={(y) => {
+              setSelectedEra('ALL');
+              handleYearRangeChange(y, effectiveYearTo);
+            }}
+            onChangeYearTo={(y) => {
+              setSelectedEra('ALL');
+              handleYearRangeChange(effectiveYearFrom, y);
+            }}
             onSelectYearRange={(fromVal, toVal) => {
               setSelectedEra('ALL');
               setSelectedReign('ALL');
               handleYearRangeChange(fromVal, toVal);
             }}
             onChangeSearch={setSearchQuery}
-            onToggleOnlySynced={() => setOnlyWithSyncLinks((prev) => !prev)}
+            onToggleOnlySynced={handleToggleOnlySynced}
+            onChangeSyncLinkTypeFilter={handleChangeSyncLinkTypeFilter}
             onSelectSyncTag={handleSelectSyncTag}
             onChangeBranchPair={handleChangeBranchPair}
             onToggleAuditUnlinkedMode={() => setAuditUnlinkedMode((prev) => !prev)}
-            onOpenEraModal={handleOpenEraModal}
             onOpenWindowModal={handleOpenWindowModal}
             onOpenPersonModal={handleOpenPersonModal}
             onClearPersonFilter={() => setSelectedPersonKey(null)}
@@ -1196,9 +1485,16 @@ export default function App() {
             cardDensity={cardDensity}
             focusedEvent={focusedEvent}
             focusScope={focusScope}
+            focusDepth={focusDepth}
+            focusKeepWindow={focusKeepWindow}
+            outOfWindowFocusCount={outOfWindowFocusCount}
+            focusDistanceMap={focusDistanceMap}
+            windowRange={{ from: yearFrom, to: yearTo }}
             auditUnlinkedMode={auditUnlinkedMode}
             auditCandidateMap={auditCandidateMap}
             onChangeFocusScope={setFocusScope}
+            onChangeFocusDepth={setFocusDepth}
+            onToggleFocusKeepWindow={() => setFocusKeepWindow((prev) => !prev)}
             onToggleFocusEvent={handleToggleFocusEvent}
             onToggleCollapseParent={handleToggleCollapseParent}
             onExitFocusMode={() => setFocusedEventId(null)}
@@ -1262,6 +1558,7 @@ export default function App() {
         onSelectCard={handleOpenCardModal}
         onOpenPersonModal={handleOpenPersonModal}
         onFilterByRuler={handleSelectReign}
+        onCompareWithRuler={handleCompareWithRuler}
       />
 
       <PersonDossierModal
@@ -1293,6 +1590,7 @@ export default function App() {
           setSelectedReign('ALL');
           handleYearRangeChange(startYear, endYear);
         }}
+        onCompareWithEra={handleCompareWithEra}
       />
 
       <WindowSummaryModal
@@ -1311,6 +1609,32 @@ export default function App() {
         onSelectEvent={handleOpenCardModal}
         onOpenPersonModal={handleOpenPersonModal}
         onRevealBranches={handleRevealBranches}
+        onCompareWithWindow={handleCompareWithWindow}
+      />
+
+      <ComparePeriodsModal
+        comparePair={activeComparePair}
+        rulers={rulers}
+        eras={manifest.macroEras}
+        enrichedEvents={enrichedEvents}
+        branches={branches}
+        personDossiers={personDossiers}
+        modalHistory={modalHistory}
+        currentWindow={{ from: effectiveYearFrom, to: effectiveYearTo }}
+        minYear={timelineBounds.minYear}
+        maxYear={timelineBounds.maxYear}
+        onUpdatePair={setActiveComparePair}
+        onClose={handleCloseAllModals}
+        onNavigateBack={handleModalNavigateBack}
+        onSelectCard={handleOpenCardModal}
+        onOpenRulerModal={handleOpenPeriodModal}
+        onOpenEraModal={handleOpenEraModal}
+        onOpenPersonModal={handleOpenPersonModal}
+        onSelectYearRange={(fromVal, toVal) => {
+          setSelectedEra('ALL');
+          setSelectedReign('ALL');
+          handleYearRangeChange(fromVal, toVal);
+        }}
       />
     </div>
   );

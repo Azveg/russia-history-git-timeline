@@ -10,6 +10,7 @@ import {
   Flame,
   FlaskConical,
   GitBranch,
+  GitCompareArrows,
   Layers,
   Link2,
   MapPin,
@@ -50,6 +51,7 @@ interface WindowSummaryModalProps {
   onSelectEvent: (eventId: string) => void;
   onOpenPersonModal?: (personKey: string) => void;
   onRevealBranches?: (branchIds: string[]) => void;
+  onCompareWithWindow?: (from: number, to: number) => void;
 }
 
 type FiguresRoleFilter = 'all' | 'writers' | 'scientists';
@@ -72,6 +74,7 @@ export function WindowSummaryModal({
   onSelectEvent,
   onOpenPersonModal,
   onRevealBranches,
+  onCompareWithWindow,
 }: WindowSummaryModalProps) {
   const [roleFilter, setRoleFilter] = useState<FiguresRoleFilter>('all');
   const [showAllParticipants, setShowAllParticipants] = useState(false);
@@ -242,6 +245,17 @@ export function WindowSummaryModal({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {onCompareWithWindow && (
+              <button
+                type="button"
+                onClick={() => onCompareWithWindow(yearFrom, yearTo)}
+                className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                title="Сравнить выбранный интервал лет с другим периодом или правлением"
+              >
+                <GitCompareArrows className="w-3.5 h-3.5 text-sky-400" />
+                <span>Сравнить с…</span>
+              </button>
+            )}
             {hiddenActiveBranches.length > 0 && onRevealBranches && (
               <button
                 type="button"

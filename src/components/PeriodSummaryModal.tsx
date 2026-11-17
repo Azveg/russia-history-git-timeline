@@ -8,6 +8,7 @@ import {
   Flame,
   FlaskConical,
   GitBranch,
+  GitCompareArrows,
   Link2,
   Sparkles,
   User,
@@ -35,6 +36,7 @@ interface PeriodSummaryModalProps {
   onSelectCard: (id: string) => void;
   onOpenPersonModal?: (personKey: string) => void;
   onFilterByRuler: (rulerId: string) => void;
+  onCompareWithRuler?: (rulerId: string) => void;
 }
 
 type EraFiguresRoleFilter = 'all' | 'writers' | 'scientists';
@@ -52,6 +54,7 @@ export function PeriodSummaryModal({
   onSelectCard,
   onOpenPersonModal,
   onFilterByRuler,
+  onCompareWithRuler,
 }: PeriodSummaryModalProps) {
   const [roleFilter, setRoleFilter] = useState<EraFiguresRoleFilter>('all');
   const [showAllParticipants, setShowAllParticipants] = useState(false);
@@ -204,13 +207,24 @@ export function PeriodSummaryModal({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {onCompareWithRuler && (
+              <button
+                type="button"
+                onClick={() => onCompareWithRuler(ruler.id)}
+                className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                title="Открыть сравнение этого правления с другим правлением или эпохой"
+              >
+                <GitCompareArrows className="w-3.5 h-3.5 text-sky-400" />
+                <span>Сравнить с…</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
                 onFilterByRuler(ruler.id);
                 onClose();
               }}
-              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
             >
               Сфокусировать таймлайн
             </button>

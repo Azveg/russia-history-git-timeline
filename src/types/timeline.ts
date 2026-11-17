@@ -321,6 +321,10 @@ export type CardDensity = 'detailed' | 'compact';
 
 export type FocusScope = 'sync_only' | 'sync_and_concurrent';
 
+export type FocusDepth = 1 | 2 | 3;
+
+export type SyncLinkTypeFilter = 'all' | 'causal' | 'retrospective' | 'sync';
+
 export interface RulerSpanSegment {
   ruler: RulerPeriod;
   overlapStart: number;
@@ -360,8 +364,11 @@ export interface FilterState {
   branchPairFilter?: BranchPairFilter | null;
   auditUnlinkedMode?: boolean;
   onlyWithSyncLinks: boolean;
+  syncLinkTypeFilter?: SyncLinkTypeFilter;
   focusedEventId: string | null;
   focusScope: FocusScope;
+  focusDepth?: FocusDepth;
+  focusKeepWindow?: boolean;
   showEndNodes: boolean;
   showOverlapMatrix: boolean;
 }
@@ -447,12 +454,18 @@ export interface AboutWorkEntry {
   yearGap: number;
 }
 
+export type ComparisonTarget =
+  | { kind: 'ruler'; rulerId: string }
+  | { kind: 'era'; eraId: string }
+  | { kind: 'window'; from: number; to: number; label?: string };
+
 export interface ModalHistoryItem {
-  type: 'card' | 'ruler' | 'era' | 'person' | 'window';
-  kind?: 'card' | 'ruler' | 'era' | 'person' | 'window';
+  type: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare';
+  kind?: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare';
   id: string;
   label: string;
   windowRange?: { from: number; to: number };
+  comparePair?: { left: ComparisonTarget; right: ComparisonTarget };
 }
 
 export interface ReignCrossBranchLink {
@@ -500,3 +513,60 @@ export interface WindowLinksVisibilitySummary {
   hiddenLinksCount: number;
   hiddenGroups: HiddenBranchLinkGroup[];
 }
+
+export interface ComparisonSideSummary {
+  target: ComparisonTarget;
+  kindLabel: string;
+  title: string;
+  subtitle: string;
+  yearFrom: number;
+  yearTo: number;
+  durationYears: number;
+  historicalEventsCount: number;
+  totalNodesCount: number;
+  startedInPeriodCount: number;
+  carryOverInCount: number;
+  carryOverOutCount: number;
+  rulersCount: number;
+  rulersList: RulerPeriod[];
+  centers: string[];
+  peakInterval: { label: string; count: number } | null;
+  totalUniqueLinks: number;
+  causalLinksCount: number;
+  retrospectiveLinksCount: number;
+  syncLinksCount: number;
+  crossBranchLinksCount: number;
+  worksAboutPeriodCount: number;
+  branchBreakdown: Array<{ branch: BranchDefinition; count: number; sharePct: number }>;
+  crossBranchPairs: ReignBranchPairSummary[];
+  topConnectedEvents: EnrichedEvent[];
+  syncTags: Array<{ tag: string; label: string; count: number }>;
+  participants: RulerParticipantEntry[];
+}
+
+export interface ComparisonPatternMatch {
+  pairKey: string;
+  branchALabel: string;
+  branchBLabel: string;
+  colorA: string;
+  colorB: string;
+  countLeft: number;
+  countRight: number;
+  isHistoricalCircuit: boolean;
+}
+
+export interface PeriodComparisonReport {
+  left: ComparisonSideSummary;
+  right: ComparisonSideSummary;
+  sharedBranchPairs: ComparisonPatternMatch[];
+  sharedSyncTags: Array<{ tag: string; label: string; countLeft: number; countRight: number }>;
+  sharedParticipants: Array<{ personKey: string; displayName: string; countLeft: number; countRight: number }>;
+  deltas: {
+    events: number;
+    links: number;
+    causalLinks: number;
+    retrospectiveLinks: number;
+    durationYears: number;
+  };
+}
+

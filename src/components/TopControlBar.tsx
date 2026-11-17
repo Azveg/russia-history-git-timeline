@@ -6,9 +6,11 @@ import type {
   BranchPresetId,
   CardDensity,
   EnrichedEvent,
+  MacroEra,
   RulerPeriod,
 } from '../types/timeline';
 import { BranchSelectorPopover } from './BranchSelectorPopover';
+import { EraSelectorPopover } from './EraSelectorPopover';
 import { RulerSelectorPopover } from './RulerSelectorPopover';
 
 interface TopControlBarProps {
@@ -20,6 +22,11 @@ interface TopControlBarProps {
   onApplyPreset: (presetId: BranchPresetId) => void;
   onIsolateBranch: (branchId: string) => void;
   onToggleCollapseParent: (parentId: string) => void;
+  eras: MacroEra[];
+  enrichedEventsForEras: EnrichedEvent[];
+  selectedEraId: string;
+  onSelectEra: (eraId: string) => void;
+  onOpenEraModal: (eraId: string) => void;
   rulers: RulerPeriod[];
   matchingEvents: EnrichedEvent[];
   selectedRulerId: string;
@@ -73,6 +80,11 @@ export function TopControlBar({
   onApplyPreset,
   onIsolateBranch,
   onToggleCollapseParent,
+  eras,
+  enrichedEventsForEras,
+  selectedEraId,
+  onSelectEra,
+  onOpenEraModal,
   rulers,
   matchingEvents,
   selectedRulerId,
@@ -160,6 +172,18 @@ export function TopControlBar({
             onApplyPreset={onApplyPreset}
             onIsolateBranch={onIsolateBranch}
             onToggleCollapseParent={onToggleCollapseParent}
+          />
+
+          <EraSelectorPopover
+            eras={eras}
+            enrichedEvents={enrichedEventsForEras}
+            selectedEraId={selectedEraId}
+            yearFrom={yearFrom}
+            yearTo={yearTo}
+            minYear={minYear}
+            maxYear={maxYear}
+            onSelectEra={onSelectEra}
+            onOpenEraModal={onOpenEraModal}
           />
 
           <RulerSelectorPopover

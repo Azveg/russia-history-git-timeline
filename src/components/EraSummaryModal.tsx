@@ -7,6 +7,7 @@ import {
   Feather,
   Flame,
   FlaskConical,
+  GitCompareArrows,
   Layers,
   Link2,
   MapPin,
@@ -44,6 +45,7 @@ interface EraSummaryModalProps {
   onSelectRuler: (rulerId: string) => void;
   onSelectEvent: (eventId: string) => void;
   onFilterByEraRange: (startYear: number, endYear: number) => void;
+  onCompareWithEra?: (eraId: string) => void;
 }
 
 type EraFiguresRoleFilter = 'all' | 'writers' | 'scientists';
@@ -61,6 +63,7 @@ export function EraSummaryModal({
   onSelectRuler,
   onSelectEvent,
   onFilterByEraRange,
+  onCompareWithEra,
 }: EraSummaryModalProps) {
   const [roleFilter, setRoleFilter] = useState<EraFiguresRoleFilter>('all');
 
@@ -158,13 +161,24 @@ export function EraSummaryModal({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {onCompareWithEra && (
+              <button
+                type="button"
+                onClick={() => onCompareWithEra(resolvedEra.id)}
+                className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                title="Сравнить эту макро-эпоху с другой эпохой или правлением"
+              >
+                <GitCompareArrows className="w-3.5 h-3.5 text-sky-400" />
+                <span>Сравнить с…</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
                 onFilterByEraRange(resolvedEra.startYear, resolvedEra.endYear);
                 onClose();
               }}
-              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer"
+              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
             >
               Сфокусировать окно ({resolvedEra.startYear}–{resolvedEra.endYear})
             </button>

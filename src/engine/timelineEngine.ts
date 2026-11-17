@@ -7,12 +7,16 @@ import type {
   BranchLaneLayout,
   BranchPresetId,
   BranchSubLaneLayout,
+  ComparisonPatternMatch,
+  ComparisonSideSummary,
+  ComparisonTarget,
   CrossLink,
   DensityBin,
   DynamicWindowHotspot,
   EnrichedEvent,
   ExplicitLinkInfo,
   FilterState,
+  FocusDepth,
   HiddenBranchLinkGroup,
   MacroEra,
   ModulesIndexFile,
@@ -20,6 +24,7 @@ import type {
   OverlapAnalyticsSummary,
   OverlapPeakInterval,
   OverlapYearBucket,
+  PeriodComparisonReport,
   PersonDossier,
   PreciseDateParts,
   ReignBranchPairSummary,
@@ -33,6 +38,7 @@ import type {
   RulerSubLaneLayout,
   RulersFile,
   StreamRow,
+  SyncLinkTypeFilter,
   SyncManifest,
   SyncTagOption,
   TimelineDataFile,
@@ -1790,6 +1796,36 @@ export function getEventHiddenBranchSummaries(
     .sort((a, b) => b.linkCount - a.linkCount || a.label.localeCompare(b.label, 'ru'));
 }
 
+export function classifyExplicitLinkCategory(
+  lnk: Pick<ExplicitLinkInfo, 'type' | 'isRetrospective'>,
+): Exclude<SyncLinkTypeFilter, 'all'> {
+  if (
+    lnk.type === 'triggers' ||
+    lnk.type === 'enables' ||
+    lnk.type === 'causes' ||
+    lnk.type === 'consequence'
+  ) {
+    return 'causal';
+  }
+  if (
+    lnk.isRetrospective === true ||
+    lnk.type === 'references' ||
+    lnk.type === 'about_event' ||
+    lnk.type === 'inspired_by'
+  ) {
+    return 'retrospective';
+  }
+  return 'sync';
+}
+
+export function doesLinkMatchTypeFilter(
+  lnk: Pick<ExplicitLinkInfo, 'type' | 'isRetrospective'>,
+  filterType: SyncLinkTypeFilter,
+): boolean {
+  if (filterType === 'all') return true;
+  return classifyExplicitLinkCategory(lnk) === filterType;
+}
+
 export function buildUnifiedTimelineStream(
   enrichedEvents: EnrichedEvent[],
   rulers: RulerPeriod[],
@@ -1801,6 +1837,8 @@ export function buildUnifiedTimelineStream(
   matchingEvents: EnrichedEvent[];
   matchingRulers: RulerPeriod[];
   focusedEvent: EnrichedEvent | null;
+  focusDistanceMap: Map<string, number>;
+  outOfWindowFocusCount: number;
   effectiveYearFrom: number;
   effectiveYearTo: number;
   axisResolution: AxisResolution;
@@ -1808,6 +1846,8 @@ export function buildUnifiedTimelineStream(
 } {
   const q = filters.searchQuery.trim().toLowerCase();
   const selectedTagNorm = filters.selectedSyncTag?.trim().toLowerCase() || null;
+  const linkTypeFilter: SyncLinkTypeFilter = filters.syncLinkTypeFilter || 'all';
+  const requireLinkMatch = filters.onlyWithSyncLinks || linkTypeFilter !== 'all';
   const pairFilter =
     filters.branchPairFilter &&
     filters.branchPairFilter.branchA &&
@@ -1825,6 +1865,8 @@ export function buildUnifiedTimelineStream(
   let effectiveYearFrom = filters.yearFrom;
   let effectiveYearTo = filters.yearTo;
   let auditCandidateMap = new Map<string, AuditCandidateInfo>();
+  const focusDistanceMap = new Map<string, number>();
+  let outOfWindowFocusCount = 0;
 
   const yearBounds = computeTimelineYearBounds(manifest, rulers, enrichedEvents);
 
@@ -1840,17 +1882,55 @@ export function buildUnifiedTimelineStream(
       : null;
 
   if (focusTarget) {
-    const allowedIds = new Set<string>([focusTarget.id]);
-    focusTarget.explicitLinks.forEach((lnk) => {
-      allowedIds.add(lnk.targetEvent.id);
-    });
+    const focusDepth: FocusDepth = filters.focusDepth ?? 1;
+    const focusKeepWindow = Boolean(filters.focusKeepWindow);
+    const byId = new Map(enrichedEvents.map((ev) => [ev.id, ev]));
+
+    focusDistanceMap.set(focusTarget.id, 0);
+    let frontier: string[] = [focusTarget.id];
+
+    for (let step = 0; step < focusDepth; step++) {
+      const nextFrontier: string[] = [];
+      frontier.forEach((evId) => {
+        const current = byId.get(evId);
+        if (!current) return;
+        current.explicitLinks.forEach((lnk) => {
+          const targetId = lnk.targetEvent.id;
+          if (!focusDistanceMap.has(targetId)) {
+            focusDistanceMap.set(targetId, step + 1);
+            nextFrontier.push(targetId);
+          }
+        });
+      });
+      frontier = nextFrontier;
+      if (frontier.length === 0) break;
+    }
+
     if (filters.focusScope === 'sync_and_concurrent') {
       focusTarget.concurrentEvents.forEach((ce) => {
-        allowedIds.add(ce.id);
+        if (!focusDistanceMap.has(ce.id)) {
+          focusDistanceMap.set(ce.id, 1);
+        }
       });
     }
 
-    matchingEvents = enrichedEvents.filter((ev) => allowedIds.has(ev.id));
+    const allFocusEvents = enrichedEvents.filter((ev) => focusDistanceMap.has(ev.id));
+
+    if (focusKeepWindow) {
+      effectiveYearFrom = filters.yearFrom;
+      effectiveYearTo = filters.yearTo;
+      matchingEvents = allFocusEvents.filter((ev) =>
+        intersectsTimeWindow(ev.startYear, ev.endYear, effectiveYearFrom, effectiveYearTo),
+      );
+      outOfWindowFocusCount = Math.max(0, allFocusEvents.length - matchingEvents.length);
+    } else {
+      matchingEvents = allFocusEvents;
+      const minEventYear = matchingEvents.reduce((m, e) => Math.min(m, e.startYear), focusTarget.startYear);
+      const maxEventYear = matchingEvents.reduce((m, e) => Math.max(m, e.endYear), focusTarget.endYear);
+      effectiveYearFrom = Math.max(yearBounds.minYear, minEventYear);
+      effectiveYearTo = Math.min(yearBounds.maxYear, Math.max(effectiveYearFrom + 1, maxEventYear));
+    }
+
     auditCandidateMap = computeUnlinkedAuditMap(matchingEvents);
 
     const touchedRulerIds = new Set<string>();
@@ -1860,13 +1940,11 @@ export function buildUnifiedTimelineStream(
 
     matchingRulers = rulers.filter((r) => {
       if (!isRulersFileMounted || filters.activeBranches.MAIN_RULERS === false) return false;
+      if (focusKeepWindow && !intersectsTimeWindow(r.startYear, r.endYear, effectiveYearFrom, effectiveYearTo)) {
+        return false;
+      }
       return touchedRulerIds.has(r.id);
     });
-
-    const minEventYear = matchingEvents.reduce((m, e) => Math.min(m, e.startYear), focusTarget.startYear);
-    const maxEventYear = matchingEvents.reduce((m, e) => Math.max(m, e.endYear), focusTarget.endYear);
-    effectiveYearFrom = Math.max(yearBounds.minYear, minEventYear);
-    effectiveYearTo = Math.min(yearBounds.maxYear, Math.max(effectiveYearFrom + 1, maxEventYear));
   } else {
     const preAuditEvents = enrichedEvents.filter((ev) => {
       if (pairFilter) {
@@ -1902,16 +1980,21 @@ export function buildUnifiedTimelineStream(
         if (!nodeTags.includes(selectedTagNorm)) return false;
       }
 
-      if (filters.onlyWithSyncLinks) {
+      if (requireLinkMatch) {
         if (pairFilter) {
           const partnerBranch =
             ev.task === pairFilter.branchA ? pairFilter.branchB : pairFilter.branchA;
           const hasPairLink = ev.explicitLinks.some(
-            (lnk) => lnk.targetEvent.task === partnerBranch,
+            (lnk) =>
+              lnk.targetEvent.task === partnerBranch &&
+              doesLinkMatchTypeFilter(lnk, linkTypeFilter),
           );
           if (!hasPairLink) return false;
-        } else if (ev.explicitLinks.length === 0) {
-          return false;
+        } else {
+          const hasMatchingLink = ev.explicitLinks.some((lnk) =>
+            doesLinkMatchTypeFilter(lnk, linkTypeFilter),
+          );
+          if (!hasMatchingLink) return false;
         }
       }
 
@@ -1989,7 +2072,7 @@ export function buildUnifiedTimelineStream(
       if (filters.selectedReign !== 'ALL' && r.id !== filters.selectedReign) return false;
       if (
         !q &&
-        !filters.onlyWithSyncLinks &&
+        !requireLinkMatch &&
         !filters.selectedPersonKey &&
         !selectedTagNorm &&
         !pairFilter &&
@@ -2077,7 +2160,7 @@ export function buildUnifiedTimelineStream(
       rulerObj,
     });
 
-    if (filters.showEndNodes && (focusTarget || rulerObj.endYear <= effectiveYearTo)) {
+    if (filters.showEndNodes && ((focusTarget && !filters.focusKeepWindow) || rulerObj.endYear <= effectiveYearTo)) {
       stream.push({
         rowType: 'RULER_END',
         year: rulerObj.endYear,
@@ -2098,7 +2181,10 @@ export function buildUnifiedTimelineStream(
       eventObj.endPrecision,
       axisResolution,
     );
-    const startedBeforeWindow = !focusTarget && !isAtomicInView && eventObj.startYear < effectiveYearFrom;
+    const startedBeforeWindow =
+      (!focusTarget || Boolean(filters.focusKeepWindow)) &&
+      !isAtomicInView &&
+      eventObj.startYear < effectiveYearFrom;
     const displayYear = startedBeforeWindow ? effectiveYearFrom : eventObj.startYear;
     const displayParts = startedBeforeWindow
       ? parsePreciseDate(undefined, effectiveYearFrom, false)
@@ -2121,7 +2207,7 @@ export function buildUnifiedTimelineStream(
     if (
       !isAtomicInView &&
       filters.showEndNodes &&
-      (focusTarget || eventObj.endYear <= effectiveYearTo)
+      ((focusTarget && !filters.focusKeepWindow) || eventObj.endYear <= effectiveYearTo)
     ) {
       stream.push({
         rowType: 'EVENT_END',
@@ -2148,6 +2234,8 @@ export function buildUnifiedTimelineStream(
     matchingEvents,
     matchingRulers,
     focusedEvent: focusTarget,
+    focusDistanceMap,
+    outOfWindowFocusCount,
     effectiveYearFrom,
     effectiveYearTo,
     axisResolution,
@@ -4133,6 +4221,332 @@ export function searchPersonDossiers(
     .slice(0, limit)
     .map((m) => m.dossier);
 }
+
+function buildComparisonSide(
+  target: ComparisonTarget,
+  rulers: RulerPeriod[],
+  enrichedEvents: EnrichedEvent[],
+  branches: BranchDefinition[],
+  eras: MacroEra[],
+  personDossiers?: Map<string, PersonDossier>,
+): ComparisonSideSummary | null {
+  const resolvedEras = resolveMacroEras(eras);
+
+  let kindLabel = '';
+  let title = '';
+  let subtitle = '';
+  let yearFrom = 862;
+  let yearTo = 2000;
+  let overlappingAll: EnrichedEvent[] = [];
+  let periodRulers: RulerPeriod[] = [];
+  let worksAboutPeriodCount = 0;
+  let carryOverInCount = 0;
+  let carryOverOutCount = 0;
+  let startedInPeriodCount = 0;
+  let peakInterval: { label: string; count: number } | null = null;
+  let topConnectedEvents: EnrichedEvent[] = [];
+  let crossBranchPairs: ReignBranchPairSummary[] = [];
+  let crossBranchLinksCount = 0;
+  let participants: RulerParticipantEntry[] = [];
+  let centers: string[] = [];
+
+  if (target.kind === 'ruler') {
+    const ruler = rulers.find((r) => r.id === target.rulerId);
+    if (!ruler) return null;
+    const summary = getRulerPeriodSummaryData(ruler, enrichedEvents, branches, personDossiers);
+    kindLabel = 'Правление';
+    title = ruler.ruler;
+    subtitle = `${ruler.reignPeriod}${ruler.center ? ` · ${ruler.center}` : ''} — ${ruler.reignTitle}`;
+    yearFrom = ruler.startYear;
+    yearTo = ruler.endYear;
+    overlappingAll = enrichedEvents.filter((ev) =>
+      ev.overlappingRulers.some((or) => or.id === ruler.id),
+    );
+    periodRulers = [ruler];
+    worksAboutPeriodCount = summary.worksAboutPeriod.length;
+    carryOverInCount = summary.inheritedEvents.length;
+    carryOverOutCount = summary.carryOverEvents.length;
+    startedInPeriodCount = summary.startedInReign.length;
+    topConnectedEvents = summary.topConnectedEvents;
+    crossBranchPairs = summary.crossBranchPairs;
+    crossBranchLinksCount = summary.crossBranchLinks.length;
+    participants = summary.reignParticipants;
+    centers = ruler.center ? [ruler.center] : [];
+
+    const bins = computeDensityBins(overlappingAll, yearFrom, yearTo, 10);
+    let bestBin: DensityBin | null = null;
+    for (const bin of bins) {
+      if (!bestBin || bin.totalCount > bestBin.totalCount) bestBin = bin;
+    }
+    if (bestBin && bestBin.totalCount > 0) {
+      peakInterval = {
+        label:
+          bestBin.startYear === bestBin.endYear
+            ? `${bestBin.startYear} г.`
+            : `${bestBin.startYear}–${bestBin.endYear} гг.`,
+        count: bestBin.totalCount,
+      };
+    }
+  } else if (target.kind === 'era') {
+    const era = resolvedEras.find((e) => e.id === target.eraId);
+    if (!era) return null;
+    const summary = getMacroEraSummaryData(era, rulers, enrichedEvents, branches);
+    kindLabel = 'Макро-эпоха';
+    title = era.displayShortTitle;
+    subtitle = `${era.period} — ${era.title}`;
+    yearFrom = era.startYear;
+    yearTo = era.endYear;
+    overlappingAll = enrichedEvents.filter((ev) =>
+      doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, era),
+    );
+    periodRulers = summary.eraRulers;
+    worksAboutPeriodCount = summary.worksAboutPeriod.length;
+    carryOverInCount = summary.carryOverInEvents.length;
+    carryOverOutCount = summary.carryOverOutEvents.length;
+    startedInPeriodCount = summary.eraEvents.filter(
+      (ev) => ev.startYear >= era.startYear && ev.startYear <= era.endYear,
+    ).length;
+    peakInterval = summary.peakInterval;
+    topConnectedEvents = summary.topConnectedEvents;
+    const crossSummary = buildCrossBranchSummary(overlappingAll, branches);
+    crossBranchPairs = crossSummary.crossBranchPairs;
+    crossBranchLinksCount = crossSummary.crossBranchLinks.length;
+    const dossierMap =
+      personDossiers ?? buildPersonDossierIndex(enrichedEvents, periodRulers).dossiers;
+    participants = buildWindowParticipantsRanking(summary.eraEvents, periodRulers, dossierMap);
+    centers = summary.centers;
+  } else {
+    const summary = getCustomWindowSummaryData(
+      target.from,
+      target.to,
+      rulers,
+      enrichedEvents,
+      branches,
+      eras,
+      personDossiers,
+    );
+    kindLabel = 'Окно лет';
+    title = target.label || `Срез ${summary.yearFrom}–${summary.yearTo} гг.`;
+    subtitle =
+      summary.overlappingRulers.length > 0
+        ? `${summary.yearFrom}–${summary.yearTo} гг. · правлений: ${summary.overlappingRulers.length}`
+        : `${summary.yearFrom}–${summary.yearTo} гг.`;
+    yearFrom = summary.yearFrom;
+    yearTo = summary.yearTo;
+    overlappingAll = enrichedEvents.filter((ev) =>
+      intersectsTimeWindow(ev.startYear, ev.endYear, yearFrom, yearTo),
+    );
+    periodRulers = summary.overlappingRulers;
+    worksAboutPeriodCount = summary.worksAboutPeriod.length;
+    carryOverInCount = summary.carryOverInEvents.length;
+    carryOverOutCount = summary.carryOverOutEvents.length;
+    startedInPeriodCount = summary.startedInWindow.length;
+    peakInterval = summary.peakInterval;
+    topConnectedEvents = summary.topConnectedEvents;
+    crossBranchPairs = summary.crossBranchPairs;
+    crossBranchLinksCount = summary.crossBranchLinks.length;
+    participants = summary.windowParticipants;
+    centers = summary.centers;
+  }
+
+  const historicalEvents = overlappingAll.filter((ev) => isHistoricalEventNode(ev, branches));
+
+  const uniqueLinks = new Map<string, ExplicitLinkInfo>();
+  overlappingAll.forEach((ev) => {
+    ev.explicitLinks.forEach((lnk) => {
+      const canonicalKey =
+        lnk.id || [ev.id, lnk.targetEvent.id].sort().join('__') + '|' + lnk.type;
+      if (!uniqueLinks.has(canonicalKey)) {
+        uniqueLinks.set(canonicalKey, lnk);
+      }
+    });
+  });
+
+  let causalLinksCount = 0;
+  let retrospectiveLinksCount = 0;
+  let syncLinksCount = 0;
+  uniqueLinks.forEach((lnk) => {
+    const cat = classifyExplicitLinkCategory(lnk);
+    if (cat === 'causal') causalLinksCount += 1;
+    else if (cat === 'retrospective') retrospectiveLinksCount += 1;
+    else syncLinksCount += 1;
+  });
+
+  const branchCountMap = new Map<string, number>();
+  overlappingAll.forEach((ev) => {
+    const resolvedBranch = resolveEventBranch(ev, branches);
+    branchCountMap.set(resolvedBranch.id, (branchCountMap.get(resolvedBranch.id) || 0) + 1);
+  });
+
+  const totalNodesCount = overlappingAll.length;
+  const branchBreakdown: Array<{ branch: BranchDefinition; count: number; sharePct: number }> = [];
+  branches.forEach((b) => {
+    if (b.isGroup || b.isTimeAxis) return;
+    const count = branchCountMap.get(b.id) || 0;
+    if (count > 0) {
+      branchBreakdown.push({
+        branch: b,
+        count,
+        sharePct: totalNodesCount > 0 ? Math.round((count / totalNodesCount) * 100) : 0,
+      });
+    }
+  });
+  branchBreakdown.sort((a, b) => b.count - a.count);
+
+  const byId = new Map(enrichedEvents.map((e) => [e.id, e]));
+  const rulerLabelByTag = new Map<string, string>();
+  rulers.forEach((r) => rulerLabelByTag.set(r.id.toLowerCase(), r.shortRuler));
+  const eraLabelByTag = new Map<string, string>();
+  resolvedEras.forEach((era) => {
+    const rawKey = era.id.toLowerCase();
+    eraLabelByTag.set(rawKey, era.displayShortTitle);
+    eraLabelByTag.set(rawKey.replace(/_/g, '-'), era.displayShortTitle);
+  });
+
+  const tagCounts = new Map<string, number>();
+  overlappingAll.forEach((ev) => {
+    const rawTags = [
+      ...(ev.syncTags || []),
+      ...(ev.campaignId ? [ev.campaignId] : []),
+    ];
+    new Set(rawTags.map((t) => t.trim().toLowerCase()).filter(Boolean)).forEach((tag) => {
+      tagCounts.set(tag, (tagCounts.get(tag) || 0) + 1);
+    });
+  });
+
+  const syncTags = Array.from(tagCounts.entries())
+    .map(([tag, count]) => {
+      const rawLabel = resolveSyncTagHumanLabel(tag, {
+        byId,
+        rulerLabelByTag,
+        eraLabelByTag,
+      });
+      return {
+        tag,
+        label: rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1),
+        count,
+      };
+    })
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ru'));
+
+  return {
+    target,
+    kindLabel,
+    title,
+    subtitle,
+    yearFrom,
+    yearTo,
+    durationYears: Math.max(1, yearTo - yearFrom),
+    historicalEventsCount: historicalEvents.length,
+    totalNodesCount,
+    startedInPeriodCount,
+    carryOverInCount,
+    carryOverOutCount,
+    rulersCount: periodRulers.length,
+    rulersList: periodRulers,
+    centers,
+    peakInterval,
+    totalUniqueLinks: uniqueLinks.size,
+    causalLinksCount,
+    retrospectiveLinksCount,
+    syncLinksCount,
+    crossBranchLinksCount,
+    worksAboutPeriodCount,
+    branchBreakdown,
+    crossBranchPairs,
+    topConnectedEvents,
+    syncTags,
+    participants,
+  };
+}
+
+export function computePeriodComparison(
+  leftTarget: ComparisonTarget,
+  rightTarget: ComparisonTarget,
+  rulers: RulerPeriod[],
+  enrichedEvents: EnrichedEvent[],
+  branches: BranchDefinition[],
+  eras: MacroEra[],
+  personDossiers?: Map<string, PersonDossier>,
+): PeriodComparisonReport | null {
+  const left = buildComparisonSide(leftTarget, rulers, enrichedEvents, branches, eras, personDossiers);
+  const right = buildComparisonSide(rightTarget, rulers, enrichedEvents, branches, eras, personDossiers);
+  if (!left || !right) return null;
+
+  const rightPairsByKey = new Map(right.crossBranchPairs.map((p) => [p.pairKey, p]));
+  const sharedBranchPairs: ComparisonPatternMatch[] = [];
+  left.crossBranchPairs.forEach((lp) => {
+    const rp = rightPairsByKey.get(lp.pairKey);
+    if (rp) {
+      sharedBranchPairs.push({
+        pairKey: lp.pairKey,
+        branchALabel: lp.branchALabel,
+        branchBLabel: lp.branchBLabel,
+        colorA: lp.colorA,
+        colorB: lp.colorB,
+        countLeft: lp.count,
+        countRight: rp.count,
+        isHistoricalCircuit: lp.isHistoricalCircuit,
+      });
+    }
+  });
+  sharedBranchPairs.sort(
+    (a, b) => b.countLeft + b.countRight - (a.countLeft + a.countRight),
+  );
+
+  const rightTagMap = new Map(right.syncTags.map((t) => [t.tag, t]));
+  const sharedSyncTags: Array<{ tag: string; label: string; countLeft: number; countRight: number }> = [];
+  left.syncTags.forEach((lt) => {
+    const rt = rightTagMap.get(lt.tag);
+    if (rt) {
+      sharedSyncTags.push({
+        tag: lt.tag,
+        label: lt.label,
+        countLeft: lt.count,
+        countRight: rt.count,
+      });
+    }
+  });
+  sharedSyncTags.sort((a, b) => b.countLeft + b.countRight - (a.countLeft + a.countRight));
+
+  const rightPartMap = new Map(right.participants.map((p) => [p.personKey, p]));
+  const sharedParticipants: Array<{
+    personKey: string;
+    displayName: string;
+    countLeft: number;
+    countRight: number;
+  }> = [];
+  left.participants.forEach((lp) => {
+    const rp = rightPartMap.get(lp.personKey);
+    if (rp) {
+      sharedParticipants.push({
+        personKey: lp.personKey,
+        displayName: lp.displayName,
+        countLeft: lp.reignEventCount,
+        countRight: rp.reignEventCount,
+      });
+    }
+  });
+  sharedParticipants.sort(
+    (a, b) => b.countLeft + b.countRight - (a.countLeft + a.countRight),
+  );
+
+  return {
+    left,
+    right,
+    sharedBranchPairs,
+    sharedSyncTags,
+    sharedParticipants,
+    deltas: {
+      events: left.historicalEventsCount - right.historicalEventsCount,
+      links: left.totalUniqueLinks - right.totalUniqueLinks,
+      causalLinks: left.causalLinksCount - right.causalLinksCount,
+      retrospectiveLinks: left.retrospectiveLinksCount - right.retrospectiveLinksCount,
+      durationYears: left.durationYears - right.durationYears,
+    },
+  };
+}
+
 
 
 
