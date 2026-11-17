@@ -26,6 +26,7 @@ interface OverlapMapSectionProps {
   onHoverEvent: (id: string | null) => void;
   onOpenCardModal: (id: string) => void;
   onOpenPeriodModal: (rulerId: string) => void;
+  onOpenWindowModal?: (from: number, to: number) => void;
   onSelectYearRange: (from: number, to: number) => void;
 }
 
@@ -44,6 +45,7 @@ export function OverlapMapSection({
   onHoverEvent,
   onOpenCardModal,
   onOpenPeriodModal,
+  onOpenWindowModal,
   onSelectYearRange,
 }: OverlapMapSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -197,10 +199,21 @@ export function OverlapMapSection({
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/35 text-amber-300 text-[11px] font-mono font-bold tabular-nums">
               Окно: {yearFrom}–{yearTo} гг. ({matchingEvents.length} соб.)
             </span>
+            {onOpenWindowModal && (
+              <button
+                type="button"
+                onClick={() => onOpenWindowModal(yearFrom, yearTo)}
+                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
+                title={`Открыть сводное досье для выбранного отрезка ${yearFrom}–${yearTo} гг.`}
+              >
+                <BarChart3 className="w-3 h-3" />
+                <span>Досье окна</span>
+              </button>
+            )}
             {(yearFrom > minYear || yearTo < maxYear) && (
               <button
                 type="button"

@@ -20,6 +20,7 @@ interface FilterPanelProps {
   onChangeSearch: (query: string) => void;
   onToggleOnlySynced: () => void;
   onOpenEraModal: (eraId: string) => void;
+  onOpenWindowModal?: (from: number, to: number) => void;
   onOpenPersonModal?: (personKey: string) => void;
   onClearPersonFilter?: () => void;
   onResetFilters: () => void;
@@ -55,6 +56,7 @@ export function FilterPanel({
   onChangeSearch,
   onToggleOnlySynced,
   onOpenEraModal,
+  onOpenWindowModal,
   onOpenPersonModal,
   onClearPersonFilter,
   onResetFilters,
@@ -97,9 +99,9 @@ export function FilterPanel({
       aria-label="Консоль поиска, эпох и исторических срезов"
       className="rounded-2xl bg-slate-900/65 border border-slate-800/80 p-3.5 sm:p-4 space-y-3"
     >
-      {/* Первая строка: Поиск + Фильтр причинно-следственных связей + Сброс */}
+      {/* Первая строка: Поиск + Досье окна + Фильтр причинно-следственных связей + Сброс */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center">
-        <div ref={searchWrapperRef} className="lg:col-span-9 relative">
+        <div ref={searchWrapperRef} className="lg:col-span-7 relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
@@ -200,7 +202,7 @@ export function FilterPanel({
           )}
         </div>
 
-        <div className="lg:col-span-3 flex flex-wrap items-center justify-between lg:justify-end gap-2">
+        <div className="lg:col-span-5 flex flex-wrap items-center justify-between lg:justify-end gap-2">
           <div className="flex lg:hidden items-center gap-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono">
             <span className="text-slate-400">Окно:</span>
             <input
@@ -224,10 +226,22 @@ export function FilterPanel({
             />
           </div>
 
+          {onOpenWindowModal && (
+            <button
+              type="button"
+              onClick={() => onOpenWindowModal(yearFrom, yearTo)}
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 border border-amber-500/40 text-xs font-mono font-bold text-amber-200 transition-colors cursor-pointer whitespace-nowrap tabular-nums"
+              title={`Открыть сводное досье произвольного окна ${yearFrom}–${yearTo} гг.`}
+            >
+              <CalendarRange className="w-3.5 h-3.5 shrink-0" />
+              <span>Досье окна ({yearFrom}–{yearTo})</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onToggleOnlySynced}
-            className={`flex-1 lg:flex-initial inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ${
+            className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ${
               onlySynced
                 ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-bold'
                 : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'

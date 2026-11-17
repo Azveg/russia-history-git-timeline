@@ -4,10 +4,12 @@ import { DashboardHeader } from './components/DashboardHeader';
 import { EraSummaryModal } from './components/EraSummaryModal';
 import { FilterPanel } from './components/FilterPanel';
 import { GitTimeline } from './components/GitTimeline';
+import { HiddenLinksNotice } from './components/HiddenLinksNotice';
 import { OverlapMapSection } from './components/OverlapMapSection';
 import { PeriodSummaryModal } from './components/PeriodSummaryModal';
 import { PersonDossierModal } from './components/PersonDossierModal';
 import { TopControlBar } from './components/TopControlBar';
+import { WindowSummaryModal } from './components/WindowSummaryModal';
 import {
   buildPersonDossierIndex,
   buildUnifiedTimelineStream,
@@ -20,6 +22,7 @@ import {
   getDescendantBranchIds,
   getEnrichedEvents,
   getVisibleLanes,
+  getWindowLinksVisibilitySummary,
   hasChildBranches,
   intersectsTimeWindow,
   isBranchOrDescendantActive,
@@ -71,6 +74,7 @@ export default function App() {
   const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
   const [activeEraModalId, setActiveEraModalId] = useState<string | null>(null);
   const [activePersonKey, setActivePersonKey] = useState<string | null>(null);
+  const [activeWindowRange, setActiveWindowRange] = useState<{ from: number; to: number } | null>(null);
   const [modalHistory, setModalHistory] = useState<ModalHistoryItem[]>([]);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -115,13 +119,14 @@ export default function App() {
     setActivePeriodId(null);
     setActiveEraModalId(null);
     setActivePersonKey(null);
+    setActiveWindowRange(null);
     setModalHistory([]);
   }, []);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
+        if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
           handleCloseAllModals();
         } else if (focusedEventId) {
           setFocusedEventId(null);
@@ -130,7 +135,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeCardId, activePeriodId, activeEraModalId, activePersonKey, focusedEventId, handleCloseAllModals]);
+  }, [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, focusedEventId, handleCloseAllModals]);
 
   const branches = useMemo(() => {
     if (!manifest) return [];
@@ -237,13 +242,7 @@ export default function App() {
     selectedPersonKey,
   ]);
 
-  const totalSyncLinksCount = useMemo(() => {
-    const ids = new Set<string>();
-    enrichedEvents.forEach((ev) => {
-      ev.explicitLinks.forEach((lnk) => ids.add(lnk.id));
-    });
-    return ids.size;
-  }, [enrichedEvents]);
+
 
   const visibleLanes = useMemo(
     () => getVisibleLanes(branches, activeBranches, collapsedParents),
@@ -297,6 +296,11 @@ export default function App() {
     showEndNodes,
     showOverlapMatrix,
   ]);
+
+  const windowLinksVisibility = useMemo(
+    () => getWindowLinksVisibilitySummary(matchingEvents, activeBranches, branches),
+    [matchingEvents, activeBranches, branches],
+  );
 
   const displayLanes = useMemo(() => {
     if (!focusedEvent) return visibleLanes;
@@ -382,13 +386,23 @@ export default function App() {
         ...prev.slice(-9),
         { type: 'person', id: activePersonObj.key, label: activePersonObj.displayName },
       ]);
+    } else if (activeWindowRange) {
+      setModalHistory((prev) => [
+        ...prev.slice(-9),
+        {
+          type: 'window',
+          id: `${activeWindowRange.from}-${activeWindowRange.to}`,
+          label: `Окно ${activeWindowRange.from}–${activeWindowRange.to}`,
+          windowRange: activeWindowRange,
+        },
+      ]);
     }
-  }, [activeCardObj, activeRulerObj, activeEraObj, activePersonObj]);
+  }, [activeCardObj, activeRulerObj, activeEraObj, activePersonObj, activeWindowRange]);
 
   const handleOpenCardModal = useCallback(
     (cardId: string) => {
       if (cardId === activeCardId) return;
-      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
+      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
@@ -396,15 +410,16 @@ export default function App() {
       setActivePeriodId(null);
       setActiveEraModalId(null);
       setActivePersonKey(null);
+      setActiveWindowRange(null);
       setActiveCardId(cardId);
     },
-    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, pushCurrentModalToHistory],
+    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, pushCurrentModalToHistory],
   );
 
   const handleOpenPeriodModal = useCallback(
     (rulerId: string) => {
       if (rulerId === activePeriodId) return;
-      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
+      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
@@ -412,15 +427,16 @@ export default function App() {
       setActiveCardId(null);
       setActiveEraModalId(null);
       setActivePersonKey(null);
+      setActiveWindowRange(null);
       setActivePeriodId(rulerId);
     },
-    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, pushCurrentModalToHistory],
+    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, pushCurrentModalToHistory],
   );
 
   const handleOpenEraModal = useCallback(
     (eraId: string) => {
       if (eraId === activeEraModalId) return;
-      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
+      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
@@ -428,9 +444,10 @@ export default function App() {
       setActiveCardId(null);
       setActivePeriodId(null);
       setActivePersonKey(null);
+      setActiveWindowRange(null);
       setActiveEraModalId(eraId);
     },
-    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, pushCurrentModalToHistory],
+    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, pushCurrentModalToHistory],
   );
 
   const handleOpenPersonModal = useCallback(
@@ -439,7 +456,7 @@ export default function App() {
         resolvePersonKey(personKeyOrName, personDossiers, personRawToKey) || personKeyOrName;
       if (!personDossiers.has(resolvedKey)) return;
       if (resolvedKey === activePersonKey) return;
-      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
+      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
@@ -447,6 +464,7 @@ export default function App() {
       setActiveCardId(null);
       setActivePeriodId(null);
       setActiveEraModalId(null);
+      setActiveWindowRange(null);
       setActivePersonKey(resolvedKey);
     },
     [
@@ -456,8 +474,30 @@ export default function App() {
       activePeriodId,
       activeEraModalId,
       activePersonKey,
+      activeWindowRange,
       pushCurrentModalToHistory,
     ],
+  );
+
+  const handleOpenWindowModal = useCallback(
+    (fromVal: number, toVal: number) => {
+      const from = Math.min(fromVal, toVal);
+      const to = Math.max(fromVal, toVal);
+      if (activeWindowRange && activeWindowRange.from === from && activeWindowRange.to === to) {
+        return;
+      }
+      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey || activeWindowRange) {
+        pushCurrentModalToHistory();
+      } else {
+        setModalHistory([]);
+      }
+      setActiveCardId(null);
+      setActivePeriodId(null);
+      setActiveEraModalId(null);
+      setActivePersonKey(null);
+      setActiveWindowRange({ from, to });
+    },
+    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, activeWindowRange, pushCurrentModalToHistory],
   );
 
   const handleFilterTimelineByPerson = useCallback(
@@ -508,22 +548,32 @@ export default function App() {
       setActivePeriodId(null);
       setActiveEraModalId(null);
       setActivePersonKey(null);
+      setActiveWindowRange(null);
       setActiveCardId(last.id);
     } else if (last.type === 'ruler') {
       setActiveCardId(null);
       setActiveEraModalId(null);
       setActivePersonKey(null);
+      setActiveWindowRange(null);
       setActivePeriodId(last.id);
     } else if (last.type === 'era') {
       setActiveCardId(null);
       setActivePeriodId(null);
       setActivePersonKey(null);
+      setActiveWindowRange(null);
       setActiveEraModalId(last.id);
     } else if (last.type === 'person') {
       setActiveCardId(null);
       setActivePeriodId(null);
       setActiveEraModalId(null);
+      setActiveWindowRange(null);
       setActivePersonKey(last.id);
+    } else if (last.type === 'window' && last.windowRange) {
+      setActiveCardId(null);
+      setActivePeriodId(null);
+      setActiveEraModalId(null);
+      setActivePersonKey(null);
+      setActiveWindowRange(last.windowRange);
     }
   }, [modalHistory]);
 
@@ -792,6 +842,36 @@ export default function App() {
     }
   }
 
+  function handleRevealBranches(branchIds: string[]) {
+    if (branchIds.length === 0) return;
+    preserveViewportScrollAnchor(() => {
+      setActiveBranches((prev) => {
+        const next = { ...prev };
+        branchIds.forEach((id) => {
+          next[id] = true;
+        });
+        return next;
+      });
+      setCollapsedParents((prev) => {
+        const updated = { ...prev };
+        branchIds.forEach((id) => {
+          let cur: BranchDefinition | undefined = branches.find((b) => b.id === id);
+          while (cur?.parentBranchId) {
+            updated[cur.parentBranchId] = false;
+            cur = branches.find((item) => item.id === cur!.parentBranchId);
+          }
+        });
+        return updated;
+      });
+    });
+    const labels = branchIds
+      .map((id) => branches.find((b) => b.id === id)?.label || id)
+      .slice(0, 3)
+      .join(', ');
+    const suffix = branchIds.length > 3 ? ` и ещё ${branchIds.length - 3}` : '';
+    showToast(`Раскрыты связанные ветки (${branchIds.length}): ${labels}${suffix}.`);
+  }
+
   function handleToggleBranchCategory(branchIds: string[], enable: boolean) {
     preserveViewportScrollAnchor(() => {
       setActiveBranches((prev) => {
@@ -935,7 +1015,14 @@ export default function App() {
         visibleLanesCount={visibleLanes.length}
         matchingRulersCount={matchingRulers.length}
         streamCount={stream.length}
-        crossLinksCount={totalSyncLinksCount}
+        visibleLinksCount={windowLinksVisibility.visibleLinksCount}
+        hiddenLinksCount={windowLinksVisibility.hiddenLinksCount}
+        onRevealHiddenLinks={() => {
+          const el = document.getElementById('hidden-links-notice');
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }}
         minYear={timelineBounds.minYear}
         maxYear={timelineBounds.maxYear}
         showEndNodes={showEndNodes}
@@ -965,6 +1052,7 @@ export default function App() {
             onChangeSearch={setSearchQuery}
             onToggleOnlySynced={() => setOnlyWithSyncLinks((prev) => !prev)}
             onOpenEraModal={handleOpenEraModal}
+            onOpenWindowModal={handleOpenWindowModal}
             onOpenPersonModal={handleOpenPersonModal}
             onClearPersonFilter={() => setSelectedPersonKey(null)}
             onResetFilters={handleResetFiltersOnly}
@@ -984,11 +1072,19 @@ export default function App() {
           onHoverEvent={setHoveredEventId}
           onOpenCardModal={handleOpenCardModal}
           onOpenPeriodModal={handleOpenPeriodModal}
+          onOpenWindowModal={handleOpenWindowModal}
           onSelectYearRange={(fromVal, toVal) => {
             setSelectedEra('ALL');
             setSelectedReign('ALL');
             handleYearRangeChange(fromVal, toVal);
           }}
+        />
+
+        <HiddenLinksNotice
+          visibility={windowLinksVisibility}
+          onRevealBranch={handleRevealBranch}
+          onRevealBranches={handleRevealBranches}
+          onEnableAllBranches={() => handleApplyBranchPreset('all')}
         />
       </div>
 
@@ -1121,6 +1217,24 @@ export default function App() {
           setSelectedReign('ALL');
           handleYearRangeChange(startYear, endYear);
         }}
+      />
+
+      <WindowSummaryModal
+        windowRange={activeWindowRange}
+        eras={manifest.macroEras}
+        rulers={rulers}
+        enrichedEvents={enrichedEvents}
+        branches={branches}
+        activeBranches={activeBranches}
+        personDossiers={personDossiers}
+        modalHistory={modalHistory}
+        onClose={handleCloseAllModals}
+        onNavigateBack={handleModalNavigateBack}
+        onSelectEra={handleOpenEraModal}
+        onSelectRuler={handleOpenPeriodModal}
+        onSelectEvent={handleOpenCardModal}
+        onOpenPersonModal={handleOpenPersonModal}
+        onRevealBranches={handleRevealBranches}
       />
     </div>
   );

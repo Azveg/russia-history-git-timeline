@@ -4,7 +4,9 @@ interface DashboardHeaderProps {
   visibleLanesCount: number;
   matchingRulersCount: number;
   streamCount: number;
-  crossLinksCount: number;
+  visibleLinksCount: number;
+  hiddenLinksCount?: number;
+  onRevealHiddenLinks?: () => void;
   minYear?: number;
   maxYear?: number;
   showEndNodes: boolean;
@@ -15,7 +17,9 @@ export function DashboardHeader({
   visibleLanesCount,
   matchingRulersCount,
   streamCount,
-  crossLinksCount,
+  visibleLinksCount,
+  hiddenLinksCount = 0,
+  onRevealHiddenLinks,
   minYear = 862,
   maxYear = 2000,
   showEndNodes,
@@ -62,10 +66,27 @@ export function DashboardHeader({
                 <div className="text-[10px] text-slate-400">вех на шкале</div>
               </div>
               <div className="pl-3 text-center">
-                <div className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-emerald-400">
-                  {crossLinksCount}
+                <div
+                  className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-emerald-400"
+                  title={
+                    hiddenLinksCount > 0
+                      ? `В текущем окне видимо связей: ${visibleLinksCount}. Ещё ${hiddenLinksCount} ведут в отключённые ветки.`
+                      : `Уникальных связей среди событий текущего окна: ${visibleLinksCount}`
+                  }
+                >
+                  {visibleLinksCount}
                 </div>
-                <div className="text-[10px] text-slate-400">связей событий</div>
+                <div className="text-[10px] text-slate-400 whitespace-nowrap">связей в окне</div>
+                {hiddenLinksCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={onRevealHiddenLinks}
+                    className="mt-0.5 block mx-auto text-[10px] font-mono text-amber-300 hover:text-amber-200 underline decoration-amber-500/45 underline-offset-2 cursor-pointer whitespace-nowrap tabular-nums"
+                    title="Перейти к списку отключённых веток со скрытыми связями"
+                  >
+                    +{hiddenLinksCount} скрытых
+                  </button>
+                )}
               </div>
             </div>
 

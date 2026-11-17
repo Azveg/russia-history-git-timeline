@@ -427,10 +427,11 @@ export interface AboutWorkEntry {
 }
 
 export interface ModalHistoryItem {
-  type: 'card' | 'ruler' | 'era' | 'person';
-  kind?: 'card' | 'ruler' | 'era' | 'person';
+  type: 'card' | 'ruler' | 'era' | 'person' | 'window';
+  kind?: 'card' | 'ruler' | 'era' | 'person' | 'window';
   id: string;
   label: string;
+  windowRange?: { from: number; to: number };
 }
 
 export interface ReignCrossBranchLink {
@@ -461,4 +462,20 @@ export interface ReignBranchPairSummary {
   colorB: string;
   count: number;
   isHistoricalCircuit: boolean;
+}
+
+export interface HiddenBranchLinkGroup {
+  branchId: string;
+  branchLabel: string;
+  color: string;
+  hiddenLinkCount: number;
+  hiddenEventCount: number;
+  sampleTargetTitles: string[];
+}
+
+export interface WindowLinksVisibilitySummary {
+  visibleLinksCount: number;
+  totalWindowLinksCount: number;
+  hiddenLinksCount: number;
+  hiddenGroups: HiddenBranchLinkGroup[];
 }
