@@ -889,12 +889,132 @@ export default function App() {
     if (y1 > y2) {
       [y1, y2] = [y2, y1];
     }
-    if (y1 === yearFrom && y2 === yearTo) return;
-    if (recordHistory) {
-      handleRecordZoomStep(yearFrom, yearTo);
+    const baseFrom = effectiveYearFrom;
+    const baseTo = effectiveYearTo;
+    if (y1 === baseFrom && y2 === baseTo && y1 === yearFrom && y2 === yearTo) return;
+    if (recordHistory && (y1 !== baseFrom || y2 !== baseTo)) {
+      handleRecordZoomStep(baseFrom, baseTo);
+    }
+    if (focusedEventId && !focusKeepWindow) {
+      setFocusKeepWindow(true);
     }
     setYearFrom(y1);
     setYearTo(y2);
+  }
+
+  function computeCenteredRange(
+    currentFrom: number,
+    currentTo: number,
+    targetSpan: number,
+    minYear: number,
+    maxYear: number,
+  ): { from: number; to: number } {
+    const fullSpan = Math.max(2, maxYear - minYear);
+    const clampedSpan = Math.max(2, Math.min(fullSpan, Math.round(targetSpan)));
+    if (clampedSpan >= fullSpan) {
+      return { from: minYear, to: maxYear };
+    }
+    const mid = Math.round((currentFrom + currentTo) / 2);
+    const halfLeft = Math.floor(clampedSpan / 2);
+    let nextFrom = mid - halfLeft;
+    let nextTo = nextFrom + clampedSpan;
+    if (nextFrom < minYear) {
+      nextFrom = minYear;
+      nextTo = Math.min(maxYear, minYear + clampedSpan);
+    }
+    if (nextTo > maxYear) {
+      nextTo = maxYear;
+      nextFrom = Math.max(minYear, maxYear - clampedSpan);
+    }
+    return { from: nextFrom, to: nextTo };
+  }
+
+  function handleRecordZoomCheckpoint() {
+    handleRecordZoomStep(effectiveYearFrom, effectiveYearTo);
+  }
+
+  function handleStepBackZoom() {
+    if (zoomHistory.length === 0) return;
+    const last = zoomHistory[zoomHistory.length - 1];
+    preserveViewportScrollAnchor(() => {
+      setZoomHistory((prev) => prev.slice(0, -1));
+      setSelectedEra('ALL');
+      setSelectedReign('ALL');
+      if (focusedEventId) {
+        setFocusKeepWindow(true);
+      }
+      setYearFrom(last.from);
+      setYearTo(last.to);
+    });
+  }
+
+  function handleZoomByFactor(factor: number) {
+    const currentSpan = Math.max(2, effectiveYearTo - effectiveYearFrom);
+    const fullSpan = Math.max(2, timelineBounds.maxYear - timelineBounds.minYear);
+    let targetSpan: number;
+    if (factor < 1) {
+      targetSpan = Math.max(2, Math.floor(currentSpan * factor));
+      if (targetSpan === currentSpan && currentSpan > 2) {
+        targetSpan = currentSpan - 1;
+      }
+    } else {
+      targetSpan = Math.min(fullSpan, Math.max(currentSpan + 2, Math.round(currentSpan * factor)));
+    }
+    const next = computeCenteredRange(
+      effectiveYearFrom,
+      effectiveYearTo,
+      targetSpan,
+      timelineBounds.minYear,
+      timelineBounds.maxYear,
+    );
+    if (next.from === effectiveYearFrom && next.to === effectiveYearTo) return;
+    preserveViewportScrollAnchor(() => {
+      setSelectedEra('ALL');
+      setSelectedReign('ALL');
+      handleYearRangeChange(next.from, next.to, true);
+    });
+  }
+
+  function handleApplySpanPreset(preset: 'all' | 100 | 10 | 2) {
+    const next =
+      preset === 'all'
+        ? { from: timelineBounds.minYear, to: timelineBounds.maxYear }
+        : computeCenteredRange(
+            effectiveYearFrom,
+            effectiveYearTo,
+            preset,
+            timelineBounds.minYear,
+            timelineBounds.maxYear,
+          );
+    if (next.from === effectiveYearFrom && next.to === effectiveYearTo) return;
+    preserveViewportScrollAnchor(() => {
+      setSelectedEra('ALL');
+      setSelectedReign('ALL');
+      handleYearRangeChange(next.from, next.to, true);
+    });
+  }
+
+  function handleShiftWindow(direction: -1 | 1) {
+    const currentSpan = Math.max(2, effectiveYearTo - effectiveYearFrom);
+    const fullSpan = Math.max(2, timelineBounds.maxYear - timelineBounds.minYear);
+    if (currentSpan >= fullSpan) return;
+    const step = Math.max(1, Math.round(currentSpan / 2)) * direction;
+    let nextFrom = effectiveYearFrom + step;
+    let nextTo = effectiveYearTo + step;
+    if (nextFrom < timelineBounds.minYear) {
+      nextFrom = timelineBounds.minYear;
+      nextTo = Math.min(timelineBounds.maxYear, timelineBounds.minYear + currentSpan);
+    }
+    if (nextTo > timelineBounds.maxYear) {
+      nextTo = timelineBounds.maxYear;
+      nextFrom = Math.max(timelineBounds.minYear, timelineBounds.maxYear - currentSpan);
+    }
+    if (nextFrom === effectiveYearFrom && nextTo === effectiveYearTo) return;
+    preserveViewportScrollAnchor(() => {
+      setSelectedEra('ALL');
+      setSelectedReign('ALL');
+      handleYearRangeChange(nextFrom, nextTo, true);
+    });
   }
 
   function handleSelectEra(eraId: string) {
@@ -1340,8 +1460,8 @@ export default function App() {
         onJumpToRuler={handleJumpToRuler}
         onFilterByRuler={handleSelectReign}
         onOpenRulerModal={handleOpenPeriodModal}
-        yearFrom={yearFrom}
-        yearTo={yearTo}
+        yearFrom={effectiveYearFrom}
+        yearTo={effectiveYearTo}
         minYear={timelineBounds.minYear}
         maxYear={timelineBounds.maxYear}
         onYearRangeChange={(fromVal, toVal) => {
@@ -1349,6 +1469,12 @@ export default function App() {
           setSelectedReign('ALL');
           handleYearRangeChange(fromVal, toVal);
         }}
+        zoomHistoryCount={zoomHistory.length}
+        lastZoomStep={zoomHistory[zoomHistory.length - 1] ?? null}
+        onStepBackZoom={handleStepBackZoom}
+        onZoomIn={() => handleZoomByFactor(0.5)}
+        onZoomOut={() => handleZoomByFactor(2)}
+        onShiftWindow={handleShiftWindow}
         cardDensity={cardDensity}
         onChangeCardDensity={(density) =>
           preserveViewportScrollAnchor(() => setCardDensity(density))
@@ -1435,11 +1561,19 @@ export default function App() {
           onOpenCardModal={handleOpenCardModal}
           onOpenPeriodModal={handleOpenPeriodModal}
           onOpenWindowModal={handleOpenWindowModal}
-          onSelectYearRange={(fromVal, toVal) => {
+          onSelectYearRange={(fromVal, toVal, recordHistory = true) => {
             setSelectedEra('ALL');
             setSelectedReign('ALL');
-            handleYearRangeChange(fromVal, toVal);
+            handleYearRangeChange(fromVal, toVal, recordHistory);
           }}
+          zoomHistoryCount={zoomHistory.length}
+          lastZoomStep={zoomHistory[zoomHistory.length - 1] ?? null}
+          onStepBackZoom={handleStepBackZoom}
+          onZoomIn={() => handleZoomByFactor(0.5)}
+          onZoomOut={() => handleZoomByFactor(2)}
+          onShiftWindow={handleShiftWindow}
+          onApplySpanPreset={handleApplySpanPreset}
+          onRecordZoomCheckpoint={handleRecordZoomCheckpoint}
         />
 
         <HiddenLinksNotice

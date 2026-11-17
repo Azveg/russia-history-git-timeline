@@ -1,4 +1,16 @@
-import { Check, ChevronDown, Compass, Rows3, Rows4, SlidersHorizontal } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Compass,
+  Minus,
+  Plus,
+  Rows3,
+  Rows4,
+  SlidersHorizontal,
+  Undo2,
+} from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { computeBranchPresetMap } from '../engine/timelineEngine';
 import type {
@@ -38,6 +50,12 @@ interface TopControlBarProps {
   minYear?: number;
   maxYear?: number;
   onYearRangeChange: (from: number, to: number) => void;
+  zoomHistoryCount: number;
+  lastZoomStep: { from: number; to: number } | null;
+  onStepBackZoom: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+  onShiftWindow: (direction: -1 | 1) => void;
   cardDensity: CardDensity;
   onChangeCardDensity: (density: CardDensity) => void;
   isFiltersCollapsed: boolean;
@@ -96,6 +114,12 @@ export function TopControlBar({
   minYear = 862,
   maxYear = 2000,
   onYearRangeChange,
+  zoomHistoryCount,
+  lastZoomStep,
+  onStepBackZoom,
+  onZoomIn,
+  onZoomOut,
+  onShiftWindow,
   cardDensity,
   onChangeCardDensity,
   isFiltersCollapsed,
@@ -106,6 +130,12 @@ export function TopControlBar({
   const [isPresetMenuOpen, setIsPresetMenuOpen] = useState(false);
 
   const leafBranches = branchControls.filter((b) => !b.isGroup);
+  const span = Math.max(1, yearTo - yearFrom);
+  const fullSpan = Math.max(1, maxYear - minYear);
+  const canZoomIn = span > 2;
+  const canZoomOut = span < fullSpan;
+  const canShiftLeft = yearFrom > minYear;
+  const canShiftRight = yearTo < maxYear;
 
   const isPresetActive = (presetId: BranchPresetId): boolean => {
     if (leafBranches.length === 0) return false;
@@ -268,8 +298,100 @@ export function TopControlBar({
           </div>
         </div>
 
-        <div className="flex flex-nowrap items-center gap-1 sm:gap-2 ml-auto shrink-0">
-          <div className="hidden xl:flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-[11px] font-mono shrink-0">
+        <div className="flex flex-nowrap items-center gap-1 sm:gap-1.5 ml-auto shrink-0">
+          {/* Компактный блок шага масштаба назад и зума +/- в шапке */}
+          <div
+            className="hidden md:inline-flex items-center gap-0.5 rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[11px] font-mono shrink-0"
+            role="group"
+            aria-label="Управление масштабом окна времени"
+          >
+            <button
+              type="button"
+              onClick={onStepBackZoom}
+              disabled={zoomHistoryCount === 0}
+              aria-label="Шаг назад по масштабу"
+              title={
+                lastZoomStep
+                  ? `Вернуться к предыдущему масштабу: ${lastZoomStep.from}–${lastZoomStep.to} гг. (шагов в истории: ${zoomHistoryCount})`
+                  : 'История масштабирования пуста'
+              }
+              className={`px-1.5 py-1 rounded-md inline-flex items-center gap-1 transition-colors whitespace-nowrap ${
+                zoomHistoryCount > 0
+                  ? 'text-amber-300 hover:bg-slate-800 hover:text-amber-200 cursor-pointer'
+                  : 'text-slate-600 cursor-not-allowed'
+              }`}
+            >
+              <Undo2 className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden lg:inline">Назад</span>
+              {zoomHistoryCount > 0 && (
+                <span className="px-1 py-0.2 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold tabular-nums">
+                  {zoomHistoryCount}
+                </span>
+              )}
+            </button>
+
+            <span className="w-px h-4 bg-slate-800 mx-0.5" aria-hidden="true" />
+
+            <button
+              type="button"
+              onClick={onZoomOut}
+              disabled={!canZoomOut}
+              aria-label="Отдалить окно времени в 2 раза"
+              title={
+                canZoomOut
+                  ? `Отдалить масштаб ×2 вокруг центра окна (${Math.round((yearFrom + yearTo) / 2)} г.)`
+                  : 'Уже открыт весь период (862–2000)'
+              }
+              className={`px-1.5 py-1 rounded-md inline-flex items-center gap-0.5 transition-colors whitespace-nowrap ${
+                canZoomOut
+                  ? 'text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer'
+                  : 'text-slate-600 cursor-not-allowed'
+              }`}
+            >
+              <Minus className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-[10px] font-bold">×2</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onZoomIn}
+              disabled={!canZoomIn}
+              aria-label="Приблизить окно времени в 2 раза"
+              title={
+                canZoomIn
+                  ? `Приблизить масштаб ×2 вокруг центра окна (${Math.round((yearFrom + yearTo) / 2)} г.)`
+                  : 'Достигнут максимальный масштаб (2–3 года)'
+              }
+              className={`px-1.5 py-1 rounded-md inline-flex items-center gap-0.5 transition-colors whitespace-nowrap ${
+                canZoomIn
+                  ? 'text-amber-300 hover:bg-slate-800 hover:text-amber-200 cursor-pointer'
+                  : 'text-slate-600 cursor-not-allowed'
+              }`}
+            >
+              <Plus className="w-3.5 h-3.5 shrink-0" />
+              <span className="text-[10px] font-bold">×2</span>
+            </button>
+          </div>
+
+          <div className="hidden xl:flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-1.5 py-1 text-[11px] font-mono shrink-0">
+            <button
+              type="button"
+              onClick={() => onShiftWindow(-1)}
+              disabled={!canShiftLeft}
+              aria-label="Сдвинуть окно времени влево"
+              title={
+                canShiftLeft
+                  ? `Сдвинуть окно назад на ${Math.max(1, Math.round(span / 2))} л.`
+                  : 'Достигнута нижняя граница хронологии'
+              }
+              className={`p-0.5 rounded transition-colors ${
+                canShiftLeft
+                  ? 'text-slate-300 hover:bg-slate-800 hover:text-amber-300 cursor-pointer'
+                  : 'text-slate-700 cursor-not-allowed'
+              }`}
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+            </button>
             <span className="text-slate-400">Окно:</span>
             <input
               type="number"
@@ -290,6 +412,24 @@ export function TopControlBar({
               onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
               className="w-13 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
             />
+            <button
+              type="button"
+              onClick={() => onShiftWindow(1)}
+              disabled={!canShiftRight}
+              aria-label="Сдвинуть окно времени вправо"
+              title={
+                canShiftRight
+                  ? `Сдвинуть окно вперёд на ${Math.max(1, Math.round(span / 2))} л.`
+                  : 'Достигнута верхняя граница хронологии'
+              }
+              className={`p-0.5 rounded transition-colors ${
+                canShiftRight
+                  ? 'text-slate-300 hover:bg-slate-800 hover:text-amber-300 cursor-pointer'
+                  : 'text-slate-700 cursor-not-allowed'
+              }`}
+            >
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           <div
