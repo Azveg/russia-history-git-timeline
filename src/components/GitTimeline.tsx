@@ -845,7 +845,7 @@ export function GitTimeline({
             </button>
 
             {isGraphHelpOpen && (
-              <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl p-3.5 z-50 text-left space-y-2.5">
+              <div className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[106px] sm:top-full sm:mt-2 max-w-md sm:max-w-none sm:w-96 mx-auto sm:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl p-3.5 z-50 text-left space-y-2.5">
                 <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
                   <span className="text-xs font-bold text-white">Обозначения на хронографе</span>
                   <button
@@ -1513,7 +1513,7 @@ export function GitTimeline({
                 </div>
 
                 <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
-                  <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 h-[36px] flex items-center justify-between gap-2 text-xs">
+                  <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 min-h-[36px] py-1.5 flex items-center justify-between gap-2 text-xs">
                     <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden font-mono">
                       <GitMerge className="w-3.5 h-3.5 shrink-0" style={{ color: rColor }} />
                       <span className="font-bold tabular-nums shrink-0" style={{ color: rColor }}>
@@ -1806,7 +1806,7 @@ export function GitTimeline({
                     <div
                       onMouseEnter={(e) => openCardTooltip(e.currentTarget)}
                       onMouseLeave={() => setHoveredCardTooltip(null)}
-                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3 h-[38px] flex items-center justify-between gap-2.5 transition-all ${cardHighlightClass}`}
+                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3 min-h-[38px] py-1.5 flex items-center justify-between gap-2.5 transition-all ${cardHighlightClass}`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                         <span
@@ -1895,7 +1895,7 @@ export function GitTimeline({
                       onMouseLeave={() => setHoveredCardTooltip(null)}
                       className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-xl border px-3.5 py-2.5 transition-all flex flex-col justify-between gap-2 ${cardHighlightClass}`}
                     >
-                      <div className="flex items-center justify-between gap-2.5 min-w-0 h-5">
+                      <div className="flex items-center justify-between gap-2.5 min-w-0 min-h-[20px]">
                         <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                           <span
                             className="font-mono text-xs font-extrabold tabular-nums shrink-0"
@@ -1940,7 +1940,7 @@ export function GitTimeline({
                         </div>
                       </div>
 
-                      <p className="text-xs text-slate-300 leading-[18px] h-[36px] overflow-hidden line-clamp-2">
+                      <p className="text-xs text-slate-300 leading-[18px] min-h-[36px] overflow-hidden line-clamp-2">
                         {ev.subtitle}
                       </p>
 
@@ -1997,7 +1997,7 @@ export function GitTimeline({
                         </div>
                       )}
 
-                      <div className="pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-[11px] text-slate-400 min-w-0 h-[26px]">
+                      <div className="pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-[11px] text-slate-400 min-w-0 min-h-[26px]">
                         <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden font-mono whitespace-nowrap">
                           {ev.ruler && (
                             <span
@@ -2160,7 +2160,7 @@ export function GitTimeline({
               </div>
 
               <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
-                <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 h-[36px] flex items-center justify-between gap-2 text-xs">
+                <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 min-h-[36px] py-1.5 flex items-center justify-between gap-2 text-xs">
                   <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                     <Flag className="w-3.5 h-3.5 shrink-0" style={{ color: branchObj.color }} />
                     <span className="font-mono font-bold tabular-nums shrink-0" style={{ color: branchObj.color }}>
@@ -2277,7 +2277,7 @@ export function GitTimeline({
               scheduleClearHoverEvent();
             }
           }}
-          className="fixed bottom-5 right-5 z-40 w-[330px] sm:w-[376px] max-h-[58vh] flex flex-col rounded-2xl border border-emerald-500/45 bg-[#0b1325]/98 backdrop-blur-md shadow-2xl overflow-hidden"
+          className="fixed bottom-4 sm:bottom-5 left-3 right-3 sm:left-auto sm:right-5 z-40 max-w-md sm:max-w-none sm:w-[376px] mx-auto sm:mx-0 max-h-[58vh] flex flex-col rounded-2xl border border-emerald-500/45 bg-[#0b1325]/98 backdrop-blur-md shadow-2xl overflow-hidden"
         >
           <div className="px-3.5 py-2.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2">
             <div className="min-w-0">

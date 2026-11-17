@@ -238,7 +238,7 @@ export function FilterPanel({
             <div
               role="listbox"
               aria-label="Найденные исторические деятели"
-              className="absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl bg-[#0b1325] border border-sky-500/40 shadow-2xl overflow-hidden"
+              className="absolute left-0 right-0 top-full mt-1.5 z-40 rounded-xl bg-[#0b1325] border border-sky-500/40 shadow-2xl overflow-hidden"
             >
               <div className="px-3.5 py-2 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between text-[11px] font-mono text-sky-300">
                 <span>Исторические лица и участники ({personSuggestions.length})</span>

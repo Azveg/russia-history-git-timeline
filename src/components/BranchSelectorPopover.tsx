@@ -313,7 +313,7 @@ export function BranchSelectorPopover({
         <div
           role="dialog"
           aria-label="Управление ветками таймлайна"
-          className="fixed sm:absolute left-3 right-3 sm:left-0 sm:right-auto top-[52px] sm:top-full sm:mt-2 sm:w-[490px] sm:max-w-[calc(100vw-2rem)] bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"
+          className="fixed lg:absolute left-3 right-3 lg:left-0 lg:right-auto top-[54px] lg:top-full lg:mt-2 max-w-[500px] lg:max-w-[calc(100vw-2rem)] lg:w-[490px] mx-auto lg:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"
         >
           <div className="p-3 border-b border-slate-800/90 space-y-2.5 bg-slate-950/70">
             <div className="flex items-center justify-between gap-2">

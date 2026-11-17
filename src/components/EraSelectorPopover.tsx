@@ -124,15 +124,15 @@ export function EraSelectorPopover({
         title="Выбор макро-периода истории, фокусировка окна времени и открытие досье эпохи"
       >
         <ScrollText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-        <span className="md:hidden">Эпохи</span>
-        <span className="hidden md:inline">Макро-периоды</span>
+        <span className="xl:hidden">Эпохи</span>
+        <span className="hidden xl:inline">Макро-периоды</span>
 
         {activeWindowEra ? (
-          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] max-w-[72px] sm:max-w-[96px] xl:max-w-[130px] truncate">
+          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] max-w-[68px] lg:max-w-[96px] xl:max-w-[130px] truncate">
             {activeWindowEra.displayShortTitle}
           </span>
         ) : (
-          <span className="hidden min-[480px]:inline-block tabular-nums px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
+          <span className="hidden lg:inline-block tabular-nums px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
             {resolvedEras.length}
           </span>
         )}
@@ -148,7 +148,7 @@ export function EraSelectorPopover({
         <div
           role="dialog"
           aria-label="Навигатор по макро-периодам"
-          className="fixed sm:absolute left-3 right-3 sm:left-0 sm:right-auto top-[52px] sm:top-full sm:mt-2 sm:w-[520px] sm:max-w-[calc(100vw-2rem)] bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"
+          className="fixed lg:absolute left-3 right-3 lg:left-0 lg:right-auto top-[54px] lg:top-full lg:mt-2 max-w-[520px] lg:max-w-[calc(100vw-2rem)] lg:w-[520px] mx-auto lg:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"
         >
           <div className="p-3 border-b border-slate-800/90 space-y-2 bg-slate-950/70">
             <div className="flex items-center justify-between gap-2">
