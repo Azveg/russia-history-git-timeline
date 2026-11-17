@@ -432,3 +432,33 @@ export interface ModalHistoryItem {
   id: string;
   label: string;
 }
+
+export interface ReignCrossBranchLink {
+  id: string;
+  pairKey: string;
+  branchAId: string;
+  branchBId: string;
+  branchALabel: string;
+  branchBLabel: string;
+  fromEvent: EnrichedEvent;
+  toEvent: EnrichedEvent;
+  linkType: string;
+  roleLabel: string;
+  isDirectional: boolean;
+  description: string;
+  isFromInReign: boolean;
+  isToInReign: boolean;
+  isHistoricalCircuit: boolean;
+}
+
+export interface ReignBranchPairSummary {
+  pairKey: string;
+  branchAId: string;
+  branchBId: string;
+  branchALabel: string;
+  branchBLabel: string;
+  colorA: string;
+  colorB: string;
+  count: number;
+  isHistoricalCircuit: boolean;
+}

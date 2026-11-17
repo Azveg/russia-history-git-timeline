@@ -20,6 +20,8 @@ import type {
   OverlapYearBucket,
   PersonDossier,
   PreciseDateParts,
+  ReignBranchPairSummary,
+  ReignCrossBranchLink,
   ResolvedMacroEra,
   RetrospectiveLinkInfo,
   RulerBoundaryTick,
@@ -2794,6 +2796,45 @@ export interface RulerPeriodSummaryData {
   inheritedEvents: EnrichedEvent[];
   carryOverEvents: EnrichedEvent[];
   reignParticipants: RulerParticipantEntry[];
+  topConnectedEvents: EnrichedEvent[];
+  crossBranchLinks: ReignCrossBranchLink[];
+  crossBranchPairs: ReignBranchPairSummary[];
+}
+
+function translateCrossLinkRole(linkType: string): { roleLabel: string; isDirectional: boolean } {
+  switch (linkType) {
+    case 'triggers':
+    case 'causes':
+      return { roleLabel: 'Прямая причина', isDirectional: true };
+    case 'enables':
+      return { roleLabel: 'Создаёт предпосылку', isDirectional: true };
+    case 'consequence':
+      return { roleLabel: 'Следствие', isDirectional: true };
+    case 'about_event':
+    case 'inspired_by':
+    case 'references':
+      return { roleLabel: 'Отражение и отсылка', isDirectional: true };
+    default:
+      return { roleLabel: 'Взаимосвязь в эпохе', isDirectional: false };
+  }
+}
+
+function getLinkTypePriority(linkType: string): number {
+  switch (linkType) {
+    case 'triggers':
+    case 'causes':
+      return 5;
+    case 'consequence':
+      return 4;
+    case 'enables':
+      return 3;
+    case 'about_event':
+    case 'inspired_by':
+    case 'references':
+      return 2;
+    default:
+      return 1;
+  }
 }
 
 export function getRulerPeriodSummaryData(
@@ -2907,6 +2948,128 @@ export function getRulerPeriodSummaryData(
       return a.firstYearInReign - b.firstYearInReign;
     });
 
+  // Топ ключевых событий правления по числу связей
+  const topConnectedEvents = [...reignEvents]
+    .filter((ev) => ev.explicitLinks.length > 0)
+    .sort((a, b) => {
+      if (b.explicitLinks.length !== a.explicitLinks.length) {
+        return b.explicitLinks.length - a.explicitLinks.length;
+      }
+      const aCross = a.explicitLinks.filter((l) => l.targetEvent.task !== a.task).length;
+      const bCross = b.explicitLinks.filter((l) => l.targetEvent.task !== b.task).length;
+      if (bCross !== aCross) return bCross - aCross;
+      return a.startYear - b.startYear;
+    })
+    .slice(0, 6);
+
+  // Сводка уникальных межветвевых связок правления (включая выходы за границы правления)
+  const branchMap = new Map((branches || []).map((b) => [b.id, b]));
+  const overlappingNodeIds = new Set(overlappingAll.map((ev) => ev.id));
+  const bestEdgeByPair = new Map<
+    string,
+    {
+      edge: ReignCrossBranchLink;
+      priority: number;
+      isOutgoing: boolean;
+    }
+  >();
+
+  overlappingAll.forEach((ev) => {
+    ev.explicitLinks.forEach((lnk) => {
+      const target = lnk.targetEvent;
+      if (ev.task === target.task) return;
+
+      const isOutgoing = lnk.direction === 'outgoing';
+      const fromEvent = isOutgoing ? ev : target;
+      const toEvent = isOutgoing ? target : ev;
+
+      const canonicalEdgeKey = [fromEvent.id, toEvent.id].sort().join('__');
+      const linkType = lnk.type || 'sync_context';
+      const priority = getLinkTypePriority(linkType);
+
+      const existing = bestEdgeByPair.get(canonicalEdgeKey);
+      if (
+        existing &&
+        (existing.priority > priority ||
+          (existing.priority === priority && (existing.isOutgoing || !isOutgoing)))
+      ) {
+        return;
+      }
+
+      const [sortedTaskA, sortedTaskB] = [fromEvent.task, toEvent.task].sort();
+      const branchA = branchMap.get(sortedTaskA);
+      const branchB = branchMap.get(sortedTaskB);
+      const pairKey = `${sortedTaskA}__${sortedTaskB}`;
+      const { roleLabel, isDirectional } = translateCrossLinkRole(linkType);
+      const isHistoricalCircuit =
+        isHistoricalEventNode(fromEvent, branches) && isHistoricalEventNode(toEvent, branches);
+
+      bestEdgeByPair.set(canonicalEdgeKey, {
+        priority,
+        isOutgoing,
+        edge: {
+          id: canonicalEdgeKey,
+          pairKey,
+          branchAId: sortedTaskA,
+          branchBId: sortedTaskB,
+          branchALabel: branchA?.label || sortedTaskA,
+          branchBLabel: branchB?.label || sortedTaskB,
+          fromEvent,
+          toEvent,
+          linkType,
+          roleLabel,
+          isDirectional,
+          description: lnk.label,
+          isFromInReign: overlappingNodeIds.has(fromEvent.id),
+          isToInReign: overlappingNodeIds.has(toEvent.id),
+          isHistoricalCircuit,
+        },
+      });
+    });
+  });
+
+  const crossBranchLinks = Array.from(bestEdgeByPair.values())
+    .map((v) => v.edge)
+    .sort((a, b) => {
+      if (a.isHistoricalCircuit !== b.isHistoricalCircuit) {
+        return a.isHistoricalCircuit ? -1 : 1;
+      }
+      const aYear = Math.min(a.fromEvent.startYear, a.toEvent.startYear);
+      const bYear = Math.min(b.fromEvent.startYear, b.toEvent.startYear);
+      if (aYear !== bYear) return aYear - bYear;
+      return a.fromEvent.startYear - b.fromEvent.startYear;
+    });
+
+  const pairSummaryAcc = new Map<string, ReignBranchPairSummary>();
+  crossBranchLinks.forEach((lnk) => {
+    const existing = pairSummaryAcc.get(lnk.pairKey);
+    if (existing) {
+      existing.count += 1;
+    } else {
+      const bA = branchMap.get(lnk.branchAId);
+      const bB = branchMap.get(lnk.branchBId);
+      pairSummaryAcc.set(lnk.pairKey, {
+        pairKey: lnk.pairKey,
+        branchAId: lnk.branchAId,
+        branchBId: lnk.branchBId,
+        branchALabel: lnk.branchALabel,
+        branchBLabel: lnk.branchBLabel,
+        colorA: bA?.color || '#38bdf8',
+        colorB: bB?.color || '#10b981',
+        count: 1,
+        isHistoricalCircuit: lnk.isHistoricalCircuit,
+      });
+    }
+  });
+
+  const crossBranchPairs = Array.from(pairSummaryAcc.values()).sort((a, b) => {
+    if (b.count !== a.count) return b.count - a.count;
+    if (a.isHistoricalCircuit !== b.isHistoricalCircuit) {
+      return a.isHistoricalCircuit ? -1 : 1;
+    }
+    return a.branchALabel.localeCompare(b.branchALabel, 'ru');
+  });
+
   return {
     ruler,
     reignEvents,
@@ -2919,6 +3082,9 @@ export function getRulerPeriodSummaryData(
     inheritedEvents,
     carryOverEvents,
     reignParticipants,
+    topConnectedEvents,
+    crossBranchLinks,
+    crossBranchPairs,
   };
 }
 
