@@ -1,4 +1,5 @@
 import type {
+  AuditCandidateInfo,
   AxisResolution,
   BranchCategoryKey,
   BranchDefinition,
@@ -33,10 +34,167 @@ import type {
   RulersFile,
   StreamRow,
   SyncManifest,
+  SyncTagOption,
   TimelineDataFile,
   TimelineNode,
   WindowLinksVisibilitySummary,
 } from '../types/timeline';
+
+const SYNC_TAG_HUMAN_LABELS: Record<string, string> = {
+  kulikovo: 'Куликовская битва (1380)',
+  napoleonic: 'Наполеоновские войны и 1812 год',
+  'northern-war': 'Великая Северная война (1700–1721)',
+  smuta: 'Смутное время',
+  'topic-silver-age': 'Серебряный век русской культуры',
+  ww1: 'Первая мировая война (1914–1918)',
+  ww2: 'Великая Отечественная и Вторая мировая война',
+  'person-akhmatova-anna': 'А. А. Ахматова',
+  'person-alferov': 'Ж. И. Алфёров',
+  'person-avvakum-petrov': 'протопоп Аввакум',
+  'person-blok-alexander': 'А. А. Блок',
+  'person-bulgakov-mikhail': 'М. А. Булгаков',
+  'person-bunin-ivan': 'И. А. Бунин',
+  'person-chekhov-anton': 'А. П. Чехов',
+  'person-derzhavin-gavrila': 'Г. Р. Державин',
+  'person-dostoevsky-fyodor': 'Ф. М. Достоевский',
+  'person-fet-afanasy': 'А. А. Фет',
+  'person-fonvizin-denis': 'Д. И. Фонвизин',
+  'person-gogol-nikolay': 'Н. В. Гоголь',
+  'person-goncharov-ivan': 'И. А. Гончаров',
+  'person-gorky-maxim': 'М. Горький',
+  'person-griboedov-aleksandr': 'А. С. Грибоедов',
+  'person-kapitsa': 'П. Л. Капица',
+  'person-karamzin-nikolay': 'Н. М. Карамзин',
+  'person-korolev': 'С. П. Королёв',
+  'person-krylov-ivan': 'И. А. Крылов',
+  'person-kulibin': 'И. П. Кулибин',
+  'person-kurchatov': 'И. В. Курчатов',
+  'person-lermontov-mikhail': 'М. Ю. Лермонтов',
+  'person-leskov-nikolay': 'Н. С. Лесков',
+  'person-lobachevsky': 'Н. И. Лобачевский',
+  'person-lomonosov': 'М. В. Ломоносов',
+  'person-mayakovsky-vladimir': 'В. В. Маяковский',
+  'person-mendeleev': 'Д. И. Менделеев',
+  'person-nabokov-vladimir': 'В. В. Набоков',
+  'person-nekrasov-nikolay': 'Н. А. Некрасов',
+  'person-nestor-chronicler': 'Нестор Летописец',
+  'person-ostrovsky-aleksandr': 'А. Н. Островский',
+  'person-pasternak-boris': 'Б. Л. Пастернак',
+  'person-pavlov': 'И. П. Павлов',
+  'person-pirogov': 'Н. И. Пирогов',
+  'person-popov': 'А. С. Попов',
+  'person-pushkin-alexander': 'А. С. Пушкин',
+  'person-sakharov': 'А. Д. Сахаров',
+  'person-saltykov-shchedrin-mikhail': 'М. Е. Салтыков-Щедрин',
+  'person-sechenov': 'И. М. Сеченов',
+  'person-sholokhov-mikhail': 'М. А. Шолохов',
+  'person-sofoniy-ryazanets': 'Софоний Рязанец',
+  'person-solzhenitsyn-alexander': 'А. И. Солженицын',
+  'person-tolstoy-leo': 'Л. Н. Толстой',
+  'person-tsiolkovsky': 'К. Э. Циолковский',
+  'person-tsvetaeva-marina': 'М. И. Цветаева',
+  'person-turgenev-ivan': 'И. С. Тургенев',
+  'person-tyutchev-fyodor': 'Ф. И. Тютчев',
+  'person-vernadsky': 'В. И. Вернадский',
+  'person-yesenin-sergey': 'С. А. Есенин',
+  'person-zhukovsky-vasily': 'В. А. Жуковский',
+  'reform-assignats': 'выпуск ассигнаций и губернская реформа',
+  'reform-chosen-council': 'реформы Избранной рады',
+  'reform-church-schism': 'церковная реформа и раскол XVII века',
+  'reform-customs-1754': 'отмена внутренних таможен и модернизация середины XVIII века',
+  'reform-glinskaya-money': 'денежная реформа Елены Глинской',
+  'reform-great-reforms': 'Великие реформы Александра II',
+  'reform-industrialization': 'план ГОЭЛРО и советская индустриализация',
+  'reform-kankrin-money': 'денежная реформа Е. Ф. Канкрина',
+  'reform-kosygin-1965': 'Косыгинская экономическая реформа',
+  'reform-market-1990s': 'рыночные реформы 1990-х годов',
+  'reform-ministries': 'министерская реформа Александра I',
+  'reform-new-trade-statute': 'Новоторговый устав 1667 года',
+  'reform-nuclear-project': 'советский Атомный проект',
+  'reform-oil-boom': 'освоение Западной Сибири и нефтегазовый бум 1970-х',
+  'reform-olga-pogosts': 'налоговая реформа княгини Ольги',
+  'reform-oprichnina': 'Опричнина Ивана Грозного',
+  'reform-perestroika-eco': 'экономические реформы Перестройки',
+  'reform-peter-army': 'военная и флотская реформа Петра I',
+  'reform-poll-tax': 'введение подушной подати и Табель о рангах',
+  'reform-russkaya-pravda': '«Русская Правда»',
+  'reform-rvsn': 'создание РВСН и ракетного щита',
+  'reform-sobornoye-ulozhenie': 'Соборное уложение 1649 года',
+  'reform-stolypin': 'Столыпинская аграрная реформа и Государственная дума',
+  'reform-sudebnik-1497': 'Судебник 1497 года',
+  'reform-war-communism': 'политика «военного коммунизма» и НЭП',
+  'reform-witte-transsib': 'денежная реформа С. Ю. Витте и строительство Транссиба',
+  'treaty-aigun-beijing': 'Айгунский и Пекинский договоры',
+  'treaty-belovezha': 'Беловежские соглашения и Будапештский меморандум',
+  'treaty-brest-1918': 'Брестский, Рижский и Рапалльский договоры',
+  'treaty-byzantium-911': 'русско-византийские договоры 911 и 944 годов',
+  'treaty-eternal-peace-1686': '«Вечный мир» 1686 года',
+  'treaty-jassy-1791': 'Ясский мир 1791 года и разделы Речи Посполитой',
+  'treaty-kuchuk-kainarji': 'Кючук-Кайнарджийский мир и присоединение Крыма',
+  'treaty-liubech-1097': 'Любечский и Долобский съезды князей',
+  'treaty-molotov-ribbentrop': 'советско-германские пакты 1939 года',
+  'treaty-moscow-sovereignty': 'европейская дипломатия Ивана III',
+  'treaty-nerchinsk-1689': 'Нерчинский договор 1689 года',
+  'treaty-nystad': 'Ништадтский мир 1721 года',
+  'treaty-paris-berlin': 'Парижский трактат и Лондонская конвенция',
+  'treaty-pereyaslav-andrusovo': 'Переяславская рада и Андрусовское перемирие',
+  'treaty-portsmouth-1905': 'Портсмутский мир 1905 года',
+  'treaty-salt-abm': 'договоры ОСВ-1 и ПРО 1972 года',
+  'treaty-stolbovo-deulino': 'Столбовский, Деулинский и Поляновский договоры',
+  'treaty-tilsit': 'Тильзитский, Фридрихсгамский и Бухарестский договоры',
+  'treaty-yalta-potsdam': 'Ялтинская и Потсдамская конференции 1945 года',
+  'war-crimean': 'Крымская война (1853–1856)',
+  'war-great-northern': 'Великая Северная война (1700–1721)',
+  'war-kulikovo-1380': 'Куликовская битва (1380)',
+  'war-polovtsian-steppe': 'степные походы против половцев',
+  'war-rus-byzantine': 'русско-византийские походы и договоры X века',
+  'war-rus-jap': 'Русско-японская война (1904–1905)',
+  'war-rus-turk-1877': 'Русско-турецкая война (1877–1878)',
+  'war-ww2-eastern': 'Великая Отечественная война (1941–1945)',
+  'world-austrian-succession': 'Война за австрийское наследство',
+  'world-axis-munich': 'подъём стран «Оси» и Мюнхенский сговор',
+  'world-constantinople-1453': 'падение Константинополя и автокефалия Русской церкви',
+  'world-crusade-1204': 'Четвёртый крестовый поход и натиск на Прибалтику',
+  'world-discovery-reformation': 'Великие географические открытия и Реформация',
+  'world-entente-1907': 'оформление Антанты и Тройственного союза',
+  'world-french-rev': 'война за независимость США и Французская революция',
+  'world-german-unification': 'объединение Германии в 1870–1871 годах',
+  'world-glorious-rev': '«Славная революция» и Война Аугсбургской лиги',
+  'world-great-depression': 'Великая депрессия 1929–1933 годов',
+  'world-great-schism-1054': 'Великая схизма 1054 года',
+  'world-helsinki-1975': 'Хельсинкские соглашения и эпоха Разрядки',
+  'world-nato-1999': 'расширение НАТО и распад социалистического блока',
+  'world-spanish-succession': 'Война за испанское наследство',
+  'world-spring-of-nations': 'европейские революции 1848–1849 годов («Весна народов»)',
+  'world-versailles': 'Версальско-Вашингтонская система',
+  'world-vienna-congress': 'Венский конгресс и «Священный союз»',
+  'world-warsaw-pact': 'создание ОВД и блоковое противостояние',
+  'world-westphalia-1648': 'Тридцатилетняя война и Вестфальский мир',
+  'world-yalta-nato': 'начало Холодной войны и создание НАТО',
+};
+
+export function resolveSyncTagHumanLabel(
+  rawTag: string,
+  options?: {
+    byId?: Map<string, Pick<EnrichedEvent, 'title'>>;
+    rulerLabelByTag?: Map<string, string>;
+    eraLabelByTag?: Map<string, string>;
+  },
+): string {
+  const tag = rawTag.trim().toLowerCase();
+  if (SYNC_TAG_HUMAN_LABELS[tag]) return SYNC_TAG_HUMAN_LABELS[tag];
+  if (tag.startsWith('event-') && options?.byId) {
+    const targetNode = options.byId.get(tag.slice('event-'.length));
+    if (targetNode) return `«${targetNode.title}»`;
+  }
+  if (options?.eraLabelByTag?.has(tag)) {
+    return `эпоха «${options.eraLabelByTag.get(tag)}»`;
+  }
+  if (options?.rulerLabelByTag?.has(tag)) {
+    return `правление (${options.rulerLabelByTag.get(tag)})`;
+  }
+  return rawTag;
+}
 
 export const TIME_AXIS_BRANCH: BranchDefinition = {
   id: 'TIME_AXIS',
@@ -1064,139 +1222,6 @@ export function getEnrichedEvents(
     }
   });
 
-  const TAG_HUMAN_LABELS: Record<string, string> = {
-    kulikovo: 'Куликовская битва (1380)',
-    napoleonic: 'Наполеоновские войны и 1812 год',
-    'northern-war': 'Великая Северная война (1700–1721)',
-    smuta: 'Смутное время',
-    'topic-silver-age': 'Серебряный век русской культуры',
-    ww1: 'Первая мировая война (1914–1918)',
-    ww2: 'Великая Отечественная и Вторая мировая война',
-    'person-akhmatova-anna': 'А. А. Ахматова',
-    'person-alferov': 'Ж. И. Алфёров',
-    'person-avvakum-petrov': 'протопоп Аввакум',
-    'person-blok-alexander': 'А. А. Блок',
-    'person-bulgakov-mikhail': 'М. А. Булгаков',
-    'person-bunin-ivan': 'И. А. Бунин',
-    'person-chekhov-anton': 'А. П. Чехов',
-    'person-derzhavin-gavrila': 'Г. Р. Державин',
-    'person-dostoevsky-fyodor': 'Ф. М. Достоевский',
-    'person-fet-afanasy': 'А. А. Фет',
-    'person-fonvizin-denis': 'Д. И. Фонвизин',
-    'person-gogol-nikolay': 'Н. В. Гоголь',
-    'person-goncharov-ivan': 'И. А. Гончаров',
-    'person-gorky-maxim': 'М. Горький',
-    'person-griboedov-aleksandr': 'А. С. Грибоедов',
-    'person-kapitsa': 'П. Л. Капица',
-    'person-karamzin-nikolay': 'Н. М. Карамзин',
-    'person-korolev': 'С. П. Королёв',
-    'person-krylov-ivan': 'И. А. Крылов',
-    'person-kulibin': 'И. П. Кулибин',
-    'person-kurchatov': 'И. В. Курчатов',
-    'person-lermontov-mikhail': 'М. Ю. Лермонтов',
-    'person-leskov-nikolay': 'Н. С. Лесков',
-    'person-lobachevsky': 'Н. И. Лобачевский',
-    'person-lomonosov': 'М. В. Ломоносов',
-    'person-mayakovsky-vladimir': 'В. В. Маяковский',
-    'person-mendeleev': 'Д. И. Менделеев',
-    'person-nabokov-vladimir': 'В. В. Набоков',
-    'person-nekrasov-nikolay': 'Н. А. Некрасов',
-    'person-nestor-chronicler': 'Нестор Летописец',
-    'person-ostrovsky-aleksandr': 'А. Н. Островский',
-    'person-pasternak-boris': 'Б. Л. Пастернак',
-    'person-pavlov': 'И. П. Павлов',
-    'person-pirogov': 'Н. И. Пирогов',
-    'person-popov': 'А. С. Попов',
-    'person-pushkin-alexander': 'А. С. Пушкин',
-    'person-sakharov': 'А. Д. Сахаров',
-    'person-saltykov-shchedrin-mikhail': 'М. Е. Салтыков-Щедрин',
-    'person-sechenov': 'И. М. Сеченов',
-    'person-sholokhov-mikhail': 'М. А. Шолохов',
-    'person-sofoniy-ryazanets': 'Софоний Рязанец',
-    'person-solzhenitsyn-alexander': 'А. И. Солженицын',
-    'person-tolstoy-leo': 'Л. Н. Толстой',
-    'person-tsiolkovsky': 'К. Э. Циолковский',
-    'person-tsvetaeva-marina': 'М. И. Цветаева',
-    'person-turgenev-ivan': 'И. С. Тургенев',
-    'person-tyutchev-fyodor': 'Ф. И. Тютчев',
-    'person-vernadsky': 'В. И. Вернадский',
-    'person-yesenin-sergey': 'С. А. Есенин',
-    'person-zhukovsky-vasily': 'В. А. Жуковский',
-    'reform-assignats': 'выпуск ассигнаций и губернская реформа',
-    'reform-chosen-council': 'реформы Избранной рады',
-    'reform-church-schism': 'церковная реформа и раскол XVII века',
-    'reform-customs-1754': 'отмена внутренних таможен и модернизация середины XVIII века',
-    'reform-glinskaya-money': 'денежная реформа Елены Глинской',
-    'reform-great-reforms': 'Великие реформы Александра II',
-    'reform-industrialization': 'план ГОЭЛРО и советская индустриализация',
-    'reform-kankrin-money': 'денежная реформа Е. Ф. Канкрина',
-    'reform-kosygin-1965': 'Косыгинская экономическая реформа',
-    'reform-market-1990s': 'рыночные реформы 1990-х годов',
-    'reform-ministries': 'министерская реформа Александра I',
-    'reform-new-trade-statute': 'Новоторговый устав 1667 года',
-    'reform-nuclear-project': 'советский Атомный проект',
-    'reform-oil-boom': 'освоение Западной Сибири и нефтегазовый бум 1970-х',
-    'reform-olga-pogosts': 'налоговая реформа княгини Ольги',
-    'reform-oprichnina': 'Опричнина Ивана Грозного',
-    'reform-perestroika-eco': 'экономические реформы Перестройки',
-    'reform-peter-army': 'военная и флотская реформа Петра I',
-    'reform-poll-tax': 'введение подушной подати и Табель о рангах',
-    'reform-russkaya-pravda': '«Русская Правда»',
-    'reform-rvsn': 'создание РВСН и ракетного щита',
-    'reform-sobornoye-ulozhenie': 'Соборное уложение 1649 года',
-    'reform-stolypin': 'Столыпинская аграрная реформа и Государственная дума',
-    'reform-sudebnik-1497': 'Судебник 1497 года',
-    'reform-war-communism': 'политика «военного коммунизма» и НЭП',
-    'reform-witte-transsib': 'денежная реформа С. Ю. Витте и строительство Транссиба',
-    'treaty-aigun-beijing': 'Айгунский и Пекинский договоры',
-    'treaty-belovezha': 'Беловежские соглашения и Будапештский меморандум',
-    'treaty-brest-1918': 'Брестский, Рижский и Рапалльский договоры',
-    'treaty-byzantium-911': 'русско-византийские договоры 911 и 944 годов',
-    'treaty-eternal-peace-1686': '«Вечный мир» 1686 года',
-    'treaty-jassy-1791': 'Ясский мир 1791 года и разделы Речи Посполитой',
-    'treaty-kuchuk-kainarji': 'Кючук-Кайнарджийский мир и присоединение Крыма',
-    'treaty-liubech-1097': 'Любечский и Долобский съезды князей',
-    'treaty-molotov-ribbentrop': 'советско-германские пакты 1939 года',
-    'treaty-moscow-sovereignty': 'европейская дипломатия Ивана III',
-    'treaty-nerchinsk-1689': 'Нерчинский договор 1689 года',
-    'treaty-nystad': 'Ништадтский мир 1721 года',
-    'treaty-paris-berlin': 'Парижский трактат и Лондонская конвенция',
-    'treaty-pereyaslav-andrusovo': 'Переяславская рада и Андрусовское перемирие',
-    'treaty-portsmouth-1905': 'Портсмутский мир 1905 года',
-    'treaty-salt-abm': 'договоры ОСВ-1 и ПРО 1972 года',
-    'treaty-stolbovo-deulino': 'Столбовский, Деулинский и Поляновский договоры',
-    'treaty-tilsit': 'Тильзитский, Фридрихсгамский и Бухарестский договоры',
-    'treaty-yalta-potsdam': 'Ялтинская и Потсдамская конференции 1945 года',
-    'war-crimean': 'Крымская война (1853–1856)',
-    'war-great-northern': 'Великая Северная война (1700–1721)',
-    'war-kulikovo-1380': 'Куликовская битва (1380)',
-    'war-polovtsian-steppe': 'степные походы против половцев',
-    'war-rus-byzantine': 'русско-византийские походы и договоры X века',
-    'war-rus-jap': 'Русско-японская война (1904–1905)',
-    'war-rus-turk-1877': 'Русско-турецкая война (1877–1878)',
-    'war-ww2-eastern': 'Великая Отечественная война (1941–1945)',
-    'world-austrian-succession': 'Война за австрийское наследство',
-    'world-axis-munich': 'подъём стран «Оси» и Мюнхенский сговор',
-    'world-constantinople-1453': 'падение Константинополя и автокефалия Русской церкви',
-    'world-crusade-1204': 'Четвёртый крестовый поход и натиск на Прибалтику',
-    'world-discovery-reformation': 'Великие географические открытия и Реформация',
-    'world-entente-1907': 'оформление Антанты и Тройственного союза',
-    'world-french-rev': 'война за независимость США и Французская революция',
-    'world-german-unification': 'объединение Германии в 1870–1871 годах',
-    'world-glorious-rev': '«Славная революция» и Война Аугсбургской лиги',
-    'world-great-depression': 'Великая депрессия 1929–1933 годов',
-    'world-great-schism-1054': 'Великая схизма 1054 года',
-    'world-helsinki-1975': 'Хельсинкские соглашения и эпоха Разрядки',
-    'world-nato-1999': 'расширение НАТО и распад социалистического блока',
-    'world-spanish-succession': 'Война за испанское наследство',
-    'world-spring-of-nations': 'европейские революции 1848–1849 годов («Весна народов»)',
-    'world-versailles': 'Версальско-Вашингтонская система',
-    'world-vienna-congress': 'Венский конгресс и «Священный союз»',
-    'world-warsaw-pact': 'создание ОВД и блоковое противостояние',
-    'world-westphalia-1648': 'Тридцатилетняя война и Вестфальский мир',
-    'world-yalta-nato': 'начало Холодной войны и создание НАТО',
-  };
-
   const rulerLabelByTag = new Map<string, string>();
   rulers.forEach((r) => {
     rulerLabelByTag.set(r.id.toLowerCase(), r.shortRuler);
@@ -1211,19 +1236,12 @@ export function getEnrichedEvents(
   });
 
   const resolveHumanTagLabel = (rawTag: string): string => {
-    const tag = rawTag.trim().toLowerCase();
-    if (TAG_HUMAN_LABELS[tag]) return TAG_HUMAN_LABELS[tag];
-    if (tag.startsWith('event-')) {
-      const targetNode = byId.get(tag.slice('event-'.length));
-      if (targetNode) return `«${targetNode.title}»`;
-    }
-    if (eraLabelByTag.has(tag)) {
-      return `эпоха «${eraLabelByTag.get(tag)}»`;
-    }
-    if (rulerLabelByTag.has(tag)) {
-      return `правление (${rulerLabelByTag.get(tag)})`;
-    }
-    return 'общему историческому сюжету';
+    const resolved = resolveSyncTagHumanLabel(rawTag, {
+      byId,
+      rulerLabelByTag,
+      eraLabelByTag,
+    });
+    return resolved === rawTag ? 'общему историческому сюжету' : resolved;
   };
 
   const formatHumanTagList = (tags: string[]): string => {
@@ -1623,6 +1641,155 @@ export function computeTimelineYearBounds(
   return { minYear, maxYear };
 }
 
+export function buildSyncTagIndex(
+  enrichedEvents: EnrichedEvent[],
+  rulers: RulerPeriod[],
+  eras: MacroEra[],
+): SyncTagOption[] {
+  const byId = new Map(enrichedEvents.map((e) => [e.id, e]));
+  const rulerLabelByTag = new Map<string, string>();
+  rulers.forEach((r) => {
+    rulerLabelByTag.set(r.id.toLowerCase(), r.shortRuler);
+  });
+  rulerLabelByTag.set('ruler-ryurik', rulerLabelByTag.get('ruler-rurik') || 'Рюрик');
+
+  const eraLabelByTag = new Map<string, string>();
+  resolveMacroEras(eras).forEach((era) => {
+    const rawKey = era.id.toLowerCase();
+    eraLabelByTag.set(rawKey, era.displayShortTitle);
+    eraLabelByTag.set(rawKey.replace(/_/g, '-'), era.displayShortTitle);
+  });
+
+  const buckets = new Map<
+    string,
+    {
+      eventIds: Set<string>;
+      branchIds: Set<string>;
+    }
+  >();
+
+  enrichedEvents.forEach((ev) => {
+    const rawTags = [
+      ...(ev.syncTags || []),
+      ...(ev.campaignId ? [ev.campaignId] : []),
+      ...(ev.referenceTags || []),
+    ];
+    const unique = new Set(rawTags.map((t) => t.trim().toLowerCase()).filter(Boolean));
+    unique.forEach((tag) => {
+      let bucket = buckets.get(tag);
+      if (!bucket) {
+        bucket = { eventIds: new Set<string>(), branchIds: new Set<string>() };
+        buckets.set(tag, bucket);
+      }
+      bucket.eventIds.add(ev.id);
+      bucket.branchIds.add(ev.task);
+    });
+  });
+
+  const options: SyncTagOption[] = [];
+  buckets.forEach((bucket, tag) => {
+    const rawLabel = resolveSyncTagHumanLabel(tag, {
+      byId,
+      rulerLabelByTag,
+      eraLabelByTag,
+    });
+    const label = rawLabel.charAt(0).toUpperCase() + rawLabel.slice(1);
+    options.push({
+      tag,
+      label,
+      eventCount: bucket.eventIds.size,
+      branchIds: Array.from(bucket.branchIds),
+    });
+  });
+
+  return options.sort((a, b) => {
+    if (b.eventCount !== a.eventCount) return b.eventCount - a.eventCount;
+    return a.label.localeCompare(b.label, 'ru');
+  });
+}
+
+export function computeUnlinkedAuditMap(
+  events: EnrichedEvent[],
+): Map<string, AuditCandidateInfo> {
+  const map = new Map<string, AuditCandidateInfo>();
+
+  events.forEach((ev) => {
+    const linkedIds = new Set(ev.explicitLinks.map((lnk) => lnk.otherId));
+    const candidates: EnrichedEvent[] = [];
+    let sameYearCount = 0;
+
+    events.forEach((other) => {
+      if (other.id === ev.id || other.task === ev.task) return;
+      if (linkedIds.has(other.id)) return;
+      if (!intersectsTimeWindow(other.startYear, other.endYear, ev.startYear, ev.endYear)) {
+        return;
+      }
+      candidates.push(other);
+      if (other.startYear === ev.startYear) {
+        sameYearCount += 1;
+      }
+    });
+
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => {
+        const aSame = a.startYear === ev.startYear ? 0 : 1;
+        const bSame = b.startYear === ev.startYear ? 0 : 1;
+        if (aSame !== bSame) return aSame - bSame;
+        if (a.startYear !== b.startYear) return a.startYear - b.startYear;
+        return a.title.localeCompare(b.title, 'ru');
+      });
+      map.set(ev.id, {
+        eventId: ev.id,
+        candidates,
+        sameYearCandidatesCount: sameYearCount,
+      });
+    }
+  });
+
+  return map;
+}
+
+export function getEventHiddenBranchSummaries(
+  ev: EnrichedEvent,
+  activeBranches: Record<string, boolean>,
+  branches: BranchDefinition[],
+): Array<{
+  branchId: string;
+  label: string;
+  short: string;
+  color: string;
+  linkCount: number;
+}> {
+  const branchMap = new Map(branches.map((b) => [b.id, b]));
+  const acc = new Map<string, Set<string>>();
+
+  ev.explicitLinks.forEach((lnk) => {
+    const targetBranchId = lnk.targetEvent.task;
+    if (activeBranches[targetBranchId] !== false) return;
+    let set = acc.get(targetBranchId);
+    if (!set) {
+      set = new Set<string>();
+      acc.set(targetBranchId, set);
+    }
+    set.add(lnk.id);
+  });
+
+  if (acc.size === 0) return [];
+
+  return Array.from(acc.entries())
+    .map(([branchId, linkIds]) => {
+      const b = branchMap.get(branchId);
+      return {
+        branchId,
+        label: b?.label || branchId,
+        short: b?.short || b?.label || branchId,
+        color: b?.color || '#f59e0b',
+        linkCount: linkIds.size,
+      };
+    })
+    .sort((a, b) => b.linkCount - a.linkCount || a.label.localeCompare(b.label, 'ru'));
+}
+
 export function buildUnifiedTimelineStream(
   enrichedEvents: EnrichedEvent[],
   rulers: RulerPeriod[],
@@ -1637,8 +1804,18 @@ export function buildUnifiedTimelineStream(
   effectiveYearFrom: number;
   effectiveYearTo: number;
   axisResolution: AxisResolution;
+  auditCandidateMap: Map<string, AuditCandidateInfo>;
 } {
   const q = filters.searchQuery.trim().toLowerCase();
+  const selectedTagNorm = filters.selectedSyncTag?.trim().toLowerCase() || null;
+  const pairFilter =
+    filters.branchPairFilter &&
+    filters.branchPairFilter.branchA &&
+    filters.branchPairFilter.branchB &&
+    filters.branchPairFilter.branchA !== filters.branchPairFilter.branchB
+      ? filters.branchPairFilter
+      : null;
+
   const focusTarget = filters.focusedEventId
     ? (enrichedEvents.find((ev) => ev.id === filters.focusedEventId) ?? null)
     : null;
@@ -1647,6 +1824,7 @@ export function buildUnifiedTimelineStream(
   let matchingRulers: RulerPeriod[] = [];
   let effectiveYearFrom = filters.yearFrom;
   let effectiveYearTo = filters.yearTo;
+  let auditCandidateMap = new Map<string, AuditCandidateInfo>();
 
   const yearBounds = computeTimelineYearBounds(manifest, rulers, enrichedEvents);
 
@@ -1673,6 +1851,7 @@ export function buildUnifiedTimelineStream(
     }
 
     matchingEvents = enrichedEvents.filter((ev) => allowedIds.has(ev.id));
+    auditCandidateMap = computeUnlinkedAuditMap(matchingEvents);
 
     const touchedRulerIds = new Set<string>();
     matchingEvents.forEach((ev) => {
@@ -1689,11 +1868,22 @@ export function buildUnifiedTimelineStream(
     effectiveYearFrom = Math.max(yearBounds.minYear, minEventYear);
     effectiveYearTo = Math.min(yearBounds.maxYear, Math.max(effectiveYearFrom + 1, maxEventYear));
   } else {
-    matchingEvents = enrichedEvents.filter((ev) => {
-      if (!isEventBranchActive(ev, filters.activeBranches)) return false;
+    const preAuditEvents = enrichedEvents.filter((ev) => {
+      if (pairFilter) {
+        if (ev.task !== pairFilter.branchA && ev.task !== pairFilter.branchB) {
+          return false;
+        }
+      } else if (!isEventBranchActive(ev, filters.activeBranches)) {
+        return false;
+      }
+
       const isBio = isBiographyNode(ev, branches);
       const effectiveEnd =
-        isBio && filters.selectedReign === 'ALL' && !q && !filters.selectedPersonKey
+        isBio &&
+        filters.selectedReign === 'ALL' &&
+        !q &&
+        !filters.selectedPersonKey &&
+        !selectedTagNorm
           ? ev.startYear
           : ev.endYear;
       if (!intersectsTimeWindow(ev.startYear, effectiveEnd, filters.yearFrom, filters.yearTo)) return false;
@@ -1702,7 +1892,29 @@ export function buildUnifiedTimelineStream(
           return false;
         }
       }
-      if (filters.onlyWithSyncLinks && ev.explicitLinks.length === 0) return false;
+
+      if (selectedTagNorm) {
+        const nodeTags = [
+          ...(ev.syncTags || []),
+          ...(ev.campaignId ? [ev.campaignId] : []),
+          ...(ev.referenceTags || []),
+        ].map((t) => t.trim().toLowerCase());
+        if (!nodeTags.includes(selectedTagNorm)) return false;
+      }
+
+      if (filters.onlyWithSyncLinks) {
+        if (pairFilter) {
+          const partnerBranch =
+            ev.task === pairFilter.branchA ? pairFilter.branchB : pairFilter.branchA;
+          const hasPairLink = ev.explicitLinks.some(
+            (lnk) => lnk.targetEvent.task === partnerBranch,
+          );
+          if (!hasPairLink) return false;
+        } else if (ev.explicitLinks.length === 0) {
+          return false;
+        }
+      }
+
       if (filters.selectedReign !== 'ALL') {
         const matchesRuler = ev.overlappingRulers.some((r) => r.id === filters.selectedReign);
         if (!matchesRuler) return false;
@@ -1761,6 +1973,11 @@ export function buildUnifiedTimelineStream(
       );
     });
 
+    auditCandidateMap = computeUnlinkedAuditMap(preAuditEvents);
+    matchingEvents = filters.auditUnlinkedMode
+      ? preAuditEvents.filter((ev) => (auditCandidateMap.get(ev.id)?.candidates.length ?? 0) > 0)
+      : preAuditEvents;
+
     matchingRulers = rulers.filter((r) => {
       if (!isRulersFileMounted || filters.activeBranches.MAIN_RULERS === false) return false;
       if (!intersectsTimeWindow(r.startYear, r.endYear, filters.yearFrom, filters.yearTo)) return false;
@@ -1770,7 +1987,16 @@ export function buildUnifiedTimelineStream(
         }
       }
       if (filters.selectedReign !== 'ALL' && r.id !== filters.selectedReign) return false;
-      if (!q && !filters.onlyWithSyncLinks && !filters.selectedPersonKey) return true;
+      if (
+        !q &&
+        !filters.onlyWithSyncLinks &&
+        !filters.selectedPersonKey &&
+        !selectedTagNorm &&
+        !pairFilter &&
+        !filters.auditUnlinkedMode
+      ) {
+        return true;
+      }
       const selfMatch = q !== '' && (r.ruler.toLowerCase().includes(q) || r.reignTitle.toLowerCase().includes(q));
       const hasMatchingEvent = matchingEvents.some((ev) => ev.overlappingRulers.some((or) => or.id === r.id));
       return selfMatch || hasMatchingEvent;
@@ -1925,6 +2151,7 @@ export function buildUnifiedTimelineStream(
     effectiveYearFrom,
     effectiveYearTo,
     axisResolution,
+    auditCandidateMap,
   };
 }
 

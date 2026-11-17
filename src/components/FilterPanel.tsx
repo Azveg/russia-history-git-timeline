@@ -1,7 +1,24 @@
-import { CalendarRange, Link2, RotateCcw, Search, Sparkles, User, X } from 'lucide-react';
+import {
+  ArrowLeftRight,
+  CalendarRange,
+  GitCompare,
+  Link2,
+  RotateCcw,
+  Search,
+  Sparkles,
+  Tag,
+  User,
+  X,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { resolveMacroEras, searchPersonDossiers } from '../engine/timelineEngine';
-import type { MacroEra, PersonDossier } from '../types/timeline';
+import type {
+  BranchDefinition,
+  BranchPairFilter,
+  MacroEra,
+  PersonDossier,
+  SyncTagOption,
+} from '../types/timeline';
 
 interface FilterPanelProps {
   yearFrom: number;
@@ -12,6 +29,12 @@ interface FilterPanelProps {
   searchQuery: string;
   onlySynced: boolean;
   eras: MacroEra[];
+  thematicBranches: BranchDefinition[];
+  syncTagOptions: SyncTagOption[];
+  selectedSyncTag: string | null;
+  branchPairFilter: BranchPairFilter | null;
+  auditUnlinkedMode: boolean;
+  auditFlaggedCount: number;
   personDossiers?: Map<string, PersonDossier>;
   selectedPersonDossier?: PersonDossier | null;
   onChangeYearFrom: (year: number) => void;
@@ -19,6 +42,9 @@ interface FilterPanelProps {
   onSelectYearRange: (from: number, to: number) => void;
   onChangeSearch: (query: string) => void;
   onToggleOnlySynced: () => void;
+  onSelectSyncTag: (tag: string | null) => void;
+  onChangeBranchPair: (pair: BranchPairFilter | null) => void;
+  onToggleAuditUnlinkedMode: () => void;
   onOpenEraModal: (eraId: string) => void;
   onOpenWindowModal?: (from: number, to: number) => void;
   onOpenPersonModal?: (personKey: string) => void;
@@ -48,6 +74,12 @@ export function FilterPanel({
   searchQuery,
   onlySynced,
   eras,
+  thematicBranches,
+  syncTagOptions,
+  selectedSyncTag,
+  branchPairFilter,
+  auditUnlinkedMode,
+  auditFlaggedCount,
   personDossiers,
   selectedPersonDossier,
   onChangeYearFrom,
@@ -55,6 +87,9 @@ export function FilterPanel({
   onSelectYearRange,
   onChangeSearch,
   onToggleOnlySynced,
+  onSelectSyncTag,
+  onChangeBranchPair,
+  onToggleAuditUnlinkedMode,
   onOpenEraModal,
   onOpenWindowModal,
   onOpenPersonModal,
@@ -64,7 +99,14 @@ export function FilterPanel({
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [highlightedPersonIdx, setHighlightedPersonIdx] = useState(-1);
+  const [draftBranchA, setDraftBranchA] = useState(branchPairFilter?.branchA ?? '');
+  const [draftBranchB, setDraftBranchB] = useState(branchPairFilter?.branchB ?? '');
   const searchWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setDraftBranchA(branchPairFilter?.branchA ?? '');
+    setDraftBranchB(branchPairFilter?.branchB ?? '');
+  }, [branchPairFilter]);
 
   const personSuggestions = useMemo(() => {
     if (!personDossiers || !onOpenPersonModal) return [];
@@ -92,7 +134,37 @@ export function FilterPanel({
     !selectedRulerId &&
     !searchQuery &&
     !onlySynced &&
-    !selectedPersonDossier;
+    !selectedPersonDossier &&
+    !selectedSyncTag &&
+    !branchPairFilter &&
+    !auditUnlinkedMode;
+
+  const selectedSyncTagMeta = useMemo(
+    () => (selectedSyncTag ? syncTagOptions.find((t) => t.tag === selectedSyncTag) ?? null : null),
+    [selectedSyncTag, syncTagOptions],
+  );
+
+  const handleBranchAChange = (nextA: string) => {
+    setDraftBranchA(nextA);
+    if (!nextA) {
+      onChangeBranchPair(null);
+      return;
+    }
+    if (draftBranchB && draftBranchB !== nextA) {
+      onChangeBranchPair({ branchA: nextA, branchB: draftBranchB });
+    }
+  };
+
+  const handleBranchBChange = (nextB: string) => {
+    setDraftBranchB(nextB);
+    if (!nextB) {
+      onChangeBranchPair(null);
+      return;
+    }
+    if (draftBranchA && draftBranchA !== nextB) {
+      onChangeBranchPair({ branchA: draftBranchA, branchB: nextB });
+    }
+  };
 
   return (
     <section
@@ -257,7 +329,7 @@ export function FilterPanel({
               type="button"
               onClick={onResetFilters}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-xs font-mono font-semibold text-amber-300 transition-colors cursor-pointer whitespace-nowrap"
-              title="Сбросить поисковый запрос, фильтр правителя и вернуть диапазон 862–2000"
+              title="Сбросить поисковый запрос, теги, пару веток, аудит, правителя и вернуть весь диапазон"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               <span>Все века</span>
@@ -265,6 +337,155 @@ export function FilterPanel({
           )}
         </div>
       </div>
+
+      {/* Вторая строка: Теги синхронизации (syncTags), выбор пары ветвей (А ↔ Б) и аудит пропущенных связей */}
+      <div className="pt-2 border-t border-slate-800/60 flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 min-w-[210px] flex-1 sm:flex-initial">
+          <Tag className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+          <select
+            aria-label="Фильтр по сюжету синхронизации"
+            value={selectedSyncTag ?? ''}
+            onChange={(e) => onSelectSyncTag(e.target.value ? e.target.value : null)}
+            className={`w-full sm:w-[260px] rounded-xl border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-sky-400 ${
+              selectedSyncTag
+                ? 'bg-sky-500/15 border-sky-400/70 text-sky-100 font-semibold'
+                : 'bg-slate-950/85 border-slate-800 text-slate-300'
+            }`}
+          >
+            <option value="">Сюжет синхронизации ({syncTagOptions.length})</option>
+            {syncTagOptions.map((opt) => (
+              <option key={opt.tag} value={opt.tag} className="bg-slate-950 text-slate-100">
+                {opt.label} ({opt.eventCount})
+              </option>
+            ))}
+          </select>
+          {selectedSyncTag && (
+            <button
+              type="button"
+              onClick={() => onSelectSyncTag(null)}
+              aria-label="Сбросить фильтр по сюжету"
+              className="p-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-400 hover:text-white cursor-pointer shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="hidden xl:inline text-[11px] font-mono text-slate-400">Пара веток:</span>
+          <select
+            aria-label="Первая ветвь пары"
+            value={draftBranchA}
+            onChange={(e) => handleBranchAChange(e.target.value)}
+            className={`rounded-xl border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-emerald-400 max-w-[175px] ${
+              branchPairFilter
+                ? 'bg-emerald-500/15 border-emerald-400/70 text-emerald-100 font-semibold'
+                : 'bg-slate-950/85 border-slate-800 text-slate-300'
+            }`}
+          >
+            <option value="">Ветка А</option>
+            {thematicBranches.map((b) => (
+              <option
+                key={b.id}
+                value={b.id}
+                disabled={b.id === draftBranchB}
+                className="bg-slate-950 text-slate-100"
+              >
+                {b.label}
+              </option>
+            ))}
+          </select>
+
+          <ArrowLeftRight className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+
+          <select
+            aria-label="Вторая ветвь пары"
+            value={draftBranchB}
+            onChange={(e) => handleBranchBChange(e.target.value)}
+            className={`rounded-xl border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-emerald-400 max-w-[175px] ${
+              branchPairFilter
+                ? 'bg-emerald-500/15 border-emerald-400/70 text-emerald-100 font-semibold'
+                : 'bg-slate-950/85 border-slate-800 text-slate-300'
+            }`}
+          >
+            <option value="">Ветка Б</option>
+            {thematicBranches.map((b) => (
+              <option
+                key={b.id}
+                value={b.id}
+                disabled={b.id === draftBranchA}
+                className="bg-slate-950 text-slate-100"
+              >
+                {b.label}
+              </option>
+            ))}
+          </select>
+
+          {(draftBranchA || draftBranchB || branchPairFilter) && (
+            <button
+              type="button"
+              onClick={() => {
+                setDraftBranchA('');
+                setDraftBranchB('');
+                onChangeBranchPair(null);
+              }}
+              aria-label="Сбросить фильтр пары ветвей"
+              title="Сбросить выбор пары ветвей"
+              className="p-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-400 hover:text-white cursor-pointer shrink-0"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={onToggleAuditUnlinkedMode}
+          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ml-auto ${
+            auditUnlinkedMode
+              ? 'bg-amber-500/20 border-amber-400 text-amber-200 font-bold'
+              : 'bg-slate-950/85 border-slate-800 text-slate-300 hover:border-amber-500/45 hover:text-amber-200'
+          }`}
+          title="Показать одновременные события разных веток в текущем окне, между которыми нет проставленных связей"
+        >
+          <GitCompare className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+          <span className="tabular-nums">
+            {auditUnlinkedMode
+              ? `Аудит без связей · ${auditFlaggedCount}`
+              : 'Аудит без связей'}
+          </span>
+        </button>
+      </div>
+
+      {/* Активная сводка режима аудита или выбранного сюжета */}
+      {(auditUnlinkedMode || selectedSyncTagMeta) && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-slate-300 min-w-0">
+            {auditUnlinkedMode && (
+              <span className="text-amber-200">
+                Режим аудита: показаны узлы с параллелями в других ветках без проставленных связей (кандидатов: <strong className="font-mono tabular-nums">{auditFlaggedCount}</strong>).
+              </span>
+            )}
+            {auditUnlinkedMode && selectedSyncTagMeta && (
+              <span aria-hidden="true" className="text-slate-600">·</span>
+            )}
+            {selectedSyncTagMeta && (
+              <span className="text-sky-200">
+                Сюжет: <strong>{selectedSyncTagMeta.label}</strong> (всего в базе: <span className="font-mono tabular-nums">{selectedSyncTagMeta.eventCount}</span>)
+              </span>
+            )}
+          </div>
+          {auditUnlinkedMode && (
+            <button
+              type="button"
+              onClick={onToggleAuditUnlinkedMode}
+              className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono cursor-pointer shrink-0"
+            >
+              Выйти из аудита
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Индикатор активного фильтра по участнику (из досье) */}
       {selectedPersonDossier && (
@@ -300,7 +521,7 @@ export function FilterPanel({
         </div>
       )}
 
-      {/* Вторая строка: Быстрые срезы веков и ключевых исторических узлов */}
+      {/* Третья строка: Быстрые срезы веков и ключевых исторических узлов */}
       <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-800/60">
         <span className="inline-flex items-center gap-1 text-[11px] font-mono text-slate-400 mr-1">
           <CalendarRange className="w-3.5 h-3.5 text-amber-400" />
@@ -328,7 +549,7 @@ export function FilterPanel({
         })}
       </div>
 
-      {/* Третья строка: 11 макро-периодов истории России (клик = фокус лет, кнопка «Сводка» = модальное досье периода) */}
+      {/* Четвёртая строка: 11 макро-периодов истории России */}
       {resolvedEras.length > 0 && (
         <div className="pt-2 border-t border-slate-800/60 space-y-1.5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">

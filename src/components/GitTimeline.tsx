@@ -1,4 +1,21 @@
-import { Crosshair, Crown, Flag, GitBranch, GitCommitHorizontal, GitMerge, HelpCircle, Link2, X, Zap } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  ArrowUp,
+  Crosshair,
+  Crown,
+  Eye,
+  Flag,
+  GitBranch,
+  GitCommitHorizontal,
+  GitCompare,
+  GitMerge,
+  HelpCircle,
+  Link2,
+  Pin,
+  X,
+  Zap,
+} from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   computeBranchSubLaneLayout,
@@ -7,9 +24,11 @@ import {
   formatAxisGutterDate,
   formatEventTitleWithPeriod,
   getDirectChildBranches,
+  getEventHiddenBranchSummaries,
   hasChildBranches,
   isBiographyNode,
   isBranchOrDescendantActive,
+  isHistoricalEventNode,
   isMajorCampaignOrConflictNode,
   parsePreciseDate,
   resolveEventBranch,
@@ -17,6 +36,7 @@ import {
   resolveMacroEras,
 } from '../engine/timelineEngine';
 import type {
+  AuditCandidateInfo,
   AxisResolution,
   BranchDefinition,
   CardDensity,
@@ -45,10 +65,13 @@ interface GitTimelineProps {
   cardDensity: CardDensity;
   focusedEvent: EnrichedEvent | null;
   focusScope: FocusScope;
+  auditUnlinkedMode?: boolean;
+  auditCandidateMap?: Map<string, AuditCandidateInfo>;
   onChangeFocusScope: (scope: FocusScope) => void;
   onToggleFocusEvent: (eventId: string) => void;
   onToggleCollapseParent: (parentId: string) => void;
   onExitFocusMode: () => void;
+  onRevealBranches?: (branchIds: string[]) => void;
   highlightedJumpId: string | null;
   onJumpToEvent: (targetEventId: string) => void;
   onHoverEvent: (eventId: string | null) => void;
@@ -89,10 +112,13 @@ export function GitTimeline({
   cardDensity,
   focusedEvent,
   focusScope,
+  auditUnlinkedMode = false,
+  auditCandidateMap,
   onChangeFocusScope,
   onToggleFocusEvent,
   onToggleCollapseParent,
   onExitFocusMode,
+  onRevealBranches,
   highlightedJumpId,
   onJumpToEvent,
   onHoverEvent,
@@ -103,9 +129,42 @@ export function GitTimeline({
 }: GitTimelineProps) {
   const streamContainerRef = useRef<HTMLDivElement | null>(null);
   const graphHelpRef = useRef<HTMLDivElement | null>(null);
+  const hoverClearTimerRef = useRef<number | null>(null);
   const [activeStickyRulerId, setActiveStickyRulerId] = useState<string | null>(null);
   const [hoveredCardTooltip, setHoveredCardTooltip] = useState<HoveredCardTooltipState | null>(null);
   const [isGraphHelpOpen, setIsGraphHelpOpen] = useState(false);
+  const [pinnedHoverEventId, setPinnedHoverEventId] = useState<string | null>(null);
+
+  const cancelScheduledHoverClear = () => {
+    if (hoverClearTimerRef.current !== null) {
+      window.clearTimeout(hoverClearTimerRef.current);
+      hoverClearTimerRef.current = null;
+    }
+  };
+
+  const activateHoverEvent = (eventId: string) => {
+    cancelScheduledHoverClear();
+    onHoverEvent(eventId);
+  };
+
+  const scheduleClearHoverEvent = () => {
+    cancelScheduledHoverClear();
+    hoverClearTimerRef.current = window.setTimeout(() => {
+      onHoverEvent(null);
+      hoverClearTimerRef.current = null;
+    }, 240);
+  };
+
+  useEffect(() => {
+    return () => cancelScheduledHoverClear();
+  }, []);
+
+  useEffect(() => {
+    if (!pinnedHoverEventId) return;
+    if (!matchingEvents.some((e) => e.id === pinnedHoverEventId)) {
+      setPinnedHoverEventId(null);
+    }
+  }, [matchingEvents, pinnedHoverEventId]);
 
   useEffect(() => {
     if (!isGraphHelpOpen) return;
@@ -299,11 +358,43 @@ export function GitTimeline({
     return map;
   }, [matchingRulers]);
 
-  const alreadyRunningEvents = !focusedEvent
-    ? matchingEvents.filter(
-        (ev) => ev.startYear < yearFrom && isMajorCampaignOrConflictNode(ev, branches),
-      )
-    : [];
+  const alreadyRunningEvents = useMemo(
+    () =>
+      !focusedEvent
+        ? matchingEvents.filter(
+            (ev) => ev.startYear < yearFrom && isHistoricalEventNode(ev, branches),
+          )
+        : [],
+    [focusedEvent, matchingEvents, yearFrom, branches],
+  );
+
+  const alreadyRunningGroups = useMemo(() => {
+    if (alreadyRunningEvents.length === 0) return [];
+    const wars: EnrichedEvent[] = [];
+    const economy: EnrichedEvent[] = [];
+    const diplomacyAndWorld: EnrichedEvent[] = [];
+
+    alreadyRunningEvents.forEach((ev) => {
+      if (isMajorCampaignOrConflictNode(ev, branches)) {
+        wars.push(ev);
+      } else if (
+        ev.task.includes('ECO') ||
+        ev.task.includes('REFORM') ||
+        ev.eventType === 'economy' ||
+        ev.eventType === 'reform'
+      ) {
+        economy.push(ev);
+      } else {
+        diplomacyAndWorld.push(ev);
+      }
+    });
+
+    return [
+      { id: 'wars', label: 'Войны и конфликты', items: wars },
+      { id: 'eco', label: 'Экономика и реформы', items: economy },
+      { id: 'world', label: 'Дипломатия и мир', items: diplomacyAndWorld },
+    ].filter((g) => g.items.length > 0);
+  }, [alreadyRunningEvents, branches]);
 
   const gutterWidthClass =
     axisResolution === 'day'
@@ -322,18 +413,115 @@ export function GitTimeline({
     });
   }, [stream, axisResolution]);
 
-  const hoveredEvent = hoveredEventId ? (matchingEvents.find((e) => e.id === hoveredEventId) ?? null) : null;
+  const rowIndexByEventId = useMemo(() => {
+    const map = new Map<string, number>();
+    stream.forEach((row, idx) => {
+      if (row.rowType === 'EVENT_COMMIT') {
+        map.set(row.eventObj.id, idx);
+      }
+    });
+    return map;
+  }, [stream]);
+
+  const effectiveActiveEventId = pinnedHoverEventId || hoveredEventId;
+  const hoveredEvent = effectiveActiveEventId
+    ? (matchingEvents.find((e) => e.id === effectiveActiveEventId) ?? null)
+    : null;
   const linkedEventIds = new Set<string>();
   if (hoveredEvent) {
     hoveredEvent.explicitLinks.forEach((lnk) => {
       linkedEventIds.add(lnk.targetEvent.id);
     });
-  } else if (hoveredEventId) {
+  } else if (effectiveActiveEventId) {
     (manifest.crossLinks || []).forEach((lnk) => {
-      if (lnk.from === hoveredEventId) linkedEventIds.add(lnk.to);
-      if (lnk.to === hoveredEventId) linkedEventIds.add(lnk.from);
+      if (lnk.from === effectiveActiveEventId) linkedEventIds.add(lnk.to);
+      if (lnk.to === effectiveActiveEventId) linkedEventIds.add(lnk.from);
     });
   }
+
+  const activeLinkGeometry = useMemo(() => {
+    if (!hoveredEvent) return null;
+    const sourceRowIdx = rowIndexByEventId.get(hoveredEvent.id);
+    if (sourceRowIdx === undefined) return null;
+
+    let minSpanIdx = sourceRowIdx;
+    let maxSpanIdx = sourceRowIdx;
+    const seenTargetIds = new Set<string>();
+    const items: Array<{
+      targetEvent: EnrichedEvent;
+      branchLabel: string;
+      branchShort: string;
+      branchColor: string;
+      targetRowIdx: number | undefined;
+      directionOnStream: 'up' | 'down' | 'same' | 'off_stream';
+      yearDelta: number;
+      rowDelta: number | null;
+      linkLabel: string;
+      isHiddenBranch: boolean;
+    }> = [];
+
+    const branchMap = new Map(branches.map((b) => [b.id, b]));
+
+    hoveredEvent.explicitLinks.forEach((lnk) => {
+      const t = lnk.targetEvent;
+      if (seenTargetIds.has(t.id)) return;
+      seenTargetIds.add(t.id);
+
+      const tRowIdx = rowIndexByEventId.get(t.id);
+      if (tRowIdx !== undefined) {
+        if (tRowIdx < minSpanIdx) minSpanIdx = tRowIdx;
+        if (tRowIdx > maxSpanIdx) maxSpanIdx = tRowIdx;
+      }
+
+      const tb = branchMap.get(t.task);
+      const directionOnStream =
+        tRowIdx === undefined
+          ? 'off_stream'
+          : tRowIdx < sourceRowIdx
+            ? 'up'
+            : tRowIdx > sourceRowIdx
+              ? 'down'
+              : 'same';
+
+      items.push({
+        targetEvent: t,
+        branchLabel: tb?.label || t.task,
+        branchShort: tb?.short || tb?.label || t.task,
+        branchColor: tb?.color || '#34d399',
+        targetRowIdx: tRowIdx,
+        directionOnStream,
+        yearDelta: t.startYear - hoveredEvent.startYear,
+        rowDelta: tRowIdx !== undefined ? Math.abs(tRowIdx - sourceRowIdx) : null,
+        linkLabel: lnk.label,
+        isHiddenBranch: activeBranches[t.task] === false,
+      });
+    });
+
+    if (items.length === 0) return null;
+
+    items.sort((a, b) => {
+      if (a.targetRowIdx !== undefined && b.targetRowIdx !== undefined) {
+        return a.targetRowIdx - b.targetRowIdx;
+      }
+      if (a.targetRowIdx !== undefined) return -1;
+      if (b.targetRowIdx !== undefined) return 1;
+      return a.targetEvent.startYear - b.targetEvent.startYear;
+    });
+
+    return {
+      sourceEvent: hoveredEvent,
+      sourceRowIdx,
+      minSpanIdx,
+      maxSpanIdx,
+      hasSpanOnCanvas: minSpanIdx < maxSpanIdx,
+      upItems: items.filter((i) => i.directionOnStream === 'up'),
+      downItems: items.filter((i) => i.directionOnStream === 'down' || i.directionOnStream === 'same'),
+      offStreamItems: items.filter((i) => i.directionOnStream === 'off_stream'),
+      totalCount: items.length,
+    };
+  }, [hoveredEvent, rowIndexByEventId, branches, activeBranches]);
+
+  const connectorBusX = timeSpineX + 9;
 
   function renderRailsForRow(
     rowIdx: number,
@@ -342,6 +530,12 @@ export function GitTimeline({
       skipRulerId?: string;
     },
   ) {
+    const showVerticalBusSegment =
+      activeLinkGeometry !== null &&
+      activeLinkGeometry.hasSpanOnCanvas &&
+      rowIdx >= activeLinkGeometry.minSpanIdx &&
+      rowIdx <= activeLinkGeometry.maxSpanIdx;
+
     return (
       <>
         {hasRulersLane && (
@@ -398,6 +592,20 @@ export function GitTimeline({
           strokeOpacity={0.85}
         />
 
+        {/* Вертикальная шина связей вдоль оси при наведении на карточку */}
+        {showVerticalBusSegment && activeLinkGeometry && (
+          <line
+            x1={connectorBusX}
+            y1={rowIdx === activeLinkGeometry.minSpanIdx ? 22 : 0}
+            x2={connectorBusX}
+            y2={rowIdx === activeLinkGeometry.maxSpanIdx ? 22 : 420}
+            stroke="#10b981"
+            strokeWidth={2.2}
+            strokeDasharray="4 3"
+            strokeOpacity={0.9}
+          />
+        )}
+
         {/* Тематические ветки и их динамические под-нити справа от оси времени */}
         {thematicLanes.map((lane) => {
           const laneInfo = subLaneLayout.branchLayouts.get(lane.id);
@@ -432,9 +640,11 @@ export function GitTimeline({
               {passingEvents.map((entry) => {
                 const slot = subLaneLayout.slotByEventId.get(entry.ev.id) ?? 0;
                 const x = laneInfo?.subXs[slot] ?? baseX + slot * 10;
-                const isSelfHovered = hoveredEventId === entry.ev.id;
-                const isLinkedHovered = hoveredEventId !== null && linkedEventIds.has(entry.ev.id);
-                const isDimmed = hoveredEventId !== null && !isSelfHovered && !isLinkedHovered;
+                const isSelfHovered = effectiveActiveEventId === entry.ev.id;
+                const isLinkedHovered =
+                  effectiveActiveEventId !== null && linkedEventIds.has(entry.ev.id);
+                const isDimmed =
+                  effectiveActiveEventId !== null && !isSelfHovered && !isLinkedHovered;
 
                 return (
                   <g key={`rail-${entry.ev.id}`}>
@@ -729,22 +939,33 @@ export function GitTimeline({
           </div>
         )}
 
-        {yearFrom > minYear && alreadyRunningEvents.length > 0 && (
-          <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-mono font-semibold text-amber-200 flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5 text-amber-400" />
-              Военные кампании и конфликты, начавшиеся до {yearFrom} г. и продолжающиеся в окне:
-            </span>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-amber-100">
-              {alreadyRunningEvents.map((e) => (
-                <button
-                  key={e.id}
-                  type="button"
-                  onClick={() => onOpenCardModal(e.id)}
-                  className="underline decoration-amber-400/50 hover:text-white cursor-pointer text-left"
-                >
-                  {formatEventTitleWithPeriod(e)}
-                </button>
+        {yearFrom > minYear && alreadyRunningGroups.length > 0 && (
+          <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 space-y-2">
+            <div className="text-xs font-mono font-semibold text-amber-200 flex items-center gap-1.5">
+              <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="tabular-nums">
+                Сквозные процессы, начавшиеся до {yearFrom} г. и продолжающиеся в окне ({alreadyRunningEvents.length}):
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {alreadyRunningGroups.map((group) => (
+                <div key={group.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+                  <span className="font-mono text-[11px] font-bold text-amber-300/90 shrink-0">
+                    {group.label}:
+                  </span>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-amber-100">
+                    {group.items.map((e) => (
+                      <button
+                        key={e.id}
+                        type="button"
+                        onClick={() => onOpenCardModal(e.id)}
+                        className="underline decoration-amber-400/50 hover:text-white cursor-pointer text-left"
+                      >
+                        {formatEventTitleWithPeriod(e)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
           </div>
@@ -1147,15 +1368,19 @@ export function GitTimeline({
             const hasMultipleRulers = ev.overlappingRulers.length > 1;
             const dateSummary = axisResolution === 'year' ? ev.period : `${item.dateLabel} (${ev.period})`;
 
-            const isCrossLinked = hoveredEventId !== null && linkedEventIds.has(ev.id);
+            const isCrossLinked = effectiveActiveEventId !== null && linkedEventIds.has(ev.id);
             const isOverlapping =
               hoveredEvent !== null &&
               hoveredEvent.id !== ev.id &&
               ev.startYear <= hoveredEvent.endYear &&
               ev.endYear >= hoveredEvent.startYear;
-            const isSelfHovered = hoveredEventId === ev.id;
+            const isSelfHovered = effectiveActiveEventId === ev.id;
             const isFocusedTarget = focusedEvent?.id === ev.id;
             const isJumpHighlighted = highlightedJumpId === ev.id;
+
+            const hiddenBranchSummaries = getEventHiddenBranchSummaries(ev, activeBranches, branches);
+            const hiddenLinksTotal = hiddenBranchSummaries.reduce((sum, b) => sum + b.linkCount, 0);
+            const auditInfo = auditUnlinkedMode ? auditCandidateMap?.get(ev.id) : undefined;
 
             let cardHighlightClass =
               'border-slate-800/90 group-hover:border-slate-600 bg-slate-900/75 group-hover:bg-slate-900';
@@ -1185,6 +1410,11 @@ export function GitTimeline({
               });
             };
 
+            const isConnectedToBus =
+              activeLinkGeometry !== null &&
+              activeLinkGeometry.hasSpanOnCanvas &&
+              (isSelfHovered || isCrossLinked);
+
             return (
               <div
                 key={`commit-${ev.id}-${idx}`}
@@ -1194,9 +1424,9 @@ export function GitTimeline({
                   setHoveredCardTooltip(null);
                   onOpenCardModal(ev.id);
                 }}
-                onMouseEnter={() => onHoverEvent(ev.id)}
+                onMouseEnter={() => activateHoverEvent(ev.id)}
                 onMouseLeave={() => {
-                  onHoverEvent(null);
+                  scheduleClearHoverEvent();
                   setHoveredCardTooltip(null);
                 }}
                 className="commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group"
@@ -1219,6 +1449,39 @@ export function GitTimeline({
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey)}
+
+                    {/* Горизонтальный отвод в вертикальную шину связей при наведении */}
+                    {isConnectedToBus && (
+                      <g>
+                        <path
+                          d={`M ${connectorBusX} ${commitY} C ${(connectorBusX + commitX) / 2} ${commitY}, ${(connectorBusX + commitX) / 2} ${commitY}, ${commitX} ${commitY}`}
+                          fill="none"
+                          stroke="#10b981"
+                          strokeWidth={2}
+                          strokeOpacity={0.95}
+                        />
+                        <circle
+                          cx={connectorBusX}
+                          cy={commitY}
+                          r={3.5}
+                          fill={isSelfHovered ? '#10b981' : '#050811'}
+                          stroke="#10b981"
+                          strokeWidth={2}
+                        />
+                        {isSelfHovered && activeLinkGeometry.upItems.length > 0 && (
+                          <polygon
+                            points={`${connectorBusX},${Math.max(4, commitY - 14)} ${connectorBusX - 3.5},${Math.max(9, commitY - 9)} ${connectorBusX + 3.5},${Math.max(9, commitY - 9)}`}
+                            fill="#34d399"
+                          />
+                        )}
+                        {isSelfHovered && activeLinkGeometry.downItems.length > 0 && (
+                          <polygon
+                            points={`${connectorBusX},${commitY + 14} ${connectorBusX - 3.5},${commitY + 9} ${connectorBusX + 3.5},${commitY + 9}`}
+                            fill="#34d399"
+                          />
+                        )}
+                      </g>
+                    )}
 
                     {/* Длительный процесс: собственная нить от commitY (или сверху, если начался до окна) + кривая ответвления */}
                     {!isAtomic && (
@@ -1362,6 +1625,27 @@ export function GitTimeline({
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono">
+                        {hiddenLinksTotal > 0 && onRevealBranches && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onRevealBranches(hiddenBranchSummaries.map((b) => b.branchId));
+                            }}
+                            className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 transition-colors cursor-pointer whitespace-nowrap tabular-nums"
+                            title={`Скрытых связей: ${hiddenLinksTotal} (${hiddenBranchSummaries.map((b) => b.label).join(', ')}). Нажмите, чтобы раскрыть ветки.`}
+                          >
+                            <Eye className="w-3 h-3 text-amber-400" />
+                            <span>
+                              +{hiddenLinksTotal}: {hiddenBranchSummaries.slice(0, 2).map((b) => b.label).join(' · ')}
+                            </span>
+                          </button>
+                        )}
+                        {auditInfo && (
+                          <span className="hidden sm:inline-flex items-center gap-1 text-amber-300 font-semibold tabular-nums">
+                            <GitCompare className="w-3 h-3" /> {auditInfo.candidates.length}
+                          </span>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => {
@@ -1429,6 +1713,59 @@ export function GitTimeline({
                       <p className="text-xs text-slate-300 leading-[18px] h-[36px] overflow-hidden line-clamp-2">
                         {ev.subtitle}
                       </p>
+
+                      {hiddenLinksTotal > 0 && (
+                        <div className="pt-1.5 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                          <div className="flex items-center gap-1.5 text-amber-200/95 min-w-0">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                            <span className="truncate tabular-nums">
+                              Скрыто связей: <strong>{hiddenLinksTotal}</strong> ({hiddenBranchSummaries.slice(0, 3).map((b) => b.label).join(' · ')}
+                              {hiddenBranchSummaries.length > 3 ? ` +${hiddenBranchSummaries.length - 3}` : ''})
+                            </span>
+                          </div>
+                          {onRevealBranches && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onRevealBranches(hiddenBranchSummaries.map((b) => b.branchId));
+                              }}
+                              className="px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 text-amber-200 font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                            >
+                              Раскрыть ветки →
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {auditInfo && (
+                        <div className="pt-1.5 border-t border-amber-500/25 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-mono">
+                          <span className="inline-flex items-center gap-1 text-amber-300 font-semibold shrink-0 tabular-nums">
+                            <GitCompare className="w-3 h-3" />
+                            <span>
+                              Без связи: {auditInfo.candidates.length}
+                              {auditInfo.sameYearCandidatesCount > 0
+                                ? ` (в том же году: ${auditInfo.sameYearCandidatesCount})`
+                                : ''}
+                            </span>
+                          </span>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-300 min-w-0">
+                            {auditInfo.candidates.slice(0, 2).map((cand) => (
+                              <button
+                                key={cand.id}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onOpenCardModal(cand.id);
+                                }}
+                                className="underline decoration-slate-600 hover:text-amber-200 truncate max-w-[230px] cursor-pointer text-left"
+                              >
+                                {cand.period} {cand.title}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-[11px] text-slate-400 min-w-0 h-[26px]">
                         <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden font-mono whitespace-nowrap">
@@ -1696,6 +2033,153 @@ export function GitTimeline({
             </span>
           </div>
         </div>
+      )}
+
+      {/* Плавающая панель быстрого перехода по дальним вертикальным связям */}
+      {activeLinkGeometry && (
+        <aside
+          aria-label="Навигация по связанным событиям"
+          onMouseEnter={() => cancelScheduledHoverClear()}
+          onMouseLeave={() => {
+            if (pinnedHoverEventId !== activeLinkGeometry.sourceEvent.id) {
+              scheduleClearHoverEvent();
+            }
+          }}
+          className="fixed bottom-5 right-5 z-40 w-[330px] sm:w-[376px] max-h-[58vh] flex flex-col rounded-2xl border border-emerald-500/45 bg-[#0b1325]/98 backdrop-blur-md shadow-2xl overflow-hidden"
+        >
+          <div className="px-3.5 py-2.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-[10px] font-mono text-emerald-300 font-bold flex items-center gap-1.5 tabular-nums">
+                <Link2 className="w-3 h-3 shrink-0" />
+                <span>Переход по связям ({activeLinkGeometry.totalCount})</span>
+              </div>
+              <div className="text-xs font-bold text-white truncate mt-0.5">
+                {activeLinkGeometry.sourceEvent.period} — {activeLinkGeometry.sourceEvent.title}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() =>
+                  setPinnedHoverEventId((prev) =>
+                    prev === activeLinkGeometry.sourceEvent.id
+                      ? null
+                      : activeLinkGeometry.sourceEvent.id,
+                  )
+                }
+                className={`p-1.5 rounded-lg border text-[10px] font-mono transition-colors cursor-pointer ${
+                  pinnedHoverEventId === activeLinkGeometry.sourceEvent.id
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
+                    : 'bg-slate-950/80 border-slate-700 text-slate-300 hover:text-white'
+                }`}
+                title="Закрепить панель перехода при перемещении мыши"
+              >
+                <Pin className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setPinnedHoverEventId(null);
+                  cancelScheduledHoverClear();
+                  onHoverEvent(null);
+                }}
+                aria-label="Скрыть панель перехода"
+                className="p-1.5 rounded-lg bg-slate-950/80 border border-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          <div className="p-2.5 overflow-y-auto space-y-2.5 text-xs">
+            {activeLinkGeometry.upItems.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[10px] font-mono text-slate-400 px-1 flex items-center gap-1">
+                  <ArrowUp className="w-3 h-3 text-emerald-400" />
+                  <span>Выше на ленте ({activeLinkGeometry.upItems.length})</span>
+                </div>
+                {activeLinkGeometry.upItems.map((lnk) => (
+                  <button
+                    key={lnk.targetEvent.id}
+                    type="button"
+                    onClick={() => onJumpToEvent(lnk.targetEvent.id)}
+                    className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+                      <span className="font-bold tabular-nums" style={{ color: lnk.branchColor }}>
+                        ↑ {lnk.targetEvent.period} · {lnk.branchLabel}
+                      </span>
+                      <span className="text-emerald-300 shrink-0 tabular-nums">
+                        {lnk.rowDelta} стр.{lnk.yearDelta !== 0 ? ` · ${lnk.yearDelta} л.` : ''}
+                      </span>
+                    </div>
+                    <div className="text-xs font-semibold text-white truncate mt-0.5">
+                      {lnk.targetEvent.title}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {activeLinkGeometry.downItems.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[10px] font-mono text-slate-400 px-1 flex items-center gap-1">
+                  <ArrowDown className="w-3 h-3 text-emerald-400" />
+                  <span>Ниже на ленте ({activeLinkGeometry.downItems.length})</span>
+                </div>
+                {activeLinkGeometry.downItems.map((lnk) => (
+                  <button
+                    key={lnk.targetEvent.id}
+                    type="button"
+                    onClick={() => onJumpToEvent(lnk.targetEvent.id)}
+                    className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+                      <span className="font-bold tabular-nums" style={{ color: lnk.branchColor }}>
+                        ↓ {lnk.targetEvent.period} · {lnk.branchLabel}
+                      </span>
+                      <span className="text-emerald-300 shrink-0 tabular-nums">
+                        {lnk.rowDelta} стр.{lnk.yearDelta !== 0 ? ` · +${Math.abs(lnk.yearDelta)} л.` : ''}
+                      </span>
+                    </div>
+                    <div className="text-xs font-semibold text-white truncate mt-0.5">
+                      {lnk.targetEvent.title}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {activeLinkGeometry.offStreamItems.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[10px] font-mono text-amber-300/90 px-1">
+                  Вне окна или в скрытых ветках ({activeLinkGeometry.offStreamItems.length})
+                </div>
+                {activeLinkGeometry.offStreamItems.map((lnk) => (
+                  <button
+                    key={lnk.targetEvent.id}
+                    type="button"
+                    onClick={() => onJumpToEvent(lnk.targetEvent.id)}
+                    className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-amber-950/35 border border-slate-800 hover:border-amber-500/50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
+                      <span className="font-bold tabular-nums" style={{ color: lnk.branchColor }}>
+                        {lnk.targetEvent.period} · {lnk.branchLabel}
+                      </span>
+                      <span className="text-amber-300 shrink-0">
+                        {lnk.isHiddenBranch ? 'Раскрыть →' : 'Перейти →'}
+                      </span>
+                    </div>
+                    <div className="text-xs font-semibold text-white truncate mt-0.5">
+                      {lnk.targetEvent.title}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
       )}
     </div>
   );

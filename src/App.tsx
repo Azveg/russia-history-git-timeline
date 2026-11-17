@@ -12,6 +12,7 @@ import { TopControlBar } from './components/TopControlBar';
 import { WindowSummaryModal } from './components/WindowSummaryModal';
 import {
   buildPersonDossierIndex,
+  buildSyncTagIndex,
   buildUnifiedTimelineStream,
   computeBranchPresetMap,
   computeTimelineYearBounds,
@@ -21,6 +22,7 @@ import {
   fetchTimelineRepository,
   getDescendantBranchIds,
   getEnrichedEvents,
+  getLeafBranches,
   getVisibleLanes,
   getWindowLinksVisibilitySummary,
   hasChildBranches,
@@ -34,6 +36,7 @@ import {
 import { preserveViewportScrollAnchor } from './utils/scrollIsolation';
 import type {
   BranchDefinition,
+  BranchPairFilter,
   BranchPresetId,
   CardDensity,
   FocusScope,
@@ -59,6 +62,9 @@ export default function App() {
   const [selectedReign, setSelectedReign] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPersonKey, setSelectedPersonKey] = useState<string | null>(null);
+  const [selectedSyncTag, setSelectedSyncTag] = useState<string | null>(null);
+  const [branchPairFilter, setBranchPairFilter] = useState<BranchPairFilter | null>(null);
+  const [auditUnlinkedMode, setAuditUnlinkedMode] = useState(false);
   const [onlyWithSyncLinks, setOnlyWithSyncLinks] = useState(false);
 
   const [cardDensity, setCardDensity] = useState<CardDensity>('detailed');
@@ -244,45 +250,78 @@ export default function App() {
 
 
 
-  const visibleLanes = useMemo(
-    () => getVisibleLanes(branches, activeBranches, collapsedParents),
-    [branches, activeBranches, collapsedParents],
+  const syncTagOptions = useMemo(
+    () => (manifest ? buildSyncTagIndex(enrichedEvents, rulers, manifest.macroEras) : []),
+    [manifest, enrichedEvents, rulers],
   );
 
-  const { stream, matchingEvents, matchingRulers, focusedEvent, effectiveYearFrom, effectiveYearTo, axisResolution } =
-    useMemo(() => {
-      if (!manifest) {
-        return {
-          stream: [],
-          matchingEvents: [],
-          matchingRulers: [],
-          focusedEvent: null,
-          effectiveYearFrom: yearFrom,
-          effectiveYearTo: yearTo,
-          axisResolution: 'year' as const,
-        };
+  const thematicLeafBranches = useMemo(() => getLeafBranches(branches), [branches]);
+
+  const effectiveActiveBranches = useMemo(() => {
+    if (!branchPairFilter) return activeBranches;
+    const next: Record<string, boolean> = {};
+    branches.forEach((b) => {
+      if (b.isGroup) return;
+      if (b.id === 'MAIN_RULERS') {
+        next[b.id] = activeBranches.MAIN_RULERS !== false;
+      } else {
+        next[b.id] = b.id === branchPairFilter.branchA || b.id === branchPairFilter.branchB;
       }
-      return buildUnifiedTimelineStream(enrichedEvents, rulers, manifest, branches, {
-        activeBranches,
-        yearFrom,
-        yearTo,
-        selectedEra,
-        selectedReign,
-        searchQuery,
-        selectedPersonKey,
-        selectedPersonEventIds: selectedPersonDossier?.eventIds ?? null,
-        onlyWithSyncLinks,
-        focusedEventId,
-        focusScope,
-        showEndNodes,
-        showOverlapMatrix,
-      });
-    }, [
+    });
+    return next;
+  }, [activeBranches, branchPairFilter, branches]);
+
+  const visibleLanes = useMemo(
+    () => getVisibleLanes(branches, effectiveActiveBranches, collapsedParents),
+    [branches, effectiveActiveBranches, collapsedParents],
+  );
+
+  const {
+    stream,
+    matchingEvents,
+    matchingRulers,
+    focusedEvent,
+    effectiveYearFrom,
+    effectiveYearTo,
+    axisResolution,
+    auditCandidateMap,
+  } = useMemo(() => {
+    if (!manifest) {
+      return {
+        stream: [],
+        matchingEvents: [],
+        matchingRulers: [],
+        focusedEvent: null,
+        effectiveYearFrom: yearFrom,
+        effectiveYearTo: yearTo,
+        axisResolution: 'year' as const,
+        auditCandidateMap: new Map(),
+      };
+    }
+    return buildUnifiedTimelineStream(enrichedEvents, rulers, manifest, branches, {
+      activeBranches: effectiveActiveBranches,
+      yearFrom,
+      yearTo,
+      selectedEra,
+      selectedReign,
+      searchQuery,
+      selectedPersonKey,
+      selectedPersonEventIds: selectedPersonDossier?.eventIds ?? null,
+      selectedSyncTag,
+      branchPairFilter,
+      auditUnlinkedMode,
+      onlyWithSyncLinks,
+      focusedEventId,
+      focusScope,
+      showEndNodes,
+      showOverlapMatrix,
+    });
+  }, [
     manifest,
     enrichedEvents,
     rulers,
     branches,
-    activeBranches,
+    effectiveActiveBranches,
     yearFrom,
     yearTo,
     selectedEra,
@@ -290,6 +329,9 @@ export default function App() {
     searchQuery,
     selectedPersonKey,
     selectedPersonDossier,
+    selectedSyncTag,
+    branchPairFilter,
+    auditUnlinkedMode,
     onlyWithSyncLinks,
     focusedEventId,
     focusScope,
@@ -298,8 +340,8 @@ export default function App() {
   ]);
 
   const windowLinksVisibility = useMemo(
-    () => getWindowLinksVisibilitySummary(matchingEvents, activeBranches, branches),
-    [matchingEvents, activeBranches, branches],
+    () => getWindowLinksVisibilitySummary(matchingEvents, effectiveActiveBranches, branches),
+    [matchingEvents, effectiveActiveBranches, branches],
   );
 
   const displayLanes = useMemo(() => {
@@ -646,11 +688,33 @@ export default function App() {
     setSelectedReign('ALL');
     setSearchQuery('');
     setSelectedPersonKey(null);
+    setSelectedSyncTag(null);
+    setBranchPairFilter(null);
+    setAuditUnlinkedMode(false);
     setOnlyWithSyncLinks(false);
     setFocusedEventId(null);
     setZoomHistory([]);
     setYearFrom(timelineBounds.minYear);
     setYearTo(timelineBounds.maxYear);
+  }
+
+  function handleSelectSyncTag(tag: string | null) {
+    setSelectedSyncTag(tag);
+    if (!tag) return;
+    const option = syncTagOptions.find((o) => o.tag === tag);
+    if (option) {
+      const hiddenBranches = option.branchIds.filter((id) => activeBranches[id] === false);
+      if (hiddenBranches.length > 0) {
+        handleRevealBranches(hiddenBranches);
+      }
+      showToast(`Фильтр по сюжету: «${option.label}» (событий: ${option.eventCount})`);
+    }
+  }
+
+  function handleChangeBranchPair(pair: BranchPairFilter | null) {
+    setBranchPairFilter(pair);
+    if (!pair) return;
+    handleRevealBranches([pair.branchA, pair.branchB]);
   }
 
   function handleResetAll() {
@@ -977,7 +1041,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#050811] text-slate-100">
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-[70] bg-slate-900 border border-amber-500/50 text-slate-100 px-4 py-3 rounded-xl shadow-2xl font-mono text-xs flex items-center gap-2.5 max-w-md">
+        <div className="fixed bottom-5 left-5 z-[70] bg-slate-900 border border-amber-500/50 text-slate-100 px-4 py-3 rounded-xl shadow-2xl font-mono text-xs flex items-center gap-2.5 max-w-md">
           <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
           <span>{toastMessage}</span>
         </div>
@@ -1040,6 +1104,12 @@ export default function App() {
             searchQuery={searchQuery}
             onlySynced={onlyWithSyncLinks}
             eras={manifest.macroEras}
+            thematicBranches={thematicLeafBranches}
+            syncTagOptions={syncTagOptions}
+            selectedSyncTag={selectedSyncTag}
+            branchPairFilter={branchPairFilter}
+            auditUnlinkedMode={auditUnlinkedMode}
+            auditFlaggedCount={auditUnlinkedMode ? matchingEvents.length : auditCandidateMap.size}
             personDossiers={personDossiers}
             selectedPersonDossier={selectedPersonDossier}
             onChangeYearFrom={(y) => handleYearRangeChange(y, effectiveYearTo)}
@@ -1051,6 +1121,9 @@ export default function App() {
             }}
             onChangeSearch={setSearchQuery}
             onToggleOnlySynced={() => setOnlyWithSyncLinks((prev) => !prev)}
+            onSelectSyncTag={handleSelectSyncTag}
+            onChangeBranchPair={handleChangeBranchPair}
+            onToggleAuditUnlinkedMode={() => setAuditUnlinkedMode((prev) => !prev)}
             onOpenEraModal={handleOpenEraModal}
             onOpenWindowModal={handleOpenWindowModal}
             onOpenPersonModal={handleOpenPersonModal}
@@ -1063,7 +1136,7 @@ export default function App() {
           matchingEvents={matchingEvents}
           rulers={rulers}
           branches={branches}
-          activeBranches={activeBranches}
+          activeBranches={effectiveActiveBranches}
           yearFrom={effectiveYearFrom}
           yearTo={effectiveYearTo}
           minYear={timelineBounds.minYear}
@@ -1113,7 +1186,7 @@ export default function App() {
             rulers={rulers}
             visibleLanes={displayLanes}
             branches={branches}
-            activeBranches={activeBranches}
+            activeBranches={effectiveActiveBranches}
             collapsedParents={collapsedParents}
             manifest={manifest}
             yearFrom={effectiveYearFrom}
@@ -1123,10 +1196,13 @@ export default function App() {
             cardDensity={cardDensity}
             focusedEvent={focusedEvent}
             focusScope={focusScope}
+            auditUnlinkedMode={auditUnlinkedMode}
+            auditCandidateMap={auditCandidateMap}
             onChangeFocusScope={setFocusScope}
             onToggleFocusEvent={handleToggleFocusEvent}
             onToggleCollapseParent={handleToggleCollapseParent}
             onExitFocusMode={() => setFocusedEventId(null)}
+            onRevealBranches={handleRevealBranches}
             highlightedJumpId={highlightedJumpId}
             onJumpToEvent={handleJumpToEvent}
             onHoverEvent={setHoveredEventId}

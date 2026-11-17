@@ -329,6 +329,24 @@ export interface RulerSpanSegment {
   pct: number;
 }
 
+export interface SyncTagOption {
+  tag: string;
+  label: string;
+  eventCount: number;
+  branchIds: string[];
+}
+
+export interface BranchPairFilter {
+  branchA: string;
+  branchB: string;
+}
+
+export interface AuditCandidateInfo {
+  eventId: string;
+  candidates: EnrichedEvent[];
+  sameYearCandidatesCount: number;
+}
+
 export interface FilterState {
   activeBranches: Record<string, boolean>;
   yearFrom: number;
@@ -338,6 +356,9 @@ export interface FilterState {
   searchQuery: string;
   selectedPersonKey?: string | null;
   selectedPersonEventIds?: Set<string> | null;
+  selectedSyncTag?: string | null;
+  branchPairFilter?: BranchPairFilter | null;
+  auditUnlinkedMode?: boolean;
   onlyWithSyncLinks: boolean;
   focusedEventId: string | null;
   focusScope: FocusScope;

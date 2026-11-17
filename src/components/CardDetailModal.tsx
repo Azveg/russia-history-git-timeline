@@ -94,10 +94,10 @@ export function CardDetailModal({
   onOpenRulerModal,
   onOpenEraModal,
 }: CardDetailModalProps) {
-  const [showAllConcurrent, setShowAllConcurrent] = useState(false);
+  const [concurrentBranchFilter, setConcurrentBranchFilter] = useState<string>('ALL');
 
   useEffect(() => {
-    setShowAllConcurrent(false);
+    setConcurrentBranchFilter('ALL');
   }, [card?.id]);
 
   useEffect(() => {
@@ -112,6 +112,44 @@ export function CardDetailModal({
   }, [card, onClose]);
 
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
+
+  const explicitOtherIdSet = useMemo(
+    () => new Set(card ? card.explicitLinks.map((l) => l.otherId) : []),
+    [card],
+  );
+
+  const concurrentBranchTabs = useMemo(() => {
+    if (!card || card.concurrentEvents.length === 0) return [];
+    const branchMap = new Map(branches.map((b) => [b.id, b]));
+    const counts = new Map<string, number>();
+    card.concurrentEvents.forEach((ev) => {
+      counts.set(ev.task, (counts.get(ev.task) || 0) + 1);
+    });
+    return Array.from(counts.entries())
+      .map(([branchId, count]) => {
+        const b = branchMap.get(branchId);
+        return {
+          branchId,
+          label: b?.label || branchId,
+          short: b?.short || b?.label || branchId,
+          color: b?.color || '#38bdf8',
+          count,
+        };
+      })
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ru'));
+  }, [card, branches]);
+
+  const filteredConcurrentEvents = useMemo(() => {
+    if (!card) return [];
+    const list =
+      concurrentBranchFilter === 'ALL'
+        ? card.concurrentEvents
+        : card.concurrentEvents.filter((ev) => ev.task === concurrentBranchFilter);
+    return [...list].sort((a, b) => {
+      if (a.startYear !== b.startYear) return a.startYear - b.startYear;
+      return a.endYear - b.endYear;
+    });
+  }, [card, concurrentBranchFilter]);
 
   if (!card) return null;
 
@@ -989,34 +1027,68 @@ export function CardDetailModal({
             </div>
           )}
 
-          {/* Параллельные процессы в других ветках */}
+          {/* Параллельные процессы в других ветках (без усечения, с фильтром по веткам) */}
           {card.concurrentEvents.length > 0 && (
             <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4 space-y-3">
-              <div className="flex items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-xs font-mono uppercase tracking-wider text-sky-400 flex items-center gap-2">
                   <Layers className="w-3.5 h-3.5" />
-                  <span>
+                  <span className="tabular-nums">
                     Синхронные события в других ветках ({card.concurrentEvents.length})
                   </span>
                 </div>
-                {card.concurrentEvents.length > 12 && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllConcurrent((prev) => !prev)}
-                    className="text-xs font-mono text-sky-300 hover:text-sky-200 underline decoration-sky-400/40 underline-offset-2 cursor-pointer"
-                  >
-                    {showAllConcurrent
-                      ? 'Свернуть до 12'
-                      : `Показать все ${card.concurrentEvents.length}`}
-                  </button>
+                {concurrentBranchFilter !== 'ALL' && (
+                  <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                    Показано: {filteredConcurrentEvents.length}
+                  </span>
                 )}
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {(showAllConcurrent
-                  ? card.concurrentEvents
-                  : card.concurrentEvents.slice(0, 12)
-                ).map((other) => {
+
+              {concurrentBranchTabs.length > 1 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setConcurrentBranchFilter('ALL')}
+                    className={`px-2.5 py-1 rounded-lg border text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
+                      concurrentBranchFilter === 'ALL'
+                        ? 'bg-sky-500/20 border-sky-400 text-sky-100 font-bold'
+                        : 'bg-slate-950/75 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                    }`}
+                  >
+                    Все ветки ({card.concurrentEvents.length})
+                  </button>
+                  {concurrentBranchTabs.map((tab) => {
+                    const isActive = concurrentBranchFilter === tab.branchId;
+                    return (
+                      <button
+                        key={tab.branchId}
+                        type="button"
+                        onClick={() =>
+                          setConcurrentBranchFilter(isActive ? 'ALL' : tab.branchId)
+                        }
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
+                          isActive
+                            ? 'bg-sky-500/20 border-sky-400 text-white font-bold'
+                            : 'bg-slate-950/75 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
+                        }`}
+                        title={tab.label}
+                      >
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: tab.color }}
+                        />
+                        <span>{tab.label}</span>
+                        <span className="text-slate-400">({tab.count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1">
+                {filteredConcurrentEvents.map((other) => {
                   const ob = branches.find((b) => b.id === other.task);
+                  const hasDirectLink = explicitOtherIdSet.has(other.id);
                   return (
                     <button
                       key={other.id}
@@ -1025,10 +1097,17 @@ export function CardDetailModal({
                       className="text-left p-2.5 rounded-lg bg-slate-950/70 hover:bg-slate-800 border border-slate-800/90 transition-colors cursor-pointer"
                     >
                       <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
-                        <span style={{ color: ob ? ob.color : '#94a3b8' }} className="font-bold">
+                        <span style={{ color: ob ? ob.color : '#94a3b8' }} className="font-bold tabular-nums">
                           {other.period}
                         </span>
-                        <span className="text-slate-500">{ob ? ob.short : other.task}</span>
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {hasDirectLink && (
+                            <span className="text-emerald-300 font-semibold shrink-0">связь ·</span>
+                          )}
+                          <span className="text-slate-400 truncate">
+                            {ob ? ob.label : other.task}
+                          </span>
+                        </div>
                       </div>
                       <div className="text-xs font-semibold text-slate-200 mt-0.5 truncate">
                         {other.title}
