@@ -218,7 +218,7 @@ export function FilterPanel({
                 setIsSearchFocused(false);
               }
             }}
-            placeholder="Поиск по событиям, личностям (Витте, Сперанский, Потёмкин...), итогам, договорам, книгам..."
+            placeholder="Поиск по событиям, предпосылкам, итогам, личностям (Витте, Сперанский...), договорам..."
             aria-autocomplete="list"
             aria-expanded={showPersonSuggestions}
             className="w-full rounded-xl bg-slate-950/90 border border-slate-700/80 pl-9 pr-8 py-1.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"

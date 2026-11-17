@@ -697,6 +697,14 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
     ? raw.referenceTags.filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
     : undefined;
 
+  const prerequisites: string | string[] | undefined = Array.isArray(raw.prerequisites)
+    ? raw.prerequisites
+        .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        .map((item) => item.trim())
+    : typeof raw.prerequisites === 'string' && raw.prerequisites.trim().length > 0
+      ? raw.prerequisites.trim()
+      : undefined;
+
   const outcome =
     typeof raw.outcome === 'string' && raw.outcome.trim().length > 0 ? raw.outcome.trim() : undefined;
 
@@ -750,6 +758,8 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
     title,
     subtitle: typeof raw.subtitle === 'string' ? raw.subtitle : '',
     details: typeof raw.details === 'string' ? raw.details : '',
+    prerequisites:
+      Array.isArray(prerequisites) && prerequisites.length === 0 ? undefined : prerequisites,
     outcome,
     keyFigures,
     literaryProfile:
@@ -1152,6 +1162,7 @@ export function getEnrichedEvents(
           overlappingRulers.length > 1
             ? `${overlappingRulers[0].startYear}–${overlappingRulers[overlappingRulers.length - 1].endYear} (${overlappingRulers.length} правл.)`
             : overlappingRulers[0]?.reignPeriod || '',
+        prerequisitesList: [],
         concurrentEvents: [],
         explicitLinks: [],
         retrospectiveLinks: [],
@@ -1569,9 +1580,94 @@ export function getEnrichedEvents(
     });
     ev.explicitLinks = links;
     ev.retrospectiveLinks = retroLinks;
+    ev.prerequisitesList = resolveEventPrerequisites(ev);
   });
 
   return list;
+}
+
+const CAUSAL_DETAIL_PATTERNS = [
+  /^(?:После|Вследствие|В результате|В ответ на|Из-за|На фоне|В условиях|К началу|К середине|К концу|Причиной|Предпосылк)/i,
+  /(?:причинами|предпосылками|поводом|толчком|вынудил|потребовало|обострени|кризис|необходимост)/i,
+];
+
+export function resolveEventPrerequisites(
+  ev: Pick<
+    EnrichedEvent,
+    | 'prerequisites'
+    | 'explicitLinks'
+    | 'subEvents'
+    | 'details'
+    | 'literaryProfile'
+    | 'region'
+    | 'task'
+    | 'type'
+    | 'syncTags'
+  >,
+): string[] {
+  if (Array.isArray(ev.prerequisites)) {
+    const cleaned = ev.prerequisites.map((s) => s.trim()).filter(Boolean);
+    if (cleaned.length > 0) return cleaned;
+  } else if (typeof ev.prerequisites === 'string' && ev.prerequisites.trim()) {
+    const lines = ev.prerequisites
+      .split(/\n+|;\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (lines.length > 0) return lines;
+  }
+
+  // Умный резервный синтез, если в JSON-файле поле prerequisites не задано явно
+  const fallback: string[] = [];
+
+  const incomingCausal = ev.explicitLinks.filter(
+    (lnk) =>
+      lnk.direction === 'incoming' &&
+      (lnk.type === 'triggers' || lnk.type === 'enables' || lnk.type === 'causes'),
+  );
+  incomingCausal.slice(0, 2).forEach((lnk) => {
+    const item = `${lnk.label} (${lnk.targetEvent.title}, ${lnk.targetEvent.period})`;
+    if (!fallback.includes(item)) fallback.push(item);
+  });
+
+  const sentences = (ev.details || '')
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 20);
+  const causalSentence = sentences.find((s) => CAUSAL_DETAIL_PATTERNS.some((re) => re.test(s)));
+  if (causalSentence && fallback.length < 2) {
+    const normalized = causalSentence.replace(/\.$/, '');
+    if (!fallback.some((f) => f.includes(normalized.slice(0, 28)))) {
+      fallback.push(normalized);
+    }
+  }
+
+  const sub0 = ev.subEvents && ev.subEvents.length > 0 ? ev.subEvents[0] : null;
+  if (sub0 && fallback.length < 2) {
+    const yrStr = sub0.year !== undefined ? String(sub0.year).trim() : '';
+    const title = sub0.title.trim();
+    const hasYr = yrStr !== '' && title.includes(yrStr);
+    const head = !hasYr && yrStr ? `${title} (${yrStr})` : title;
+    const text = (sub0.text || sub0.description || '').trim();
+    const isBio = isBiographyNode(ev);
+    const isWork = isLiteraryWorkNode(ev);
+    const prefix = isBio
+      ? 'Истоки и становление — '
+      : isWork
+        ? 'Замысел и истоки — '
+        : 'Завязка — ';
+    const line = text ? `${prefix}${head}: ${text}` : `${prefix}${head}`;
+    if (!fallback.some((f) => f.includes(title))) {
+      fallback.push(line);
+    }
+  }
+
+  if (fallback.length === 0 && ev.literaryProfile?.themes) {
+    fallback.push(`Историко-культурный контекст: ${ev.literaryProfile.themes}`);
+  } else if (fallback.length === 0 && sentences[0]) {
+    fallback.push(sentences[0].replace(/\.$/, ''));
+  }
+
+  return fallback.slice(0, 3);
 }
 
 export function getDescendantBranchIds(
@@ -2180,6 +2276,7 @@ export function buildUnifiedTimelineStream(
         ev.ruler.toLowerCase().includes(q) ||
         ev.region.toLowerCase().includes(q) ||
         ev.type.toLowerCase().includes(q) ||
+        ev.prerequisitesList.some((p) => p.toLowerCase().includes(q)) ||
         Boolean(ev.outcome && ev.outcome.toLowerCase().includes(q)) ||
         Boolean(ev.keyFigures?.some((person) => person.toLowerCase().includes(q))) ||
         Boolean(ev.literaryProfile?.genre && ev.literaryProfile.genre.toLowerCase().includes(q)) ||

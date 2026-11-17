@@ -2237,8 +2237,15 @@ export function GitTimeline({
             {hoveredCardTooltip.ev.subtitle}
           </p>
 
+          {hoveredCardTooltip.ev.prerequisitesList.length > 0 && (
+            <div className="mt-2 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1.5 text-[11px] text-indigo-100 leading-snug line-clamp-2">
+              <span className="font-mono font-bold text-indigo-300">Предпосылки: </span>
+              {hoveredCardTooltip.ev.prerequisitesList[0]}
+            </div>
+          )}
+
           {hoveredCardTooltip.ev.outcome && (
-            <div className="mt-2 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-1.5 text-[11px] text-amber-100 leading-snug">
+            <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-1.5 text-[11px] text-amber-100 leading-snug line-clamp-2">
               <span className="font-mono font-bold text-amber-300">Итог: </span>
               {hoveredCardTooltip.ev.outcome}
             </div>
@@ -2246,7 +2253,8 @@ export function GitTimeline({
 
           {hoveredCardTooltip.ev.details &&
             hoveredCardTooltip.ev.details !== hoveredCardTooltip.ev.subtitle &&
-            !hoveredCardTooltip.ev.outcome && (
+            !hoveredCardTooltip.ev.outcome &&
+            hoveredCardTooltip.ev.prerequisitesList.length === 0 && (
               <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed line-clamp-3">
                 {hoveredCardTooltip.ev.details}
               </p>

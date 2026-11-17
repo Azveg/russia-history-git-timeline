@@ -9,6 +9,7 @@ import {
   Crown,
   FlaskConical,
   GitBranch,
+  History,
   Layers,
   Link2,
   MapPin,
@@ -508,22 +509,64 @@ export function CardDetailModal({
               </div>
             </div>
 
-            {/* Главный итог и историческое значение (outcome) */}
-            {card.outcome && (
-              <div className="rounded-xl bg-amber-500/10 border border-amber-500/35 p-3.5 flex items-start gap-3">
-                <Award className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
-                <div className="space-y-1 min-w-0">
-                  <div className="text-[11px] font-mono uppercase tracking-wider font-bold text-amber-300">
-                    {isWork
-                      ? 'Художественный итог и значение'
-                      : isBio
-                        ? 'Место в истории литературы'
-                        : 'Главный итог и историческое значение'}
+            {/* Симметричная пара: Предпосылки и причины (prerequisites) + Главный итог (outcome) */}
+            {(card.prerequisitesList.length > 0 || card.outcome) && (
+              <div
+                className={`grid grid-cols-1 ${
+                  card.prerequisitesList.length > 0 && card.outcome ? 'md:grid-cols-2' : ''
+                } gap-3`}
+              >
+                {card.prerequisitesList.length > 0 && (
+                  <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/35 p-3.5 flex items-start gap-3 h-full">
+                    <History className="w-5 h-5 text-indigo-300 shrink-0 mt-0.5" />
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="text-[11px] font-mono uppercase tracking-wider font-bold text-indigo-300">
+                        {isWork
+                          ? 'Замысел и исторические предпосылки'
+                          : isBio
+                            ? 'Истоки и предпосылки пути'
+                            : 'Предпосылки и причины'}
+                      </div>
+                      {card.prerequisitesList.length === 1 ? (
+                        <p className="text-xs sm:text-sm text-indigo-50/95 leading-relaxed font-medium">
+                          {card.prerequisitesList[0]}
+                        </p>
+                      ) : (
+                        <ul className="space-y-1.5 text-xs sm:text-sm text-indigo-50/95 leading-relaxed font-medium">
+                          {card.prerequisitesList.map((item, idx) => (
+                            <li key={idx} className="flex items-start gap-2">
+                              <span
+                                aria-hidden="true"
+                                className="text-indigo-300 font-bold select-none mt-0.5"
+                              >
+                                •
+                              </span>
+                              <span>{item}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   </div>
-                  <p className="text-xs sm:text-sm text-amber-50/95 leading-relaxed font-medium">
-                    {card.outcome}
-                  </p>
-                </div>
+                )}
+
+                {card.outcome && (
+                  <div className="rounded-xl bg-amber-500/10 border border-amber-500/35 p-3.5 flex items-start gap-3 h-full">
+                    <Award className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div className="space-y-1.5 min-w-0">
+                      <div className="text-[11px] font-mono uppercase tracking-wider font-bold text-amber-300">
+                        {isWork
+                          ? 'Художественный итог и значение'
+                          : isBio
+                            ? 'Место в истории'
+                            : 'Главный итог и историческое значение'}
+                      </div>
+                      <p className="text-xs sm:text-sm text-amber-50/95 leading-relaxed font-medium">
+                        {card.outcome}
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -798,12 +841,18 @@ export function CardDetailModal({
           </div>
 
           {/* Наглядная схема связей: 3 смысловых блока (Предпосылки / Следствия / Культурный и научный след) */}
-          {totalUniqueLinksCount > 0 && (
+          {(totalUniqueLinksCount > 0 || card.prerequisitesList.length > 0 || Boolean(card.outcome)) && (
             <div className="rounded-xl bg-slate-900/65 border border-emerald-500/30 p-4 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-xs font-mono uppercase tracking-wider text-emerald-300 flex items-center gap-2 font-bold">
                   <Link2 className="w-4 h-4 text-emerald-400" />
-                  <span>Наглядная схема исторических связей ({totalUniqueLinksCount})</span>
+                  <span>
+                    Наглядная схема исторических связей (
+                    {totalUniqueLinksCount > 0
+                      ? totalUniqueLinksCount
+                      : 'причины и итоги'}
+                    )
+                  </span>
                 </div>
                 {hiddenBranchLinksCount > 0 && (
                   <span className="text-[11px] font-mono text-amber-300 tabular-nums">
@@ -813,12 +862,36 @@ export function CardDetailModal({
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-                {/* Колонка 1: Предпосылки и синхронный контекст */}
-                <div className="rounded-xl bg-slate-950/75 border border-slate-800 p-3 space-y-2">
+                {/* Колонка 1: Предпосылки, собственные причины и синхронный контекст */}
+                <div className="rounded-xl bg-slate-950/75 border border-slate-800 p-3 space-y-2.5">
                   <div className="text-[11px] font-mono uppercase tracking-wider text-sky-300 font-bold flex items-center justify-between">
                     <span>1. Предпосылки и контекст</span>
-                    <span className="tabular-nums">{prerequisiteLinks.length}</span>
+                    <span className="tabular-nums">
+                      {prerequisiteLinks.length > 0
+                        ? prerequisiteLinks.length
+                        : card.prerequisitesList.length}
+                    </span>
                   </div>
+
+                  {card.prerequisitesList.length > 0 && (
+                    <div className="rounded-lg bg-indigo-500/10 border border-indigo-500/30 p-2.5 space-y-1.5">
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-indigo-300 font-bold flex items-center gap-1.5">
+                        <History className="w-3 h-3 shrink-0" />
+                        <span>Причины и истоки события</span>
+                      </div>
+                      <ul className="space-y-1 text-[11px] text-indigo-50/95 leading-snug">
+                        {card.prerequisitesList.map((item, idx) => (
+                          <li key={idx} className="flex items-start gap-1.5">
+                            <span aria-hidden="true" className="text-indigo-300 font-bold select-none">
+                              •
+                            </span>
+                            <span>{item}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {prerequisiteLinks.length > 0 ? (
                     <div className="space-y-2">
                       {prerequisiteLinks.map((item, idx) => {
@@ -878,19 +951,34 @@ export function CardDetailModal({
                         );
                       })}
                     </div>
-                  ) : (
+                  ) : card.prerequisitesList.length === 0 ? (
                     <div className="text-xs text-slate-500 py-2">
                       Нет выделенных предшествующих событий
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-500 pt-0.5">
+                      Внешних карточек-предпосылок в других ветках не отмечено
                     </div>
                   )}
                 </div>
 
                 {/* Колонка 2: Итоги и прямые следствия */}
-                <div className="rounded-xl bg-slate-950/75 border border-slate-800 p-3 space-y-2">
+                <div className="rounded-xl bg-slate-950/75 border border-slate-800 p-3 space-y-2.5">
                   <div className="text-[11px] font-mono uppercase tracking-wider text-emerald-300 font-bold flex items-center justify-between">
                     <span>2. Итоги и следствия</span>
-                    <span className="tabular-nums">{consequenceLinks.length}</span>
+                    <span className="tabular-nums">
+                      {consequenceLinks.length > 0 ? consequenceLinks.length : card.outcome ? 1 : 0}
+                    </span>
                   </div>
+                  {consequenceLinks.length === 0 && card.outcome && (
+                    <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-2.5 space-y-1">
+                      <div className="text-[10px] font-mono uppercase tracking-wider text-amber-300 font-bold flex items-center gap-1.5">
+                        <Award className="w-3 h-3 shrink-0" />
+                        <span>Главный итог</span>
+                      </div>
+                      <p className="text-[11px] text-amber-50/95 leading-snug">{card.outcome}</p>
+                    </div>
+                  )}
                   {consequenceLinks.length > 0 ? (
                     <div className="space-y-2">
                       {consequenceLinks.map((item, idx) => {
@@ -950,9 +1038,13 @@ export function CardDetailModal({
                         );
                       })}
                     </div>
-                  ) : (
+                  ) : !card.outcome ? (
                     <div className="text-xs text-slate-500 py-2">
                       Выделенных следствий по связям не зафиксировано
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-500 pt-0.5">
+                      Последующих связанных карточек не отмечено
                     </div>
                   )}
                 </div>

@@ -119,6 +119,7 @@ export interface TimelineNode {
   region: string;
   type: string;
   eventType?: string;
+  prerequisites?: string | string[];
   outcome?: string;
   keyFigures?: string[];
   literaryProfile?: LiteraryProfile;
@@ -236,6 +237,7 @@ export interface EnrichedEvent extends TimelineNode {
   overlappingRulers: RulerPeriod[];
   ruler: string;
   reignPeriod: string;
+  prerequisitesList: string[];
   concurrentEvents: EnrichedEvent[];
   explicitLinks: ExplicitLinkInfo[];
   retrospectiveLinks: RetrospectiveLinkInfo[];
