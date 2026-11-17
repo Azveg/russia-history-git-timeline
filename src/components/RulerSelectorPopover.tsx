@@ -105,7 +105,7 @@ export function RulerSelectorPopover({
         onClick={() => setIsOpen((prev) => !prev)}
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        className={`px-3 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-2 transition-colors whitespace-nowrap cursor-pointer ${
+        className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
           isOpen
             ? 'bg-slate-800 border-amber-400/70 text-white shadow-md'
             : activeWindowRuler
@@ -118,23 +118,27 @@ export function RulerSelectorPopover({
         <span>Правители</span>
 
         {activeWindowRuler ? (
-          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] max-w-[130px] truncate">
+          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] max-w-[76px] sm:max-w-[130px] truncate">
             {activeWindowRuler.shortRuler}
           </span>
         ) : (
-          <span className="tabular-nums px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
+          <span className="hidden min-[420px]:inline-block tabular-nums px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
             {rulers.length}
           </span>
         )}
 
-        <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDown
+          className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-400 transition-transform ${
+            isOpen ? 'rotate-180' : ''
+          }`}
+        />
       </button>
 
       {isOpen && (
         <div
           role="dialog"
           aria-label="Навигатор по правителям"
-          className="absolute left-0 top-full mt-2 w-[360px] sm:w-[500px] max-w-[calc(100vw-1.5rem)] bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"
+          className="fixed sm:absolute left-3 right-3 sm:left-0 sm:right-auto top-[52px] sm:top-full sm:mt-2 sm:w-[500px] sm:max-w-[calc(100vw-2rem)] bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"
         >
           <div className="p-3 border-b border-slate-800/90 space-y-2 bg-slate-950/70">
             <div className="flex items-center justify-between gap-2">

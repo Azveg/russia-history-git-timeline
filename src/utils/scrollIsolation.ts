@@ -99,7 +99,11 @@ export function useOverlayScrollLock(
  */
 export function preserveViewportScrollAnchor(action: () => void) {
   const initialScrollY = window.scrollY;
-  const stickyOffset = 72;
+  const rawTopBarHeight = parseInt(
+    window.getComputedStyle(document.documentElement).getPropertyValue('--top-bar-height'),
+    10,
+  );
+  const stickyOffset = Number.isFinite(rawTopBarHeight) ? rawTopBarHeight + 24 : 76;
 
   let anchorEl: HTMLElement | null = null;
   let anchorInitialTop = 0;

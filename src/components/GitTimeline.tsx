@@ -102,9 +102,30 @@ export function GitTimeline({
   onSelectYearRange,
 }: GitTimelineProps) {
   const streamContainerRef = useRef<HTMLDivElement | null>(null);
+  const graphHelpRef = useRef<HTMLDivElement | null>(null);
   const [activeStickyRulerId, setActiveStickyRulerId] = useState<string | null>(null);
   const [hoveredCardTooltip, setHoveredCardTooltip] = useState<HoveredCardTooltipState | null>(null);
   const [isGraphHelpOpen, setIsGraphHelpOpen] = useState(false);
+
+  useEffect(() => {
+    if (!isGraphHelpOpen) return;
+    function handlePointerDown(e: PointerEvent) {
+      if (graphHelpRef.current && !graphHelpRef.current.contains(e.target as Node)) {
+        setIsGraphHelpOpen(false);
+      }
+    }
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setIsGraphHelpOpen(false);
+      }
+    }
+    document.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isGraphHelpOpen]);
 
   const defaultStickyRulerId = useMemo(() => {
     if (matchingRulers.length > 0) return matchingRulers[0].id;
@@ -449,7 +470,7 @@ export function GitTimeline({
 
   return (
     <div className="min-w-0 w-full">
-      <div className="sticky top-[45px] z-20 bg-[#050811]/95 backdrop-blur-md border border-slate-800/90 rounded-t-2xl shadow-md overflow-hidden">
+      <div className="sticky top-[var(--top-bar-height,49px)] z-30 bg-[#050811]/95 backdrop-blur-md border border-slate-800/90 rounded-t-2xl shadow-md">
         <div className="px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0">
             {visibleLanes.map((lane) => {
@@ -527,7 +548,7 @@ export function GitTimeline({
             })}
           </div>
 
-          <div className="relative flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
+          <div ref={graphHelpRef} className="relative flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
             <span className="hidden md:inline text-slate-300">
               Масштаб оси: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
             </span>

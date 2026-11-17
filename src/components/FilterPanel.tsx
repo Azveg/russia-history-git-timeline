@@ -43,6 +43,8 @@ export function FilterPanel({
   searchQuery,
   onlySynced,
   eras,
+  onChangeYearFrom,
+  onChangeYearTo,
   onSelectYearRange,
   onChangeSearch,
   onToggleOnlySynced,
@@ -80,7 +82,30 @@ export function FilterPanel({
           )}
         </div>
 
-        <div className="lg:col-span-3 flex items-center justify-end gap-2">
+        <div className="lg:col-span-3 flex flex-wrap items-center justify-between lg:justify-end gap-2">
+          <div className="flex lg:hidden items-center gap-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2.5 py-1.5 text-xs font-mono">
+            <span className="text-slate-400">Окно:</span>
+            <input
+              type="number"
+              min={minYear}
+              max={maxYear}
+              value={yearFrom}
+              aria-label="Год начала диапазона"
+              onChange={(e) => onChangeYearFrom(Number(e.target.value))}
+              className="w-14 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
+            />
+            <span className="text-slate-500">—</span>
+            <input
+              type="number"
+              min={minYear}
+              max={maxYear}
+              value={yearTo}
+              aria-label="Год окончания диапазона"
+              onChange={(e) => onChangeYearTo(Number(e.target.value))}
+              className="w-14 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
           <button
             type="button"
             onClick={onToggleOnlySynced}
