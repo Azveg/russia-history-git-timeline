@@ -14,6 +14,7 @@ import {
   MapPin,
   ScrollText,
   Sparkles,
+  User,
   Users,
   X,
 } from 'lucide-react';
@@ -24,12 +25,14 @@ import {
   isLiteraryWorkNode,
   isScienceDiscoveryNode,
   resolveMacroEras,
+  resolvePersonKey,
 } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
   EnrichedEvent,
   MacroEra,
   ModalHistoryItem,
+  PersonDossier,
   RulerPeriod,
 } from '../types/timeline';
 
@@ -40,6 +43,7 @@ interface CardDetailModalProps {
   branches: BranchDefinition[];
   activeBranches?: Record<string, boolean>;
   eras?: MacroEra[];
+  personDossiers?: Map<string, PersonDossier>;
   focusedEventId: string | null;
   modalHistory?: ModalHistoryItem[];
   onClose: () => void;
@@ -49,6 +53,7 @@ interface CardDetailModalProps {
   onRevealBranch?: (branchId: string) => void;
   onToggleFocusEvent: (id: string) => void;
   onFilterByRuler: (rulerId: string) => void;
+  onOpenPersonModal?: (personKeyOrName: string) => void;
   onFilterByPerson?: (personName: string) => void;
   onOpenRulerModal?: (rulerId: string) => void;
   onOpenEraModal?: (eraId: string) => void;
@@ -74,6 +79,7 @@ export function CardDetailModal({
   branches,
   activeBranches,
   eras = [],
+  personDossiers,
   focusedEventId,
   modalHistory = [],
   onClose,
@@ -83,6 +89,7 @@ export function CardDetailModal({
   onRevealBranch,
   onToggleFocusEvent,
   onFilterByRuler,
+  onOpenPersonModal,
   onFilterByPerson,
   onOpenRulerModal,
   onOpenEraModal,
@@ -474,8 +481,8 @@ export function CardDetailModal({
             {/* Ключевые исторические лица / участники (keyFigures) */}
             {card.keyFigures && card.keyFigures.length > 0 && (
               <div className="space-y-1.5 pt-1">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center justify-between gap-1.5">
-                  <span className="inline-flex items-center gap-1.5">
+                <div className="text-[11px] font-mono tracking-wider text-slate-400 flex flex-wrap items-center justify-between gap-1.5">
+                  <span className="inline-flex items-center gap-1.5 uppercase">
                     <Users className="w-3.5 h-3.5 text-sky-400" />
                     <span>
                       {isWork
@@ -485,36 +492,71 @@ export function CardDetailModal({
                           : 'Ключевые участники и исторические фигуры:'}
                     </span>
                   </span>
-                  {onFilterByPerson && (
-                    <span className="text-[10px] text-slate-500 normal-case">
-                      нажмите на имя для поиска по таймлайну
+                  {(onOpenPersonModal || onFilterByPerson) && (
+                    <span className="text-[11px] text-sky-400/90 normal-case">
+                      нажмите на имя, чтобы открыть досье участника
                     </span>
                   )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {card.keyFigures.map((person) =>
-                    onFilterByPerson ? (
-                      <button
-                        key={person}
-                        type="button"
-                        onClick={() => {
-                          onFilterByPerson(person);
-                          onClose();
-                        }}
-                        title={`Найти все события с участием: ${person}`}
-                        className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-sky-500/15 border border-slate-700/90 hover:border-sky-400/50 text-xs font-medium text-slate-200 hover:text-sky-200 transition-colors cursor-pointer"
-                      >
-                        {person}
-                      </button>
-                    ) : (
+                  {card.keyFigures.map((person) => {
+                    const personKey = personDossiers
+                      ? resolvePersonKey(person, personDossiers)
+                      : null;
+                    const dossier = personKey ? personDossiers?.get(personKey) : null;
+                    const eventCount = dossier?.events.length ?? 0;
+
+                    if (onOpenPersonModal) {
+                      return (
+                        <button
+                          key={person}
+                          type="button"
+                          onClick={() => onOpenPersonModal(personKey || person)}
+                          title={
+                            dossier
+                              ? `Открыть досье: ${dossier.displayName} (событий: ${eventCount})`
+                              : `Открыть досье участника: ${person}`
+                          }
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-950/90 hover:bg-sky-500/15 border border-sky-500/30 hover:border-sky-400/70 text-xs font-medium text-slate-100 hover:text-sky-200 transition-colors cursor-pointer"
+                        >
+                          <User className="w-3 h-3 text-sky-400 shrink-0" />
+                          <span>{person}</span>
+                          {eventCount > 0 && (
+                            <span className="text-[11px] font-mono text-sky-300/90 tabular-nums">
+                              · {eventCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    }
+
+                    if (onFilterByPerson) {
+                      return (
+                        <button
+                          key={person}
+                          type="button"
+                          onClick={() => {
+                            onFilterByPerson(person);
+                            onClose();
+                          }}
+                          title={`Найти все события с участием: ${person}`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-950 hover:bg-sky-500/15 border border-slate-700/90 hover:border-sky-400/50 text-xs font-medium text-slate-200 hover:text-sky-200 transition-colors cursor-pointer"
+                        >
+                          <User className="w-3 h-3 text-sky-400 shrink-0" />
+                          <span>{person}</span>
+                        </button>
+                      );
+                    }
+
+                    return (
                       <span
                         key={person}
                         className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700/90 text-xs font-medium text-slate-200"
                       >
                         {person}
                       </span>
-                    ),
-                  )}
+                    );
+                  })}
                 </div>
               </div>
             )}

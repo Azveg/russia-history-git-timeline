@@ -1,7 +1,7 @@
-import { CalendarRange, Link2, RotateCcw, Search, Sparkles, X } from 'lucide-react';
-import { useMemo } from 'react';
-import { resolveMacroEras } from '../engine/timelineEngine';
-import type { MacroEra } from '../types/timeline';
+import { CalendarRange, Link2, RotateCcw, Search, Sparkles, User, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { resolveMacroEras, searchPersonDossiers } from '../engine/timelineEngine';
+import type { MacroEra, PersonDossier } from '../types/timeline';
 
 interface FilterPanelProps {
   yearFrom: number;
@@ -12,12 +12,16 @@ interface FilterPanelProps {
   searchQuery: string;
   onlySynced: boolean;
   eras: MacroEra[];
+  personDossiers?: Map<string, PersonDossier>;
+  selectedPersonDossier?: PersonDossier | null;
   onChangeYearFrom: (year: number) => void;
   onChangeYearTo: (year: number) => void;
   onSelectYearRange: (from: number, to: number) => void;
   onChangeSearch: (query: string) => void;
   onToggleOnlySynced: () => void;
   onOpenEraModal: (eraId: string) => void;
+  onOpenPersonModal?: (personKey: string) => void;
+  onClearPersonFilter?: () => void;
   onResetFilters: () => void;
 }
 
@@ -43,16 +47,50 @@ export function FilterPanel({
   searchQuery,
   onlySynced,
   eras,
+  personDossiers,
+  selectedPersonDossier,
   onChangeYearFrom,
   onChangeYearTo,
   onSelectYearRange,
   onChangeSearch,
   onToggleOnlySynced,
   onOpenEraModal,
+  onOpenPersonModal,
+  onClearPersonFilter,
   onResetFilters,
 }: FilterPanelProps) {
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
-  const isFullRange = yearFrom === minYear && yearTo === maxYear && !selectedRulerId && !searchQuery && !onlySynced;
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [highlightedPersonIdx, setHighlightedPersonIdx] = useState(-1);
+  const searchWrapperRef = useRef<HTMLDivElement | null>(null);
+
+  const personSuggestions = useMemo(() => {
+    if (!personDossiers || !onOpenPersonModal) return [];
+    return searchPersonDossiers(searchQuery, personDossiers, 6);
+  }, [searchQuery, personDossiers, onOpenPersonModal]);
+
+  useEffect(() => {
+    setHighlightedPersonIdx(-1);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    function handleOutsidePointer(e: PointerEvent) {
+      if (searchWrapperRef.current && !searchWrapperRef.current.contains(e.target as Node)) {
+        setIsSearchFocused(false);
+      }
+    }
+    document.addEventListener('pointerdown', handleOutsidePointer);
+    return () => document.removeEventListener('pointerdown', handleOutsidePointer);
+  }, []);
+
+  const showPersonSuggestions = isSearchFocused && personSuggestions.length > 0;
+  const isFullRange =
+    yearFrom === minYear &&
+    yearTo === maxYear &&
+    !selectedRulerId &&
+    !searchQuery &&
+    !onlySynced &&
+    !selectedPersonDossier;
 
   return (
     <section
@@ -61,13 +99,41 @@ export function FilterPanel({
     >
       {/* Первая строка: Поиск + Фильтр причинно-следственных связей + Сброс */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5 items-center">
-        <div className="lg:col-span-9 relative">
+        <div ref={searchWrapperRef} className="lg:col-span-9 relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
             value={searchQuery}
-            onChange={(e) => onChangeSearch(e.target.value)}
-            placeholder="Поиск по событиям, личностям, итогам, договорам, книгам, открытиям..."
+            onFocus={() => setIsSearchFocused(true)}
+            onChange={(e) => {
+              onChangeSearch(e.target.value);
+              setIsSearchFocused(true);
+            }}
+            onKeyDown={(e) => {
+              if (!showPersonSuggestions) return;
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setHighlightedPersonIdx((prev) => (prev + 1) % personSuggestions.length);
+              } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setHighlightedPersonIdx((prev) =>
+                  prev <= 0 ? personSuggestions.length - 1 : prev - 1,
+                );
+              } else if (e.key === 'Enter' && highlightedPersonIdx >= 0) {
+                const chosen = personSuggestions[highlightedPersonIdx];
+                if (chosen && onOpenPersonModal) {
+                  e.preventDefault();
+                  setIsSearchFocused(false);
+                  onOpenPersonModal(chosen.key);
+                }
+              } else if (e.key === 'Escape') {
+                e.stopPropagation();
+                setIsSearchFocused(false);
+              }
+            }}
+            placeholder="Поиск по событиям, личностям (Витте, Сперанский, Потёмкин...), итогам, договорам, книгам..."
+            aria-autocomplete="list"
+            aria-expanded={showPersonSuggestions}
             className="w-full rounded-xl bg-slate-950/90 border border-slate-700/80 pl-9 pr-8 py-2 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
           />
           {searchQuery && (
@@ -79,6 +145,58 @@ export function FilterPanel({
             >
               <X className="w-4 h-4" />
             </button>
+          )}
+
+          {showPersonSuggestions && onOpenPersonModal && (
+            <div
+              role="listbox"
+              aria-label="Найденные исторические деятели"
+              className="absolute left-0 right-0 top-full mt-1.5 z-30 rounded-xl bg-[#0b1325] border border-sky-500/40 shadow-2xl overflow-hidden"
+            >
+              <div className="px-3.5 py-2 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between text-[11px] font-mono text-sky-300">
+                <span>Исторические лица и участники ({personSuggestions.length})</span>
+                <span className="text-slate-400">нажмите, чтобы открыть досье</span>
+              </div>
+              <div className="divide-y divide-slate-800/75">
+                {personSuggestions.map((person, idx) => {
+                  const spanText =
+                    person.yearRange.min === person.yearRange.max
+                      ? `${person.yearRange.min}`
+                      : `${person.yearRange.min}–${person.yearRange.max}`;
+                  const isHighlighted = idx === highlightedPersonIdx;
+                  return (
+                    <button
+                      key={person.key}
+                      type="button"
+                      role="option"
+                      aria-selected={isHighlighted}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setIsSearchFocused(false);
+                        onOpenPersonModal(person.key);
+                      }}
+                      className={`w-full px-3.5 py-2.5 flex items-center justify-between gap-3 text-left transition-colors cursor-pointer ${
+                        isHighlighted ? 'bg-sky-500/15' : 'hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <div className="min-w-0 flex items-center gap-2.5">
+                        <User className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                        <div className="min-w-0">
+                          <div className="text-xs sm:text-sm font-semibold text-white truncate">
+                            {person.displayName}
+                          </div>
+                          <div className="text-[11px] font-mono text-slate-400 tabular-nums truncate">
+                            {spanText} · событий: {person.events.length}
+                            {person.rulers.length > 0 ? ` · правлений: ${person.rulers.length}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="text-[11px] font-mono text-sky-300 shrink-0">Досье →</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </div>
 
@@ -133,6 +251,40 @@ export function FilterPanel({
           )}
         </div>
       </div>
+
+      {/* Индикатор активного фильтра по участнику (из досье) */}
+      {selectedPersonDossier && (
+        <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-sky-500/10 border border-sky-500/35 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-sky-200 min-w-0">
+            <User className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            <span className="font-semibold">Фильтр по участнику: {selectedPersonDossier.displayName}</span>
+            <span className="font-mono text-[11px] text-sky-300/85 tabular-nums">
+              · событий в досье: {selectedPersonDossier.events.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {onOpenPersonModal && (
+              <button
+                type="button"
+                onClick={() => onOpenPersonModal(selectedPersonDossier.key)}
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-sky-500/40 text-sky-200 text-[11px] font-mono transition-colors cursor-pointer"
+              >
+                Открыть досье
+              </button>
+            )}
+            {onClearPersonFilter && (
+              <button
+                type="button"
+                onClick={onClearPersonFilter}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono transition-colors cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+                <span>Снять</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Вторая строка: Быстрые срезы веков и ключевых исторических узлов */}
       <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-800/60">

@@ -236,6 +236,28 @@ export interface EnrichedEvent extends TimelineNode {
   retrospectiveLinks: RetrospectiveLinkInfo[];
 }
 
+export interface PersonDossier {
+  key: string;
+  displayName: string;
+  variants: string[];
+  events: EnrichedEvent[];
+  eventIds: Set<string>;
+  bioCard: EnrichedEvent | null;
+  rulers: RulerPeriod[];
+  yearRange: { min: number; max: number };
+  branchCounts: Record<string, number>;
+}
+
+export interface RulerParticipantEntry {
+  personKey: string;
+  displayName: string;
+  reignEventCount: number;
+  totalEventCount: number;
+  firstYearInReign: number;
+  branchIds: string[];
+  bioCardId: string | null;
+}
+
 export type StreamRow =
   | {
       rowType: 'ERA_START';
@@ -314,6 +336,8 @@ export interface FilterState {
   selectedEra: string;
   selectedReign: string;
   searchQuery: string;
+  selectedPersonKey?: string | null;
+  selectedPersonEventIds?: Set<string> | null;
   onlyWithSyncLinks: boolean;
   focusedEventId: string | null;
   focusScope: FocusScope;
@@ -403,8 +427,8 @@ export interface AboutWorkEntry {
 }
 
 export interface ModalHistoryItem {
-  type: 'card' | 'ruler' | 'era';
-  kind?: 'card' | 'ruler' | 'era';
+  type: 'card' | 'ruler' | 'era' | 'person';
+  kind?: 'card' | 'ruler' | 'era' | 'person';
   id: string;
   label: string;
 }

@@ -6,8 +6,10 @@ import { FilterPanel } from './components/FilterPanel';
 import { GitTimeline } from './components/GitTimeline';
 import { OverlapMapSection } from './components/OverlapMapSection';
 import { PeriodSummaryModal } from './components/PeriodSummaryModal';
+import { PersonDossierModal } from './components/PersonDossierModal';
 import { TopControlBar } from './components/TopControlBar';
 import {
+  buildPersonDossierIndex,
   buildUnifiedTimelineStream,
   computeBranchPresetMap,
   computeTimelineYearBounds,
@@ -24,6 +26,7 @@ import {
   isEventBranchActive,
   resolveEventBranch,
   resolveMacroEras,
+  resolvePersonKey,
 } from './engine/timelineEngine';
 import { preserveViewportScrollAnchor } from './utils/scrollIsolation';
 import type {
@@ -52,6 +55,7 @@ export default function App() {
   const [selectedEra, setSelectedEra] = useState('ALL');
   const [selectedReign, setSelectedReign] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedPersonKey, setSelectedPersonKey] = useState<string | null>(null);
   const [onlyWithSyncLinks, setOnlyWithSyncLinks] = useState(false);
 
   const [cardDensity, setCardDensity] = useState<CardDensity>('detailed');
@@ -66,6 +70,7 @@ export default function App() {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
   const [activeEraModalId, setActiveEraModalId] = useState<string | null>(null);
+  const [activePersonKey, setActivePersonKey] = useState<string | null>(null);
   const [modalHistory, setModalHistory] = useState<ModalHistoryItem[]>([]);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -109,13 +114,14 @@ export default function App() {
     setActiveCardId(null);
     setActivePeriodId(null);
     setActiveEraModalId(null);
+    setActivePersonKey(null);
     setModalHistory([]);
   }, []);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        if (activeCardId || activePeriodId || activeEraModalId) {
+        if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
           handleCloseAllModals();
         } else if (focusedEventId) {
           setFocusedEventId(null);
@@ -124,7 +130,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeCardId, activePeriodId, activeEraModalId, focusedEventId, handleCloseAllModals]);
+  }, [activeCardId, activePeriodId, activeEraModalId, activePersonKey, focusedEventId, handleCloseAllModals]);
 
   const branches = useMemo(() => {
     if (!manifest) return [];
@@ -175,6 +181,16 @@ export default function App() {
     return getEnrichedEvents(manifest, filesMap, rulers);
   }, [manifest, filesMap, rulers]);
 
+  const { dossiers: personDossiers, rawToKey: personRawToKey } = useMemo(
+    () => buildPersonDossierIndex(enrichedEvents, rulers),
+    [enrichedEvents, rulers],
+  );
+
+  const selectedPersonDossier = useMemo(
+    () => (selectedPersonKey ? personDossiers.get(selectedPersonKey) ?? null : null),
+    [selectedPersonKey, personDossiers],
+  );
+
   const timelineBounds = useMemo(
     () => computeTimelineYearBounds(manifest, rulers, enrichedEvents),
     [manifest, rulers, enrichedEvents],
@@ -202,7 +218,24 @@ export default function App() {
     if (activePeriodId && !rulers.some((r) => r.id === activePeriodId)) {
       setActivePeriodId(null);
     }
-  }, [manifest, rulers, enrichedEvents, selectedReign, focusedEventId, activeCardId, activePeriodId]);
+    if (activePersonKey && !personDossiers.has(activePersonKey)) {
+      setActivePersonKey(null);
+    }
+    if (selectedPersonKey && !personDossiers.has(selectedPersonKey)) {
+      setSelectedPersonKey(null);
+    }
+  }, [
+    manifest,
+    rulers,
+    enrichedEvents,
+    personDossiers,
+    selectedReign,
+    focusedEventId,
+    activeCardId,
+    activePeriodId,
+    activePersonKey,
+    selectedPersonKey,
+  ]);
 
   const totalSyncLinksCount = useMemo(() => {
     const ids = new Set<string>();
@@ -237,6 +270,8 @@ export default function App() {
         selectedEra,
         selectedReign,
         searchQuery,
+        selectedPersonKey,
+        selectedPersonEventIds: selectedPersonDossier?.eventIds ?? null,
         onlyWithSyncLinks,
         focusedEventId,
         focusScope,
@@ -254,6 +289,8 @@ export default function App() {
     selectedEra,
     selectedReign,
     searchQuery,
+    selectedPersonKey,
+    selectedPersonDossier,
     onlyWithSyncLinks,
     focusedEventId,
     focusScope,
@@ -318,6 +355,11 @@ export default function App() {
     [activeEraModalId, manifest],
   );
 
+  const activePersonObj = useMemo(
+    () => (activePersonKey ? personDossiers.get(activePersonKey) ?? null : null),
+    [activePersonKey, personDossiers],
+  );
+
   // Стек навигации между модальными окнами («← Назад»)
   const pushCurrentModalToHistory = useCallback(() => {
     if (activeCardObj) {
@@ -335,52 +377,127 @@ export default function App() {
         ...prev.slice(-9),
         { type: 'era', id: activeEraObj.id, label: activeEraObj.shortTitle || activeEraObj.title },
       ]);
+    } else if (activePersonObj) {
+      setModalHistory((prev) => [
+        ...prev.slice(-9),
+        { type: 'person', id: activePersonObj.key, label: activePersonObj.displayName },
+      ]);
     }
-  }, [activeCardObj, activeRulerObj, activeEraObj]);
+  }, [activeCardObj, activeRulerObj, activeEraObj, activePersonObj]);
 
   const handleOpenCardModal = useCallback(
     (cardId: string) => {
       if (cardId === activeCardId) return;
-      if (activeCardId || activePeriodId || activeEraModalId) {
+      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
       }
       setActivePeriodId(null);
       setActiveEraModalId(null);
+      setActivePersonKey(null);
       setActiveCardId(cardId);
     },
-    [activeCardId, activePeriodId, activeEraModalId, pushCurrentModalToHistory],
+    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, pushCurrentModalToHistory],
   );
 
   const handleOpenPeriodModal = useCallback(
     (rulerId: string) => {
       if (rulerId === activePeriodId) return;
-      if (activeCardId || activePeriodId || activeEraModalId) {
+      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
       }
       setActiveCardId(null);
       setActiveEraModalId(null);
+      setActivePersonKey(null);
       setActivePeriodId(rulerId);
     },
-    [activeCardId, activePeriodId, activeEraModalId, pushCurrentModalToHistory],
+    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, pushCurrentModalToHistory],
   );
 
   const handleOpenEraModal = useCallback(
     (eraId: string) => {
       if (eraId === activeEraModalId) return;
-      if (activeCardId || activePeriodId || activeEraModalId) {
+      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
       }
       setActiveCardId(null);
       setActivePeriodId(null);
+      setActivePersonKey(null);
       setActiveEraModalId(eraId);
     },
-    [activeCardId, activePeriodId, activeEraModalId, pushCurrentModalToHistory],
+    [activeCardId, activePeriodId, activeEraModalId, activePersonKey, pushCurrentModalToHistory],
+  );
+
+  const handleOpenPersonModal = useCallback(
+    (personKeyOrName: string) => {
+      const resolvedKey =
+        resolvePersonKey(personKeyOrName, personDossiers, personRawToKey) || personKeyOrName;
+      if (!personDossiers.has(resolvedKey)) return;
+      if (resolvedKey === activePersonKey) return;
+      if (activeCardId || activePeriodId || activeEraModalId || activePersonKey) {
+        pushCurrentModalToHistory();
+      } else {
+        setModalHistory([]);
+      }
+      setActiveCardId(null);
+      setActivePeriodId(null);
+      setActiveEraModalId(null);
+      setActivePersonKey(resolvedKey);
+    },
+    [
+      personDossiers,
+      personRawToKey,
+      activeCardId,
+      activePeriodId,
+      activeEraModalId,
+      activePersonKey,
+      pushCurrentModalToHistory,
+    ],
+  );
+
+  const handleFilterTimelineByPerson = useCallback(
+    (personKey: string) => {
+      const dossier = personDossiers.get(personKey);
+      if (!dossier) return;
+      setFocusedEventId(null);
+      setSelectedEra('ALL');
+      setSelectedReign('ALL');
+      setSearchQuery('');
+      setSelectedPersonKey(personKey);
+      setYearFrom(timelineBounds.minYear);
+      setYearTo(timelineBounds.maxYear);
+
+      setActiveBranches((prev) => {
+        const next = { ...prev };
+        dossier.events.forEach((ev) => {
+          next[ev.task] = true;
+        });
+        return next;
+      });
+
+      setCollapsedParents((prev) => {
+        const next = { ...prev };
+        dossier.events.forEach((ev) => {
+          let cur: BranchDefinition | undefined = branches.find((b) => b.id === ev.task);
+          while (cur?.parentBranchId) {
+            next[cur.parentBranchId] = false;
+            cur = branches.find((item) => item.id === cur!.parentBranchId);
+          }
+        });
+        return next;
+      });
+
+      setIsFiltersCollapsed(false);
+      showToast(
+        `Таймлайн отфильтрован по персоне: ${dossier.displayName} (событий: ${dossier.events.length})`,
+      );
+    },
+    [personDossiers, timelineBounds.minYear, timelineBounds.maxYear, branches, showToast],
   );
 
   const handleModalNavigateBack = useCallback(() => {
@@ -390,15 +507,23 @@ export default function App() {
     if (last.type === 'card') {
       setActivePeriodId(null);
       setActiveEraModalId(null);
+      setActivePersonKey(null);
       setActiveCardId(last.id);
     } else if (last.type === 'ruler') {
       setActiveCardId(null);
       setActiveEraModalId(null);
+      setActivePersonKey(null);
       setActivePeriodId(last.id);
     } else if (last.type === 'era') {
       setActiveCardId(null);
       setActivePeriodId(null);
+      setActivePersonKey(null);
       setActiveEraModalId(last.id);
+    } else if (last.type === 'person') {
+      setActiveCardId(null);
+      setActivePeriodId(null);
+      setActiveEraModalId(null);
+      setActivePersonKey(last.id);
     }
   }, [modalHistory]);
 
@@ -470,6 +595,7 @@ export default function App() {
     setSelectedEra('ALL');
     setSelectedReign('ALL');
     setSearchQuery('');
+    setSelectedPersonKey(null);
     setOnlyWithSyncLinks(false);
     setFocusedEventId(null);
     setZoomHistory([]);
@@ -827,6 +953,8 @@ export default function App() {
             searchQuery={searchQuery}
             onlySynced={onlyWithSyncLinks}
             eras={manifest.macroEras}
+            personDossiers={personDossiers}
+            selectedPersonDossier={selectedPersonDossier}
             onChangeYearFrom={(y) => handleYearRangeChange(y, effectiveYearTo)}
             onChangeYearTo={(y) => handleYearRangeChange(effectiveYearFrom, y)}
             onSelectYearRange={(fromVal, toVal) => {
@@ -837,6 +965,8 @@ export default function App() {
             onChangeSearch={setSearchQuery}
             onToggleOnlySynced={() => setOnlyWithSyncLinks((prev) => !prev)}
             onOpenEraModal={handleOpenEraModal}
+            onOpenPersonModal={handleOpenPersonModal}
+            onClearPersonFilter={() => setSelectedPersonKey(null)}
             onResetFilters={handleResetFiltersOnly}
           />
         )}
@@ -919,6 +1049,7 @@ export default function App() {
         branches={branches}
         activeBranches={activeBranches}
         eras={manifest.macroEras}
+        personDossiers={personDossiers}
         focusedEventId={focusedEventId}
         modalHistory={modalHistory}
         onClose={handleCloseAllModals}
@@ -928,6 +1059,7 @@ export default function App() {
         onRevealBranch={handleRevealBranch}
         onToggleFocusEvent={handleToggleFocusEvent}
         onFilterByRuler={handleSelectReign}
+        onOpenPersonModal={handleOpenPersonModal}
         onFilterByPerson={(personName) => {
           const cleanName = personName.replace(/\s*\([^)]*\)\s*/g, '').trim() || personName;
           setFocusedEventId(null);
@@ -951,11 +1083,25 @@ export default function App() {
         ruler={activeRulerObj}
         enrichedEvents={enrichedEvents}
         branches={branches}
+        personDossiers={personDossiers}
         modalHistory={modalHistory}
         onClose={handleCloseAllModals}
         onNavigateBack={handleModalNavigateBack}
         onSelectCard={handleOpenCardModal}
+        onOpenPersonModal={handleOpenPersonModal}
         onFilterByRuler={handleSelectReign}
+      />
+
+      <PersonDossierModal
+        dossier={activePersonObj}
+        branches={branches}
+        activeBranches={activeBranches}
+        modalHistory={modalHistory}
+        onClose={handleCloseAllModals}
+        onNavigateBack={handleModalNavigateBack}
+        onSelectCard={handleOpenCardModal}
+        onOpenRulerModal={handleOpenPeriodModal}
+        onFilterTimelineByPerson={handleFilterTimelineByPerson}
       />
 
       <EraSummaryModal

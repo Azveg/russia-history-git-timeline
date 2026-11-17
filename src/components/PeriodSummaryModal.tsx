@@ -6,6 +6,7 @@ import {
   Feather,
   FlaskConical,
   Sparkles,
+  User,
   Users,
   X,
 } from 'lucide-react';
@@ -15,6 +16,7 @@ import type {
   BranchDefinition,
   EnrichedEvent,
   ModalHistoryItem,
+  PersonDossier,
   RulerPeriod,
 } from '../types/timeline';
 
@@ -22,10 +24,12 @@ interface PeriodSummaryModalProps {
   ruler: RulerPeriod | null;
   enrichedEvents: EnrichedEvent[];
   branches: BranchDefinition[];
+  personDossiers?: Map<string, PersonDossier>;
   modalHistory?: ModalHistoryItem[];
   onClose: () => void;
   onNavigateBack?: () => void;
   onSelectCard: (id: string) => void;
+  onOpenPersonModal?: (personKey: string) => void;
   onFilterByRuler: (rulerId: string) => void;
 }
 
@@ -35,13 +39,21 @@ export function PeriodSummaryModal({
   ruler,
   enrichedEvents,
   branches,
+  personDossiers,
   modalHistory = [],
   onClose,
   onNavigateBack,
   onSelectCard,
+  onOpenPersonModal,
   onFilterByRuler,
 }: PeriodSummaryModalProps) {
   const [roleFilter, setRoleFilter] = useState<EraFiguresRoleFilter>('all');
+  const [showAllParticipants, setShowAllParticipants] = useState(false);
+
+  useEffect(() => {
+    setShowAllParticipants(false);
+    setRoleFilter('all');
+  }, [ruler?.id]);
 
   useEffect(() => {
     if (!ruler) return;
@@ -56,8 +68,8 @@ export function PeriodSummaryModal({
 
   const summary = useMemo(() => {
     if (!ruler) return null;
-    return getRulerPeriodSummaryData(ruler, enrichedEvents);
-  }, [ruler, enrichedEvents]);
+    return getRulerPeriodSummaryData(ruler, enrichedEvents, branches, personDossiers);
+  }, [ruler, enrichedEvents, branches, personDossiers]);
 
   if (!ruler || !summary) return null;
 
@@ -71,6 +83,7 @@ export function PeriodSummaryModal({
     startedInReign,
     inheritedEvents,
     carryOverEvents,
+    reignParticipants,
   } = summary;
 
   const leafBranches = getLeafBranches(branches).filter((b) => !b.isTimeAxis);
@@ -184,6 +197,58 @@ export function PeriodSummaryModal({
               <div className="text-[11px] text-slate-500">перешли через рубежи правления</div>
             </div>
           </div>
+
+          {/* Ключевые деятели и окружение правителя */}
+          {reignParticipants.length > 0 && onOpenPersonModal && (
+            <div className="rounded-xl bg-sky-950/15 border border-sky-500/35 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-mono uppercase tracking-wider text-sky-300 flex items-center gap-2 font-bold">
+                  <Users className="w-4 h-4 text-sky-400" />
+                  <span>
+                    Ключевые деятели и окружение при {ruler.shortRuler} ({reignParticipants.length})
+                  </span>
+                </div>
+                <span className="text-[11px] text-sky-400/90">
+                  нажмите на имя для открытия сквозного досье
+                </span>
+              </div>
+
+              <div className="flex flex-wrap gap-1.5">
+                {(showAllParticipants ? reignParticipants : reignParticipants.slice(0, 18)).map(
+                  (participant) => (
+                    <button
+                      key={participant.personKey}
+                      type="button"
+                      onClick={() => onOpenPersonModal(participant.personKey)}
+                      title={`Открыть досье: ${participant.displayName} (в это правление: ${participant.reignEventCount}, всего в хронологии: ${participant.totalEventCount})`}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-950/90 hover:bg-sky-500/15 border border-sky-500/25 hover:border-sky-400/65 text-xs text-slate-100 hover:text-sky-200 transition-colors cursor-pointer"
+                    >
+                      <User className="w-3 h-3 text-sky-400 shrink-0" />
+                      <span className="font-medium">{participant.displayName}</span>
+                      <span className="text-[11px] font-mono text-sky-300/90 tabular-nums">
+                        · {participant.reignEventCount}
+                        {participant.totalEventCount > participant.reignEventCount
+                          ? ` / ${participant.totalEventCount}`
+                          : ''}
+                      </span>
+                    </button>
+                  ),
+                )}
+              </div>
+
+              {reignParticipants.length > 18 && (
+                <button
+                  type="button"
+                  onClick={() => setShowAllParticipants((prev) => !prev)}
+                  className="text-xs font-mono text-sky-300 hover:text-sky-200 transition-colors cursor-pointer"
+                >
+                  {showAllParticipants
+                    ? 'Свернуть список окружения'
+                    : `Показать всех участников правления (${reignParticipants.length})`}
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Блок «Лица эпохи» (Писатели и мыслители / Учёные и изобретатели) */}
           {totalFiguresCount > 0 && (
