@@ -26,11 +26,23 @@ jobs:
           node-version: "22"
       - name: Install dependencies
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci --legacy-peer-deps
-          else
-            npm install --legacy-peer-deps --no-audit --no-fund
-          fi
+          install_cmd() {
+            if [ -f package-lock.json ]; then
+              npm ci --legacy-peer-deps --fetch-retries=5 --fetch-retry-mintimeout=2000 --fetch-retry-maxtimeout=15000
+            else
+              npm install --legacy-peer-deps --no-audit --no-fund --fetch-retries=5 --fetch-retry-mintimeout=2000 --fetch-retry-maxtimeout=15000
+            fi
+          }
+          for attempt in 1 2 3; do
+            if install_cmd; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "npm install failed (attempt $attempt/3), retrying in 15s..."
+              sleep 15
+            fi
+          done
+          exit 1
       - name: Build static site
         run: npm run build
       - name: Upload artifact
