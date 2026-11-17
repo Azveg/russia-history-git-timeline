@@ -9,7 +9,16 @@ const DATA_DIR = path.join(PUBLIC_DIR, 'data');
 const STRICT_MODE = process.argv.includes('--strict');
 
 const VALID_CATEGORIES = new Set(['rulers', 'military', 'economy', 'world', 'other']);
-const VALID_LINK_TYPES = new Set(['triggers', 'sync_context', 'enables', 'references', 'about_event', 'inspired_by']);
+const VALID_LINK_TYPES = new Set([
+  'triggers',
+  'sync_context',
+  'enables',
+  'references',
+  'about_event',
+  'inspired_by',
+  'causes',
+  'consequence',
+]);
 const DATE_REGEX = /^\d{3,4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{3,8}$/;
 const TAG_FORMAT_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -286,13 +295,30 @@ function main() {
           }
         }
 
+        if (node.prerequisites !== undefined) {
+          const isValidString = typeof node.prerequisites === 'string' && node.prerequisites.trim().length > 0;
+          const isValidArray =
+            Array.isArray(node.prerequisites) &&
+            node.prerequisites.every((item) => typeof item === 'string' && item.trim().length > 0);
+          if (!isValidString && !isValidArray) {
+            addError(
+              relFromPublic,
+              `Узел "${nId}": поле "prerequisites" должно быть непустой строкой или массивом непустых строк.`,
+            );
+          }
+        }
+
         if (node.subEvents !== undefined) {
           if (!Array.isArray(node.subEvents)) {
             addError(relFromPublic, `Узел "${nId}": поле "subEvents" должно быть массивом.`);
           } else {
             node.subEvents.forEach((se, sIdx) => {
-              if (!isPlainObject(se) || typeof se.title !== 'string' || typeof se.text !== 'string') {
-                addError(relFromPublic, `Узел "${nId}": subEvents[${sIdx}] должен содержать строковые "title" и "text".`);
+              const hasBodyText = typeof se?.text === 'string' || typeof se?.description === 'string';
+              if (!isPlainObject(se) || typeof se.title !== 'string' || !hasBodyText) {
+                addError(
+                  relFromPublic,
+                  `Узел "${nId}": subEvents[${sIdx}] должен содержать строковые "title" и "text" (или "description").`,
+                );
               }
             });
           }
