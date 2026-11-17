@@ -106,6 +106,8 @@ export interface TimelineNode {
   id: string;
   startYear?: number;
   endYear?: number;
+  activeFrom?: number;
+  activeTo?: number;
   startDate?: string;
   endDate?: string;
   isAtomic?: boolean;
@@ -220,7 +222,10 @@ export interface EnrichedEvent extends TimelineNode {
   seq: number;
   startYear: number;
   endYear: number;
+  activeFrom: number;
+  activeTo: number;
   startPrecision: PreciseDateParts;
+  activeStartPrecision: PreciseDateParts;
   endPrecision: PreciseDateParts;
   datePrecision?: AxisResolution;
   isAtomic: boolean;

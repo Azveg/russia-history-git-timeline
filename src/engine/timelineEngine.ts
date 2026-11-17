@@ -453,6 +453,19 @@ export function formatAxisGutterDate(
   }
 
   if (row.rowType === 'EVENT_COMMIT') {
+    const isBio = isBiographyNode(row.eventObj);
+    if (isBio) {
+      if (row.startedBeforeWindow) {
+        return {
+          label: `акт. с ${row.eventObj.activeFrom}`,
+          title: `Творческая/научная активность началась в ${row.eventObj.activeFrom} г. и продолжается в окне (годы жизни: ${row.eventObj.period}) — ${row.eventObj.title}`,
+        };
+      }
+      return {
+        label: `с ${row.eventObj.activeFrom}`,
+        title: `Начало активной деятельности: ${row.eventObj.activeFrom} г. (годы жизни: ${row.eventObj.period}) — ${row.eventObj.title}`,
+      };
+    }
     if (row.startedBeforeWindow) {
       return {
         label: `с ${row.eventObj.startYear}`,
@@ -472,10 +485,17 @@ export function formatAxisGutterDate(
   const parts = row.eventObj.endPrecision;
   const approxNote =
     parts.precision === 'year' && resolution !== 'year' ? ' (в источнике указан только год)' : '';
+  const isBioEnd = isBiographyNode(row.eventObj);
   const isWar = row.eventObj.task.startsWith('WAR_');
   return {
     label: formatCompactAxisDate(parts, resolution),
-    title: `${isWar ? 'Окончание кампании' : 'Завершение процесса'}: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
+    title: `${
+      isBioEnd
+        ? 'Завершение жизненного и творческого пути'
+        : isWar
+          ? 'Окончание кампании'
+          : 'Завершение процесса'
+    }: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
   };
 }
 
@@ -485,7 +505,7 @@ export function isAtomicEventNode(
   endParts: PreciseDateParts,
   resolution: AxisResolution,
 ): boolean {
-  if (node.isAtomic === true || isBiographyNode(node)) return true;
+  if (node.isAtomic === true && !isBiographyNode(node)) return true;
   if (endParts.year > startParts.year) return false;
   if (resolution === 'year') return true;
   const startMonth = startParts.month ?? 1;
@@ -715,6 +735,14 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
     id,
     startYear: hasStartYear ? (raw.startYear as number) : undefined,
     endYear: typeof raw.endYear === 'number' && Number.isFinite(raw.endYear) ? raw.endYear : undefined,
+    activeFrom:
+      typeof raw.activeFrom === 'number' && Number.isFinite(raw.activeFrom)
+        ? Math.round(raw.activeFrom)
+        : undefined,
+    activeTo:
+      typeof raw.activeTo === 'number' && Number.isFinite(raw.activeTo)
+        ? Math.round(raw.activeTo)
+        : undefined,
     startDate: typeof raw.startDate === 'string' ? raw.startDate.trim() : undefined,
     endDate: typeof raw.endDate === 'string' ? raw.endDate.trim() : undefined,
     isAtomic: raw.isAtomic === true ? true : undefined,
@@ -1107,7 +1135,10 @@ export function getEnrichedEvents(
         seq: seq++,
         startYear,
         endYear,
+        activeFrom: startYear,
+        activeTo: endYear,
         startPrecision,
+        activeStartPrecision: startPrecision,
         endPrecision,
         datePrecision: startPrecision.precision,
         isAtomic,
@@ -1126,6 +1157,104 @@ export function getEnrichedEvents(
         retrospectiveLinks: [],
       });
     });
+  });
+
+  // Вычисляем период активного творчества / научной деятельности (activeFrom–activeTo) для биографий
+  const worksByPersonTag = new Map<string, number[]>();
+  list.forEach((ev) => {
+    if (isLiteraryWorkNode(ev) || isScienceDiscoveryNode(ev)) {
+      (ev.syncTags || []).forEach((rawTag) => {
+        const tag = rawTag.trim().toLowerCase();
+        if (tag.startsWith('person-')) {
+          const arr = worksByPersonTag.get(tag) || [];
+          arr.push(ev.startYear);
+          worksByPersonTag.set(tag, arr);
+        }
+      });
+    }
+  });
+
+  list.forEach((ev) => {
+    if (!isBiographyNode(ev)) return;
+
+    const minAgeFloor = Math.min(ev.endYear, ev.startYear + 17);
+    const defaultMaturity = Math.min(ev.endYear, ev.startYear + 21);
+    const milestoneYears: number[] = [];
+
+    (ev.subEvents || []).forEach((se) => {
+      if (typeof se.year === 'number' && se.year >= minAgeFloor && se.year <= ev.endYear) {
+        milestoneYears.push(se.year);
+      } else if (typeof se.year === 'string') {
+        const m = se.year.match(/\b(\d{3,4})\b/);
+        if (m) {
+          const y = Number(m[1]);
+          if (y >= minAgeFloor && y <= ev.endYear) milestoneYears.push(y);
+        }
+      }
+    });
+
+    (ev.literaryProfile?.majorWorks || []).forEach((workStr) => {
+      const matches = workStr.match(/\b(\d{3,4})\b/g);
+      if (matches) {
+        matches.forEach((m) => {
+          const y = Number(m);
+          if (y >= minAgeFloor && y <= ev.endYear) {
+            milestoneYears.push(y);
+          }
+        });
+      }
+    });
+
+    (ev.syncTags || []).forEach((rawTag) => {
+      const tag = rawTag.trim().toLowerCase();
+      const linkedYears = worksByPersonTag.get(tag);
+      if (linkedYears) {
+        linkedYears.forEach((y) => {
+          if (y >= minAgeFloor && y <= ev.endYear) {
+            milestoneYears.push(y);
+          }
+        });
+      }
+    });
+
+    let computedActiveFrom = defaultMaturity;
+    if (typeof ev.activeFrom === 'number' && ev.activeFrom > ev.startYear && ev.activeFrom <= ev.endYear) {
+      computedActiveFrom = ev.activeFrom;
+    } else if (milestoneYears.length > 0) {
+      const earliestMilestone = Math.min(...milestoneYears);
+      computedActiveFrom =
+        earliestMilestone <= ev.startYear + 34
+          ? earliestMilestone
+          : Math.min(earliestMilestone, defaultMaturity);
+    }
+
+    const computedActiveTo =
+      typeof ev.activeTo === 'number' && ev.activeTo >= computedActiveFrom && ev.activeTo <= ev.endYear
+        ? ev.activeTo
+        : ev.endYear;
+
+    ev.activeFrom = computedActiveFrom;
+    ev.activeTo = Math.max(computedActiveFrom, computedActiveTo);
+    ev.activeStartPrecision = parsePreciseDate(undefined, ev.activeFrom, false);
+
+    const activeOverlappingRulers = rulers.filter(
+      (r) => r.startYear <= ev.activeTo && r.endYear >= ev.activeFrom,
+    );
+    if (activeOverlappingRulers.length > 0) {
+      ev.overlappingRulers = activeOverlappingRulers;
+      ev.ruler = activeOverlappingRulers.map((r) => r.shortRuler).join(' → ');
+      ev.reignPeriod =
+        activeOverlappingRulers.length > 1
+          ? `${activeOverlappingRulers[0].startYear}–${activeOverlappingRulers[activeOverlappingRulers.length - 1].endYear} (${activeOverlappingRulers.length} правл.)`
+          : activeOverlappingRulers[0]?.reignPeriod || '';
+    }
+
+    const activeEraObj = findMacroEraForYear(ev.activeFrom, resolvedEras);
+    if (activeEraObj) {
+      ev.eraId = activeEraObj.id;
+      ev.eraRoman = activeEraObj.roman || '';
+      ev.eraTitle = activeEraObj.displayShortTitle || activeEraObj.title || '';
+    }
   });
 
   list.sort((a, b) => {
@@ -1604,6 +1733,36 @@ export function intersectsTimeWindow(startYear: number, endYear: number, yearFro
   return startYear <= yearTo && endYear >= yearFrom;
 }
 
+export function getEventEffectiveStartYear(
+  ev: Pick<EnrichedEvent, 'startYear' | 'activeFrom' | 'task' | 'type' | 'syncTags'>,
+  branches?: BranchDefinition[],
+): number {
+  if (isBiographyNode(ev, branches) && typeof ev.activeFrom === 'number') {
+    return ev.activeFrom;
+  }
+  return ev.startYear;
+}
+
+export function getEventEffectiveEndYear(
+  ev: Pick<EnrichedEvent, 'endYear' | 'activeTo' | 'task' | 'type' | 'syncTags'>,
+  branches?: BranchDefinition[],
+): number {
+  if (isBiographyNode(ev, branches) && typeof ev.activeTo === 'number') {
+    return ev.activeTo;
+  }
+  return ev.endYear;
+}
+
+export function getEventEffectiveStartPrecision(
+  ev: EnrichedEvent,
+  branches?: BranchDefinition[],
+): PreciseDateParts {
+  if (isBiographyNode(ev, branches) && ev.activeStartPrecision) {
+    return ev.activeStartPrecision;
+  }
+  return ev.startPrecision;
+}
+
 export function getEventRulerSegments(ev: EnrichedEvent): RulerSpanSegment[] {
   if (ev.overlappingRulers.length === 0) return [];
   const raw = ev.overlappingRulers.map((ruler) => {
@@ -1955,18 +2114,11 @@ export function buildUnifiedTimelineStream(
         return false;
       }
 
-      const isBio = isBiographyNode(ev, branches);
-      const effectiveEnd =
-        isBio &&
-        filters.selectedReign === 'ALL' &&
-        !q &&
-        !filters.selectedPersonKey &&
-        !selectedTagNorm
-          ? ev.startYear
-          : ev.endYear;
-      if (!intersectsTimeWindow(ev.startYear, effectiveEnd, filters.yearFrom, filters.yearTo)) return false;
+      const effStart = getEventEffectiveStartYear(ev, branches);
+      const effEnd = getEventEffectiveEndYear(ev, branches);
+      if (!intersectsTimeWindow(effStart, effEnd, filters.yearFrom, filters.yearTo)) return false;
       if (selectedEraObj) {
-        if (!doesIntervalBelongToEra(ev.startYear, effectiveEnd, ev.eraId, selectedEraObj)) {
+        if (!doesIntervalBelongToEra(effStart, effEnd, ev.eraId, selectedEraObj)) {
           return false;
         }
       }
@@ -2174,30 +2326,49 @@ export function buildUnifiedTimelineStream(
     }
   });
 
+  const selectedRulerForClamp =
+    !focusTarget && filters.selectedReign !== 'ALL'
+      ? rulers.find((r) => r.id === filters.selectedReign) ?? null
+      : null;
+  const windowEntryFloorYear = selectedRulerForClamp
+    ? Math.max(effectiveYearFrom, selectedRulerForClamp.startYear)
+    : effectiveYearFrom;
+
   matchingEvents.forEach((eventObj) => {
+    const isBio = isBiographyNode(eventObj, branches);
+    const effStartYear = getEventEffectiveStartYear(eventObj, branches);
+    const effEndYear = getEventEffectiveEndYear(eventObj, branches);
+    const effStartParts = getEventEffectiveStartPrecision(eventObj, branches);
+
     const isAtomicInView = isAtomicEventNode(
       eventObj,
-      eventObj.startPrecision,
+      effStartParts,
       eventObj.endPrecision,
       axisResolution,
     );
     const startedBeforeWindow =
       (!focusTarget || Boolean(filters.focusKeepWindow)) &&
       !isAtomicInView &&
-      eventObj.startYear < effectiveYearFrom;
-    const displayYear = startedBeforeWindow ? effectiveYearFrom : eventObj.startYear;
+      effStartYear < windowEntryFloorYear;
+    const displayYear = startedBeforeWindow ? windowEntryFloorYear : effStartYear;
     const displayParts = startedBeforeWindow
-      ? parsePreciseDate(undefined, effectiveYearFrom, false)
-      : eventObj.startPrecision;
+      ? parsePreciseDate(undefined, windowEntryFloorYear, false)
+      : effStartParts;
+
+    const dateLabel = isBio
+      ? startedBeforeWindow
+        ? `активен с ${effStartYear} г. (жизнь ${eventObj.period})`
+        : `активен ${effStartYear}–${effEndYear} (${eventObj.period})`
+      : startedBeforeWindow
+        ? `${windowEntryFloorYear} г. (с ${effStartYear})`
+        : formatDateForResolution(effStartParts, axisResolution);
 
     stream.push({
       rowType: 'EVENT_COMMIT',
       year: displayYear,
       sortKey: displayParts.sortKey,
-      dateLabel: startedBeforeWindow
-        ? `${effectiveYearFrom} г. (с ${eventObj.startYear})`
-        : formatDateForResolution(eventObj.startPrecision, axisResolution),
-      priority: 5,
+      dateLabel,
+      priority: isBio ? 5.2 : 5,
       seq: eventObj.seq,
       startedBeforeWindow,
       isAtomicInView,
@@ -2207,11 +2378,11 @@ export function buildUnifiedTimelineStream(
     if (
       !isAtomicInView &&
       filters.showEndNodes &&
-      ((focusTarget && !filters.focusKeepWindow) || eventObj.endYear <= effectiveYearTo)
+      ((focusTarget && !filters.focusKeepWindow) || effEndYear <= effectiveYearTo)
     ) {
       stream.push({
         rowType: 'EVENT_END',
-        year: eventObj.endYear,
+        year: effEndYear,
         sortKey: eventObj.endPrecision.sortKey,
         dateLabel: formatDateForResolution(eventObj.endPrecision, axisResolution),
         priority: 6,
@@ -2361,10 +2532,11 @@ export function computeDensityBins(
 
     for (let j = 0; j < events.length; j++) {
       const ev = events[j];
-      const effectiveEndYear = isBiographyNode(ev) ? ev.startYear : ev.endYear;
-      if (ev.startYear <= endYear && effectiveEndYear >= startYear) {
+      const effStartYear = getEventEffectiveStartYear(ev);
+      const effEndYear = getEventEffectiveEndYear(ev);
+      if (effStartYear <= endYear && effEndYear >= startYear) {
         totalCount++;
-        if (ev.startYear >= startYear && ev.startYear <= endYear) {
+        if (effStartYear >= startYear && effStartYear <= endYear) {
           commitCount++;
         }
       }
@@ -2398,8 +2570,9 @@ export function computeOverlapAnalytics(
     let count = 0;
     for (let i = 0; i < matchingEvents.length; i++) {
       const ev = matchingEvents[i];
-      const effectiveEndYear = isBiographyNode(ev) ? ev.startYear : ev.endYear;
-      if (ev.startYear <= y && effectiveEndYear >= y) {
+      const effStartYear = getEventEffectiveStartYear(ev);
+      const effEndYear = getEventEffectiveEndYear(ev);
+      if (effStartYear <= y && effEndYear >= y) {
         count++;
       }
     }
@@ -2505,14 +2678,16 @@ export function computeBranchSubLaneLayout(
 
   thematicLanes.forEach((lane) => {
     const laneNonAtomicEvents = matchingEvents
-      .filter(
-        (ev) =>
-          resolveEventBranch(ev, branches, collapsedParents).id === lane.id &&
-          !isAtomicEventNode(ev, ev.startPrecision, ev.endPrecision, axisResolution),
-      )
+      .filter((ev) => {
+        if (resolveEventBranch(ev, branches, collapsedParents).id !== lane.id) return false;
+        const effStart = getEventEffectiveStartPrecision(ev, branches);
+        return !isAtomicEventNode(ev, effStart, ev.endPrecision, axisResolution);
+      })
       .sort((a, b) => {
-        if (a.startPrecision.sortKey !== b.startPrecision.sortKey) {
-          return a.startPrecision.sortKey - b.startPrecision.sortKey;
+        const aStart = getEventEffectiveStartPrecision(a, branches).sortKey;
+        const bStart = getEventEffectiveStartPrecision(b, branches).sortKey;
+        if (aStart !== bStart) {
+          return aStart - bStart;
         }
         if (a.endPrecision.sortKey !== b.endPrecision.sortKey) {
           return a.endPrecision.sortKey - b.endPrecision.sortKey;
@@ -2523,9 +2698,10 @@ export function computeBranchSubLaneLayout(
     const slotEndKeys: number[] = [];
 
     laneNonAtomicEvents.forEach((ev) => {
+      const effStartKey = getEventEffectiveStartPrecision(ev, branches).sortKey;
       let assigned = -1;
       for (let s = 0; s < slotEndKeys.length; s++) {
-        if (slotEndKeys[s] < ev.startPrecision.sortKey) {
+        if (slotEndKeys[s] < effStartKey) {
           assigned = s;
           break;
         }
@@ -2975,7 +3151,12 @@ export function getMacroEraSummaryData(
   branches: BranchDefinition[],
 ): MacroEraSummaryData {
   const allBelongingEvents = enrichedEvents.filter((ev) =>
-    doesIntervalBelongToEra(ev.startYear, ev.endYear, ev.eraId, era),
+    doesIntervalBelongToEra(
+      getEventEffectiveStartYear(ev, branches),
+      getEventEffectiveEndYear(ev, branches),
+      ev.eraId,
+      era,
+    ),
   );
 
   const eraEvents = allBelongingEvents.filter((ev) => isHistoricalEventNode(ev, branches));
@@ -2983,13 +3164,13 @@ export function getMacroEraSummaryData(
   const contemporaryWriters = enrichedEvents.filter(
     (ev) =>
       isWriterBioNode(ev, branches) &&
-      intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
+      intersectsTimeWindow(ev.activeFrom, ev.activeTo, era.startYear, era.endYear),
   );
 
   const contemporaryScientists = enrichedEvents.filter(
     (ev) =>
       isScientistBioNode(ev, branches) &&
-      intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
+      intersectsTimeWindow(ev.activeFrom, ev.activeTo, era.startYear, era.endYear),
   );
 
   const worksWrittenInPeriod = enrichedEvents.filter(
@@ -3465,7 +3646,12 @@ export function getCustomWindowSummaryData(
   const yearTo = Math.max(rawYearFrom, rawYearTo);
 
   const overlappingAll = enrichedEvents.filter((ev) =>
-    intersectsTimeWindow(ev.startYear, ev.endYear, yearFrom, yearTo),
+    intersectsTimeWindow(
+      getEventEffectiveStartYear(ev, branches),
+      getEventEffectiveEndYear(ev, branches),
+      yearFrom,
+      yearTo,
+    ),
   );
 
   const windowEvents = overlappingAll.filter((ev) => isHistoricalEventNode(ev, branches));

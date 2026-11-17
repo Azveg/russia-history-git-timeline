@@ -26,12 +26,16 @@ import {
   formatAxisGutterDate,
   formatEventTitleWithPeriod,
   getDirectChildBranches,
+  getEventEffectiveEndYear,
+  getEventEffectiveStartYear,
   getEventHiddenBranchSummaries,
   hasChildBranches,
   isBiographyNode,
   isBranchOrDescendantActive,
   isHistoricalEventNode,
   isMajorCampaignOrConflictNode,
+  isScientistBioNode,
+  isWriterBioNode,
   parsePreciseDate,
   resolveEventBranch,
   resolveMacroEra,
@@ -413,6 +417,31 @@ export function GitTimeline({
     ].filter((g) => g.items.length > 0);
   }, [alreadyRunningEvents, branches]);
 
+  const contemporaryBioGroups = useMemo(() => {
+    if (focusedEvent) return [];
+    const writers = matchingEvents.filter((ev) => isWriterBioNode(ev, branches));
+    const scientists = matchingEvents.filter((ev) => isScientistBioNode(ev, branches));
+    return [
+      {
+        id: 'writers',
+        label: 'Писатели и летописцы',
+        color: '#e879f9',
+        items: writers,
+      },
+      {
+        id: 'scientists',
+        label: 'Учёные и изобретатели',
+        color: '#2dd4bf',
+        items: scientists,
+      },
+    ].filter((g) => g.items.length > 0);
+  }, [focusedEvent, matchingEvents, branches]);
+
+  const totalContemporaryBios = useMemo(
+    () => contemporaryBioGroups.reduce((sum, g) => sum + g.items.length, 0),
+    [contemporaryBioGroups],
+  );
+
   const gutterWidthClass =
     axisResolution === 'day'
       ? 'w-[92px] sm:w-[104px]'
@@ -657,6 +686,7 @@ export function GitTimeline({
               {passingEvents.map((entry) => {
                 const slot = subLaneLayout.slotByEventId.get(entry.ev.id) ?? 0;
                 const x = laneInfo?.subXs[slot] ?? baseX + slot * 10;
+                const isBioRail = isBiographyNode(entry.ev, branches);
                 const isSelfHovered = effectiveActiveEventId === entry.ev.id;
                 const isLinkedHovered =
                   effectiveActiveEventId !== null && linkedEventIds.has(entry.ev.id);
@@ -682,8 +712,25 @@ export function GitTimeline({
                       x2={x}
                       y2={420}
                       stroke={isLinkedHovered && !isSelfHovered ? '#34d399' : lane.color}
-                      strokeWidth={isSelfHovered ? 3.6 : isLinkedHovered ? 3.2 : 2.6}
-                      strokeOpacity={isSelfHovered || isLinkedHovered ? 1 : isDimmed ? 0.42 : 0.9}
+                      strokeWidth={
+                        isSelfHovered
+                          ? 3.6
+                          : isLinkedHovered
+                            ? 3.2
+                            : isBioRail
+                              ? 2.1
+                              : 2.6
+                      }
+                      strokeDasharray={isBioRail && !isSelfHovered && !isLinkedHovered ? '6 3' : undefined}
+                      strokeOpacity={
+                        isSelfHovered || isLinkedHovered
+                          ? 1
+                          : isDimmed
+                            ? 0.35
+                            : isBioRail
+                              ? 0.58
+                              : 0.9
+                      }
                     />
                   </g>
                 );
@@ -1062,6 +1109,60 @@ export function GitTimeline({
                       </button>
                     ))}
                   </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {contemporaryBioGroups.length > 0 && (
+          <div className="bg-fuchsia-950/20 border-b border-fuchsia-500/25 px-4 py-2.5 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+              <div className="flex items-center gap-1.5 font-semibold text-fuchsia-200">
+                <span className="w-2 h-2 rounded-full bg-fuchsia-400 shrink-0" />
+                <span className="tabular-nums">
+                  Деятели эпохи (активны в окне: {totalContemporaryBios}):
+                </span>
+              </div>
+              <span className="text-[11px] text-slate-400 hidden sm:inline">
+                показаны по периоду зрелой творческой и научной активности (клик — биография и труды)
+              </span>
+            </div>
+            <div className="space-y-1.5">
+              {contemporaryBioGroups.map((group) => (
+                <div key={group.id} className="flex flex-wrap items-center gap-1.5 text-xs">
+                  <span
+                    className="font-mono text-[11px] font-bold shrink-0 mr-1"
+                    style={{ color: group.color }}
+                  >
+                    {group.label} ({group.items.length}):
+                  </span>
+                  {group.items.map((bio) => {
+                    const isHoveredBio = effectiveActiveEventId === bio.id;
+                    return (
+                      <button
+                        key={bio.id}
+                        type="button"
+                        onClick={() => onOpenCardModal(bio.id)}
+                        onMouseEnter={() => activateHoverEvent(bio.id)}
+                        onMouseLeave={() => scheduleClearHoverEvent()}
+                        title={`${bio.title} — годы жизни: ${bio.period}, активный период: ${bio.activeFrom}–${bio.activeTo} гг. Клик для паспорта деятеля`}
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap ${
+                          isHoveredBio
+                            ? 'bg-fuchsia-500/25 border-fuchsia-400 text-white shadow-sm'
+                            : 'bg-slate-900/85 hover:bg-slate-800 border-slate-700/80 text-slate-200 hover:border-fuchsia-400/50'
+                        }`}
+                      >
+                        <span className="font-semibold text-white">{bio.title}</span>
+                        <span className="text-[10px] text-amber-300/95 tabular-nums">
+                          акт. {bio.activeFrom}–{bio.activeTo}
+                        </span>
+                        <span className="text-[10px] text-slate-400 tabular-nums hidden md:inline">
+                          ({bio.period})
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               ))}
             </div>
@@ -1462,15 +1563,25 @@ export function GitTimeline({
             const forkOriginX = hasBasePassingAtRow ? baseX : timeSpineX;
             const isCompact = cardDensity === 'compact';
             const commitY = isCompact ? 22 : 34;
+            const isBioNode = isBiographyNode(ev, branches);
+            const effStartYear = getEventEffectiveStartYear(ev, branches);
+            const effEndYear = getEventEffectiveEndYear(ev, branches);
             const hasMultipleRulers = ev.overlappingRulers.length > 1;
-            const dateSummary = axisResolution === 'year' ? ev.period : `${item.dateLabel} (${ev.period})`;
+            const bioPeriodBadge = item.startedBeforeWindow
+              ? `акт. с ${effStartYear} (${ev.period})`
+              : `акт. ${effStartYear}–${effEndYear} (${ev.period})`;
+            const dateSummary = isBioNode
+              ? bioPeriodBadge
+              : axisResolution === 'year'
+                ? ev.period
+                : `${item.dateLabel} (${ev.period})`;
 
             const isCrossLinked = effectiveActiveEventId !== null && linkedEventIds.has(ev.id);
             const isOverlapping =
               hoveredEvent !== null &&
               hoveredEvent.id !== ev.id &&
-              ev.startYear <= hoveredEvent.endYear &&
-              ev.endYear >= hoveredEvent.startYear;
+              effStartYear <= getEventEffectiveEndYear(hoveredEvent, branches) &&
+              effEndYear >= getEventEffectiveStartYear(hoveredEvent, branches);
             const isSelfHovered = effectiveActiveEventId === ev.id;
             const isFocusedTarget = focusedEvent?.id === ev.id;
             const focusDistance = focusedEvent ? focusDistanceMap?.get(ev.id) : undefined;
@@ -1581,7 +1692,7 @@ export function GitTimeline({
                       </g>
                     )}
 
-                    {/* Длительный процесс: собственная нить от commitY (или сверху, если начался до окна) + кривая ответвления */}
+                    {/* Длительный процесс или нить творческой активности: собственная нить от commitY (или сверху, если начался до окна) */}
                     {!isAtomic && (
                       <>
                         {!item.startedBeforeWindow ? (
@@ -1590,8 +1701,9 @@ export function GitTimeline({
                               d={`M ${forkOriginX} 10 C ${forkOriginX + 10} 10, ${commitX} 16, ${commitX} ${commitY}`}
                               fill="none"
                               stroke={branchObj.color}
-                              strokeWidth={isSelfHovered ? 3 : 2}
-                              strokeOpacity={0.9}
+                              strokeWidth={isSelfHovered ? 3 : isBioNode ? 1.8 : 2}
+                              strokeDasharray={isBioNode && !isSelfHovered ? '4 2' : undefined}
+                              strokeOpacity={isBioNode && !isSelfHovered ? 0.65 : 0.9}
                             />
                             <circle
                               cx={forkOriginX}
@@ -1609,8 +1721,9 @@ export function GitTimeline({
                             x2={commitX}
                             y2={commitY}
                             stroke={branchObj.color}
-                            strokeWidth={isSelfHovered ? 3.6 : 2.6}
-                            strokeOpacity={0.92}
+                            strokeWidth={isSelfHovered ? 3.6 : isBioNode ? 2.1 : 2.6}
+                            strokeDasharray={isBioNode && !isSelfHovered ? '6 3' : undefined}
+                            strokeOpacity={isBioNode && !isSelfHovered ? 0.62 : 0.92}
                           />
                         )}
                         <line
@@ -1619,8 +1732,9 @@ export function GitTimeline({
                           x2={commitX}
                           y2={420}
                           stroke={branchObj.color}
-                          strokeWidth={isSelfHovered ? 3.6 : 2.6}
-                          strokeOpacity={isSelfHovered ? 1 : 0.92}
+                          strokeWidth={isSelfHovered ? 3.6 : isBioNode ? 2.1 : 2.6}
+                          strokeDasharray={isBioNode && !isSelfHovered ? '6 3' : undefined}
+                          strokeOpacity={isSelfHovered ? 1 : isBioNode ? 0.62 : 0.92}
                         />
                       </>
                     )}
@@ -1653,7 +1767,7 @@ export function GitTimeline({
                       strokeOpacity={0.8}
                     />
 
-                    {isAtomic ? (
+                    {isAtomic || isBioNode ? (
                       <g className="commit-node-ring">
                         <polygon
                           points={`${commitX},${commitY - 7} ${commitX + 7},${commitY} ${commitX},${commitY + 7} ${commitX - 7},${commitY}`}
@@ -1699,7 +1813,11 @@ export function GitTimeline({
                           className="font-mono text-xs font-extrabold tabular-nums shrink-0"
                           style={{ color: branchObj.color }}
                         >
-                          {axisResolution === 'year' ? ev.period : item.dateLabel}
+                          {isBioNode
+                            ? bioPeriodBadge
+                            : axisResolution === 'year'
+                              ? ev.period
+                              : item.dateLabel}
                         </span>
                         <span aria-hidden="true" className="text-slate-600 shrink-0">
                           ·
@@ -1710,7 +1828,7 @@ export function GitTimeline({
                         <span className="hidden md:inline text-[11px] font-mono text-slate-400 shrink-0 truncate max-w-[150px]">
                           · {origBranchObj.label}
                         </span>
-                        {hasMultipleRulers && !isBiographyNode(ev, branches) && (
+                        {hasMultipleRulers && !isBioNode && (
                           <span className="hidden lg:inline text-[11px] font-mono text-amber-300 shrink-0 tabular-nums">
                             · {ev.overlappingRulers.length} правл.
                           </span>
@@ -1783,7 +1901,11 @@ export function GitTimeline({
                             className="font-mono text-xs font-extrabold tabular-nums shrink-0"
                             style={{ color: branchObj.color }}
                           >
-                            {axisResolution === 'year' ? ev.period : item.dateLabel}
+                            {isBioNode
+                              ? bioPeriodBadge
+                              : axisResolution === 'year'
+                                ? ev.period
+                                : item.dateLabel}
                           </span>
                           <span aria-hidden="true" className="text-slate-600 shrink-0">
                             ·
@@ -1791,7 +1913,7 @@ export function GitTimeline({
                           <h4 className="text-sm sm:text-[15px] font-bold text-white group-hover:text-amber-200 transition-colors truncate min-w-0">
                             {ev.title}
                           </h4>
-                          {!isAtomic && item.startedBeforeWindow && (
+                          {!isAtomic && !isBioNode && item.startedBeforeWindow && (
                             <span className="hidden lg:inline text-[10px] font-mono text-amber-300 shrink-0 whitespace-nowrap">
                               · с {ev.startYear} г.
                             </span>
@@ -2045,9 +2167,11 @@ export function GitTimeline({
                       {item.dateLabel}
                     </span>
                     <span className="text-slate-400 font-mono shrink-0 hidden sm:inline">
-                      {branchObj.isMilitary || ev.task.startsWith('WAR_')
-                        ? 'Окончание кампании:'
-                        : 'Завершение процесса:'}
+                      {isBiographyNode(ev, branches)
+                        ? 'Завершение жизненного и творческого пути:'
+                        : branchObj.isMilitary || ev.task.startsWith('WAR_')
+                          ? 'Окончание кампании:'
+                          : 'Завершение процесса:'}
                     </span>
                     <span className="font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
                       {formatEventTitleWithPeriod(ev)}

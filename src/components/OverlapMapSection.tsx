@@ -15,7 +15,13 @@ import {
   Undo2,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { computeDensityBins, getLeafBranches, isBiographyNode } from '../engine/timelineEngine';
+import {
+  computeDensityBins,
+  getEventEffectiveEndYear,
+  getEventEffectiveStartYear,
+  getLeafBranches,
+  isBiographyNode,
+} from '../engine/timelineEngine';
 import type { BranchDefinition, EnrichedEvent, RulerPeriod } from '../types/timeline';
 
 interface OverlapMapSectionProps {
@@ -753,17 +759,19 @@ export function OverlapMapSection({
 
                       {branchEvents.map((ev) => {
                         const isBio = isBiographyNode(ev);
-                        const left = toPct(ev.startYear);
-                        const right = toPct(isBio ? ev.startYear : ev.endYear);
-                        const isPoint = ev.startYear === ev.endYear || isBio;
+                        const effStart = getEventEffectiveStartYear(ev, branches);
+                        const effEnd = getEventEffectiveEndYear(ev, branches);
+                        const left = toPct(effStart);
+                        const right = toPct(effEnd);
+                        const isPoint = effStart === effEnd;
                         const width = isPoint ? Math.max(0.9, 100 / Math.max(30, span)) : Math.max(1.2, right - left);
                         const isHovered = hoveredEventId === ev.id;
                         const isLinked = linkedIds.has(ev.id);
                         const isConcurrent =
                           hoveredEvent !== null &&
                           hoveredEvent.id !== ev.id &&
-                          ev.startYear <= hoveredEvent.endYear &&
-                          ev.endYear >= hoveredEvent.startYear;
+                          effStart <= getEventEffectiveEndYear(hoveredEvent, branches) &&
+                          effEnd >= getEventEffectiveStartYear(hoveredEvent, branches);
 
                         return (
                           <button
@@ -774,7 +782,7 @@ export function OverlapMapSection({
                             onClick={() => onOpenCardModal(ev.id)}
                             title={
                               isBio
-                                ? `${ev.title} (${ev.period}) · связей: ${ev.explicitLinks.length}`
+                                ? `${ev.title} (годы жизни: ${ev.period}, активен: ${ev.activeFrom}–${ev.activeTo}) · связей: ${ev.explicitLinks.length}`
                                 : `${ev.period}: ${ev.title} (правлений: ${ev.overlappingRulers.length}, связей: ${ev.explicitLinks.length})`
                             }
                             style={{

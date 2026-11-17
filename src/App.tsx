@@ -23,6 +23,8 @@ import {
   fetchTimelineRepository,
   getDescendantBranchIds,
   getEnrichedEvents,
+  getEventEffectiveEndYear,
+  getEventEffectiveStartYear,
   getLeafBranches,
   getVisibleLanes,
   getWindowLinksVisibilitySummary,
@@ -399,7 +401,9 @@ export default function App() {
   const branchControls = useMemo(() => {
     const byBranchCount: Record<string, number> = {};
     enrichedEvents.forEach((ev) => {
-      if (intersectsTimeWindow(ev.startYear, ev.endYear, yearFrom, yearTo)) {
+      const effStart = getEventEffectiveStartYear(ev, branches);
+      const effEnd = getEventEffectiveEndYear(ev, branches);
+      if (intersectsTimeWindow(effStart, effEnd, effectiveYearFrom, effectiveYearTo)) {
         byBranchCount[ev.task] = (byBranchCount[ev.task] || 0) + 1;
       }
     });
@@ -416,7 +420,7 @@ export default function App() {
       }
       return { ...b, count: byBranchCount[b.id] || 0 };
     });
-  }, [branches, enrichedEvents, matchingRulers.length, yearFrom, yearTo]);
+  }, [branches, enrichedEvents, matchingRulers.length, effectiveYearFrom, effectiveYearTo]);
 
   const resolvedMacroEras = useMemo(
     () => (manifest ? resolveMacroEras(manifest.macroEras) : []),

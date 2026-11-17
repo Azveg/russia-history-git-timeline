@@ -420,8 +420,13 @@ export function CardDetailModal({
             <div className="flex flex-wrap items-center gap-2">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/35 font-mono text-sm font-black text-amber-300 tabular-nums">
                 <Calendar className="w-3.5 h-3.5" />
-                {card.period}
+                {isBio ? `Годы жизни: ${card.period}` : card.period}
               </span>
+              {isBio && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-fuchsia-500/15 border border-fuchsia-500/35 font-mono text-xs font-bold text-fuchsia-200 tabular-nums">
+                  Творческая активность: {card.activeFrom}–{card.activeTo} гг.
+                </span>
+              )}
               {card.datePrecision === 'day' || card.datePrecision === 'month' ? (
                 <span className="text-xs font-mono text-slate-400 tabular-nums">
                   точная дата: {card.startDate ?? card.period}
@@ -465,9 +470,15 @@ export function CardDetailModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
               <div className="rounded-lg bg-slate-950/75 border border-slate-800/80 p-2.5">
-                <div className="text-[10px] font-mono uppercase text-slate-400">Хронология и охват</div>
+                <div className="text-[10px] font-mono uppercase text-slate-400">
+                  {isBio ? 'Годы жизни и творчества' : 'Хронология и охват'}
+                </div>
                 <div className="font-mono font-bold text-white mt-0.5 tabular-nums">{card.period}</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">{durationText}</div>
+                <div className="text-[11px] text-slate-400 mt-0.5">
+                  {isBio
+                    ? `Активен: ${card.activeFrom}–${card.activeTo} гг. (${Math.max(1, card.activeTo - card.activeFrom)} лет)`
+                    : durationText}
+                </div>
               </div>
 
               <div className="rounded-lg bg-slate-950/75 border border-slate-800/80 p-2.5">
