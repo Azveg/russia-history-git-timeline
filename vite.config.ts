@@ -3,6 +3,12 @@ import path from 'path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import {defineConfig, type Plugin} from 'vite';
+import {
+  buildLlmsTxt,
+  buildRootHtmlSnapshot,
+  buildSchemaOrgJsonLd,
+  collectRepositorySnapshot,
+} from './scripts/seoSnapshot.ts';
 
 function scanDataModules(rootDir: string): string[] {
   const dataDir = path.resolve(rootDir, 'public/data');
@@ -30,6 +36,12 @@ function scanDataModules(rootDir: string): string[] {
 
   walk(dataDir);
   return results.sort((a, b) => a.localeCompare(b));
+}
+
+function resolveBuildSiteUrl(): string {
+  return (process.env.VITE_SITE_URL || process.env.SITE_URL || process.env.APP_URL || '')
+    .trim()
+    .replace(/\/+$/, '');
 }
 
 function timelineDataModulesIndex(): Plugin {
@@ -74,10 +86,72 @@ function timelineDataModulesIndex(): Plugin {
   };
 }
 
+function timelineSeoSnapshotPlugin(): Plugin {
+  const rootDir = process.cwd();
+  return {
+    name: 'timeline-seo-snapshot',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        const cleanUrl = req.url?.split('?')[0] ?? '';
+        if (cleanUrl === '/llms.txt' || cleanUrl.endsWith('/llms.txt')) {
+          const snapshot = collectRepositorySnapshot(rootDir);
+          const payload = buildLlmsTxt(snapshot, resolveBuildSiteUrl());
+          res.statusCode = 200;
+          res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(payload);
+          return;
+        }
+        next();
+      });
+    },
+    generateBundle() {
+      const snapshot = collectRepositorySnapshot(rootDir);
+      this.emitFile({
+        type: 'asset',
+        fileName: 'llms.txt',
+        source: buildLlmsTxt(snapshot, resolveBuildSiteUrl()),
+      });
+    },
+    transformIndexHtml(html) {
+      const snapshot = collectRepositorySnapshot(rootDir);
+      const siteUrl = resolveBuildSiteUrl();
+      const jsonLd = buildSchemaOrgJsonLd(snapshot, siteUrl);
+      const rootSnapshot = buildRootHtmlSnapshot(snapshot);
+
+      let nextHtml = html;
+
+      if (siteUrl) {
+        nextHtml = nextHtml.replace(/content="\.\/og-image\.png"/g, `content="${siteUrl}/og-image.png"`);
+        if (!nextHtml.includes('rel="canonical"')) {
+          nextHtml = nextHtml.replace(
+            '</head>',
+            `    <link rel="canonical" href="${siteUrl}/" />\n    <meta property="og:url" content="${siteUrl}/" />\n  </head>`,
+          );
+        }
+      }
+
+      if (!nextHtml.includes('application/ld+json')) {
+        nextHtml = nextHtml.replace(
+          '</head>',
+          `    <script type="application/ld+json">\n${jsonLd}\n    </script>\n  </head>`,
+        );
+      }
+
+      nextHtml = nextHtml.replace(
+        /<div id="root">\s*<\/div>/,
+        `<div id="root">\n${rootSnapshot}\n    </div>`,
+      );
+
+      return nextHtml;
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
     base: './',
-    plugins: [react(), tailwindcss(), timelineDataModulesIndex()],
+    plugins: [react(), tailwindcss(), timelineDataModulesIndex(), timelineSeoSnapshotPlugin()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),
