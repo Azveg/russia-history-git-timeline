@@ -59,6 +59,7 @@ interface TopControlBarProps {
   cardDensity: CardDensity;
   onChangeCardDensity: (density: CardDensity) => void;
   isFiltersCollapsed: boolean;
+  activeAdvancedCount?: number;
   onToggleFilters: () => void;
 }
 
@@ -123,6 +124,7 @@ export function TopControlBar({
   cardDensity,
   onChangeCardDensity,
   isFiltersCollapsed,
+  activeAdvancedCount = 0,
   onToggleFilters,
 }: TopControlBarProps) {
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -471,16 +473,27 @@ export function TopControlBar({
             type="button"
             onClick={onToggleFilters}
             aria-expanded={!isFiltersCollapsed}
-            aria-label={isFiltersCollapsed ? 'Показать панель фильтров' : 'Скрыть панель фильтров'}
+            aria-label={
+              isFiltersCollapsed
+                ? 'Развернуть инструменты расширенного анализа'
+                : 'Свернуть инструменты расширенного анализа'
+            }
             className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
               !isFiltersCollapsed
-                ? 'bg-slate-800/90 border-slate-600 text-white hover:bg-slate-800'
-                : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:bg-slate-800 hover:text-white'
+                ? 'bg-slate-800/90 border-amber-400/60 text-white hover:bg-slate-800'
+                : activeAdvancedCount > 0
+                  ? 'bg-emerald-500/15 border-emerald-400/60 text-emerald-200 hover:bg-emerald-500/25'
+                  : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:bg-slate-800 hover:text-white'
             }`}
-            title="Свернуть или развернуть панель эпох и поиска"
+            title="Развернуть или свернуть панель «Расширенный анализ» (типы связей, сюжеты синхронизации, пара веток, аудит)"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="hidden sm:inline">{isFiltersCollapsed ? '+ Фильтры' : '− Фильтры'}</span>
+            <span className="hidden sm:inline">{isFiltersCollapsed ? '+ Анализ' : '− Анализ'}</span>
+            {activeAdvancedCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 text-[10px] font-bold tabular-nums">
+                {activeAdvancedCount}
+              </span>
+            )}
           </button>
         </div>
       </div>

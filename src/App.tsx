@@ -83,7 +83,9 @@ export default function App() {
 
   const [showEndNodes, setShowEndNodes] = useState(true);
   const [showOverlapMatrix] = useState(true);
-  const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(false);
+  const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(true);
+  const [forceShowHiddenLinks, setForceShowHiddenLinks] = useState(false);
+  const [dismissedHiddenLinks, setDismissedHiddenLinks] = useState(false);
 
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
@@ -1073,6 +1075,8 @@ export default function App() {
     setOnlyWithSyncLinks(false);
     setSyncLinkTypeFilter('all');
     setFocusedEventId(null);
+    setForceShowHiddenLinks(false);
+    setDismissedHiddenLinks(false);
     setZoomHistory([]);
     setYearFrom(timelineBounds.minYear);
     setYearTo(timelineBounds.maxYear);
@@ -1407,6 +1411,41 @@ export default function App() {
     });
   }
 
+  useEffect(() => {
+    setDismissedHiddenLinks(false);
+  }, [
+    effectiveYearFrom,
+    effectiveYearTo,
+    selectedEra,
+    selectedReign,
+    searchQuery,
+    selectedPersonKey,
+    selectedSyncTag,
+    branchPairFilter,
+    auditUnlinkedMode,
+    onlyWithSyncLinks,
+    syncLinkTypeFilter,
+  ]);
+
+  const activeAdvancedCount =
+    (onlyWithSyncLinks || syncLinkTypeFilter !== 'all' ? 1 : 0) +
+    (selectedSyncTag ? 1 : 0) +
+    (branchPairFilter ? 1 : 0) +
+    (auditUnlinkedMode ? 1 : 0);
+
+  const isWindowNarrowedOrFiltered =
+    effectiveYearFrom > timelineBounds.minYear ||
+    effectiveYearTo < timelineBounds.maxYear ||
+    selectedEra !== 'ALL' ||
+    selectedReign !== 'ALL' ||
+    searchQuery.trim() !== '' ||
+    selectedPersonKey !== null ||
+    activeAdvancedCount > 0 ||
+    !isFiltersCollapsed;
+
+  const shouldShowHiddenLinksNotice =
+    forceShowHiddenLinks || (!dismissedHiddenLinks && isWindowNarrowedOrFiltered);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#050811] text-slate-100 p-6 sm:p-10 max-w-7xl mx-auto space-y-6">
@@ -1484,6 +1523,7 @@ export default function App() {
           preserveViewportScrollAnchor(() => setCardDensity(density))
         }
         isFiltersCollapsed={isFiltersCollapsed}
+        activeAdvancedCount={activeAdvancedCount}
         onToggleFilters={handleToggleFilters}
       />
 
@@ -1494,10 +1534,14 @@ export default function App() {
         visibleLinksCount={windowLinksVisibility.visibleLinksCount}
         hiddenLinksCount={windowLinksVisibility.hiddenLinksCount}
         onRevealHiddenLinks={() => {
-          const el = document.getElementById('hidden-links-notice');
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          }
+          setDismissedHiddenLinks(false);
+          setForceShowHiddenLinks(true);
+          window.setTimeout(() => {
+            const el = document.getElementById('hidden-links-notice');
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+          }, 40);
         }}
         minYear={timelineBounds.minYear}
         maxYear={timelineBounds.maxYear}
@@ -1506,50 +1550,50 @@ export default function App() {
         onOpenCompareModal={handleOpenCompareFromHeader}
       />
 
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-3 space-y-3">
-        {!isFiltersCollapsed && (
-          <FilterPanel
-            yearFrom={effectiveYearFrom}
-            yearTo={effectiveYearTo}
-            minYear={timelineBounds.minYear}
-            maxYear={timelineBounds.maxYear}
-            selectedRulerId={selectedReign === 'ALL' ? '' : selectedReign}
-            searchQuery={searchQuery}
-            onlySynced={onlyWithSyncLinks}
-            syncLinkTypeFilter={syncLinkTypeFilter}
-            thematicBranches={thematicLeafBranches}
-            syncTagOptions={syncTagOptions}
-            selectedSyncTag={selectedSyncTag}
-            branchPairFilter={branchPairFilter}
-            auditUnlinkedMode={auditUnlinkedMode}
-            auditFlaggedCount={auditUnlinkedMode ? matchingEvents.length : auditCandidateMap.size}
-            personDossiers={personDossiers}
-            selectedPersonDossier={selectedPersonDossier}
-            onChangeYearFrom={(y) => {
-              setSelectedEra('ALL');
-              handleYearRangeChange(y, effectiveYearTo);
-            }}
-            onChangeYearTo={(y) => {
-              setSelectedEra('ALL');
-              handleYearRangeChange(effectiveYearFrom, y);
-            }}
-            onSelectYearRange={(fromVal, toVal) => {
-              setSelectedEra('ALL');
-              setSelectedReign('ALL');
-              handleYearRangeChange(fromVal, toVal);
-            }}
-            onChangeSearch={setSearchQuery}
-            onToggleOnlySynced={handleToggleOnlySynced}
-            onChangeSyncLinkTypeFilter={handleChangeSyncLinkTypeFilter}
-            onSelectSyncTag={handleSelectSyncTag}
-            onChangeBranchPair={handleChangeBranchPair}
-            onToggleAuditUnlinkedMode={() => setAuditUnlinkedMode((prev) => !prev)}
-            onOpenWindowModal={handleOpenWindowModal}
-            onOpenPersonModal={handleOpenPersonModal}
-            onClearPersonFilter={() => setSelectedPersonKey(null)}
-            onResetFilters={handleResetFiltersOnly}
-          />
-        )}
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-2.5 space-y-2.5">
+        <FilterPanel
+          yearFrom={effectiveYearFrom}
+          yearTo={effectiveYearTo}
+          minYear={timelineBounds.minYear}
+          maxYear={timelineBounds.maxYear}
+          selectedRulerId={selectedReign === 'ALL' ? '' : selectedReign}
+          searchQuery={searchQuery}
+          onlySynced={onlyWithSyncLinks}
+          syncLinkTypeFilter={syncLinkTypeFilter}
+          thematicBranches={thematicLeafBranches}
+          syncTagOptions={syncTagOptions}
+          selectedSyncTag={selectedSyncTag}
+          branchPairFilter={branchPairFilter}
+          auditUnlinkedMode={auditUnlinkedMode}
+          auditFlaggedCount={auditUnlinkedMode ? matchingEvents.length : auditCandidateMap.size}
+          personDossiers={personDossiers}
+          selectedPersonDossier={selectedPersonDossier}
+          isAdvancedExpanded={!isFiltersCollapsed}
+          onToggleAdvanced={handleToggleFilters}
+          onChangeYearFrom={(y) => {
+            setSelectedEra('ALL');
+            handleYearRangeChange(y, effectiveYearTo);
+          }}
+          onChangeYearTo={(y) => {
+            setSelectedEra('ALL');
+            handleYearRangeChange(effectiveYearFrom, y);
+          }}
+          onSelectYearRange={(fromVal, toVal) => {
+            setSelectedEra('ALL');
+            setSelectedReign('ALL');
+            handleYearRangeChange(fromVal, toVal);
+          }}
+          onChangeSearch={setSearchQuery}
+          onToggleOnlySynced={handleToggleOnlySynced}
+          onChangeSyncLinkTypeFilter={handleChangeSyncLinkTypeFilter}
+          onSelectSyncTag={handleSelectSyncTag}
+          onChangeBranchPair={handleChangeBranchPair}
+          onToggleAuditUnlinkedMode={() => setAuditUnlinkedMode((prev) => !prev)}
+          onOpenWindowModal={handleOpenWindowModal}
+          onOpenPersonModal={handleOpenPersonModal}
+          onClearPersonFilter={() => setSelectedPersonKey(null)}
+          onResetFilters={handleResetFiltersOnly}
+        />
 
         <OverlapMapSection
           matchingEvents={matchingEvents}
@@ -1580,15 +1624,21 @@ export default function App() {
           onRecordZoomCheckpoint={handleRecordZoomCheckpoint}
         />
 
-        <HiddenLinksNotice
-          visibility={windowLinksVisibility}
-          onRevealBranch={handleRevealBranch}
-          onRevealBranches={handleRevealBranches}
-          onEnableAllBranches={() => handleApplyBranchPreset('all')}
-        />
+        {shouldShowHiddenLinksNotice && (
+          <HiddenLinksNotice
+            visibility={windowLinksVisibility}
+            onRevealBranch={handleRevealBranch}
+            onRevealBranches={handleRevealBranches}
+            onEnableAllBranches={() => handleApplyBranchPreset('all')}
+            onDismiss={() => {
+              setForceShowHiddenLinks(false);
+              setDismissedHiddenLinks(true);
+            }}
+          />
+        )}
       </div>
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3.5">
         {stream.length === 0 ? (
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-12 text-center my-8">
             <h3 className="font-serif text-xl font-bold text-white">

@@ -29,26 +29,26 @@ export function DashboardHeader({
 }: DashboardHeaderProps) {
   return (
     <header className="relative border-b border-slate-800/80 bg-gradient-to-b from-slate-900/75 via-[#060a15] to-[#050811]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 relative z-10">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 relative z-10">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           <div className="max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-amber-300/90 mb-1">
+            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-amber-300/90 mb-0.5">
               <BookOpenCheck className="w-3.5 h-3.5 text-amber-400" />
               <span>Интерактивный исторический атлас-хронограф · {minYear}–{maxYear} гг.</span>
             </div>
 
-            <h1 className="font-serif text-2xl sm:text-3xl lg:text-[34px] font-bold tracking-tight text-white leading-tight">
+            <h1 className="font-serif text-xl sm:text-2xl lg:text-[30px] font-bold tracking-tight text-white leading-tight">
               История России и мира в параллельных линиях времени
             </h1>
 
-            <p className="mt-1 text-slate-300 text-xs sm:text-sm leading-relaxed max-w-2xl">
+            <p className="mt-0.5 text-slate-300 text-xs sm:text-sm leading-snug max-w-2xl">
               Синхронная хронология правлений, войн, реформ, дипломатии, литературы и научных открытий:
               исследуйте пересечения процессов, их предпосылки, итоги и культурный след.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3 shrink-0 border-t lg:border-t-0 border-slate-800/80 pt-3 lg:pt-0">
-            <div className="flex items-center divide-x divide-slate-800 bg-slate-900/60 border border-slate-800/90 rounded-xl px-3 py-2">
+          <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3 shrink-0 border-t lg:border-t-0 border-slate-800/80 pt-2.5 lg:pt-0">
+            <div className="flex items-center divide-x divide-slate-800 bg-slate-900/60 border border-slate-800/90 rounded-xl px-3 py-1.5">
               <div className="pr-3 text-center">
                 <div className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-amber-400">
                   {visibleLanesCount}
@@ -84,7 +84,7 @@ export function DashboardHeader({
                     type="button"
                     onClick={onRevealHiddenLinks}
                     className="mt-0.5 block mx-auto text-[10px] font-mono text-amber-300 hover:text-amber-200 underline decoration-amber-500/45 underline-offset-2 cursor-pointer whitespace-nowrap tabular-nums"
-                    title="Перейти к списку отключённых веток со скрытыми связями"
+                    title="Показать и прокрутить к списку отключённых веток со скрытыми связями"
                   >
                     +{hiddenLinksCount} скрытых
                   </button>

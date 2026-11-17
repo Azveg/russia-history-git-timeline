@@ -75,7 +75,7 @@ export function OverlapMapSection({
   onApplySpanPreset,
   onRecordZoomCheckpoint,
 }: OverlapMapSectionProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
+  const [isExpanded, setIsExpanded] = useState(false);
   const scrubberTrackRef = useRef<HTMLDivElement | null>(null);
   const lastWheelCheckpointRef = useRef<number>(0);
 
@@ -277,14 +277,18 @@ export function OverlapMapSection({
       className="rounded-2xl bg-slate-900/65 border border-slate-800/80 overflow-hidden"
     >
       {/* Компактный интерактивный скраббер окна времени (Time Brush) — виден всегда */}
-      <div className="px-4 sm:px-5 py-3 bg-slate-950/75 border-b border-slate-800/80 space-y-2.5">
+      <div
+        className={`px-4 sm:px-5 py-2.5 bg-slate-950/75 space-y-2 ${
+          isExpanded ? 'border-b border-slate-800/80' : ''
+        }`}
+      >
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 font-mono font-bold text-amber-300">
               <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
               <span>Шкала времени и плотность событий ({minYear}–{maxYear})</span>
             </span>
-            <span className="text-[11px] font-mono text-slate-400 hidden lg:inline">
+            <span className="text-[11px] font-mono text-slate-400 hidden xl:inline">
               — перетаскивайте рамку, используйте кнопки зума или Alt/Ctrl + колесо мыши (шаг окна: {span} л.)
             </span>
           </div>
@@ -307,9 +311,19 @@ export function OverlapMapSection({
             <button
               type="button"
               onClick={() => setIsExpanded((prev) => !prev)}
-              className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-mono text-slate-300 cursor-pointer whitespace-nowrap"
+              aria-expanded={isExpanded}
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded border text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap ${
+                isExpanded
+                  ? 'bg-slate-800 border-amber-400/50 text-amber-200 hover:bg-slate-700'
+                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+              }`}
+              title="Показать или скрыть детальную гистограмму и горизонтальные полосы правлений и тематических веток"
             >
-              <span>{isExpanded ? 'Свернуть карту полос' : 'Развернуть карту полос'}</span>
+              <span>
+                {isExpanded
+                  ? 'Свернуть карту полос'
+                  : `Развернуть карту полос (${visibleEventBranches.length + (rulersActive ? 1 : 0)})`}
+              </span>
               {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           </div>

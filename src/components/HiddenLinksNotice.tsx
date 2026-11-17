@@ -1,4 +1,4 @@
-import { AlertTriangle, Eye, Layers } from 'lucide-react';
+import { AlertTriangle, Eye, Layers, X } from 'lucide-react';
 import type { WindowLinksVisibilitySummary } from '../types/timeline';
 
 interface HiddenLinksNoticeProps {
@@ -6,6 +6,7 @@ interface HiddenLinksNoticeProps {
   onRevealBranch: (branchId: string) => void;
   onRevealBranches: (branchIds: string[]) => void;
   onEnableAllBranches?: () => void;
+  onDismiss?: () => void;
 }
 
 export function HiddenLinksNotice({
@@ -13,6 +14,7 @@ export function HiddenLinksNotice({
   onRevealBranch,
   onRevealBranches,
   onEnableAllBranches,
+  onDismiss,
 }: HiddenLinksNoticeProps) {
   if (visibility.hiddenLinksCount === 0 || visibility.hiddenGroups.length === 0) {
     return null;
@@ -25,7 +27,7 @@ export function HiddenLinksNotice({
     <section
       id="hidden-links-notice"
       aria-label="Предупреждение о скрытых связях в отключённых ветках"
-      className="rounded-2xl bg-[#0b1325] border border-amber-500/35 px-4 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3"
+      className="rounded-2xl bg-[#0b1325] border border-amber-500/35 px-4 py-2.5 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2.5"
     >
       <div className="space-y-1.5 min-w-0">
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -77,7 +79,7 @@ export function HiddenLinksNotice({
         <button
           type="button"
           onClick={() => onRevealBranches(allHiddenBranchIds)}
-          className="px-3.5 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+          className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
         >
           <Eye className="w-3.5 h-3.5" />
           <span className="tabular-nums">
@@ -89,10 +91,22 @@ export function HiddenLinksNotice({
           <button
             type="button"
             onClick={onEnableAllBranches}
-            className="px-3 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+            className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
           >
             <Layers className="w-3.5 h-3.5 text-slate-400" />
             <span>Все ветки</span>
+          </button>
+        )}
+
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            aria-label="Скрыть уведомление о скрытых связях"
+            title="Скрыть это уведомление"
+            className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-400 hover:text-white transition-colors cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
           </button>
         )}
       </div>
