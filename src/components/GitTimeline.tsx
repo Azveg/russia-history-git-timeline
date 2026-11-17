@@ -564,10 +564,10 @@ export function GitTimeline({
                   ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-bold'
                   : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-slate-500 hover:text-white'
               }`}
-              title="Памятка: как читать линии, узлы и связи графа"
+              title="Памятка: как читать линии, события и связи хронографа"
             >
               <HelpCircle className="w-3 h-3 text-amber-400" />
-              <span>Как читать граф</span>
+              <span>Как читать схему</span>
             </button>
 
             {isGraphHelpOpen && (
@@ -682,7 +682,7 @@ export function GitTimeline({
                   ·
                 </span>
                 <span className="text-slate-300 tabular-nums">
-                  sync-связей: {focusedEvent.explicitLinks.length} · параллельных: {focusedEvent.concurrentEvents.length}
+                  Прямых связей: {focusedEvent.explicitLinks.length} · параллельных: {focusedEvent.concurrentEvents.length}
                 </span>
               </div>
               <div className="text-sm font-bold text-white truncate">
@@ -701,7 +701,7 @@ export function GitTimeline({
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  Только sync ({focusedEvent.explicitLinks.length})
+                  Только прямые ({focusedEvent.explicitLinks.length})
                 </button>
                 <button
                   type="button"
@@ -712,7 +712,7 @@ export function GitTimeline({
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  Sync + параллельные ({focusedEvent.concurrentEvents.length})
+                  Связи и параллельные ({focusedEvent.concurrentEvents.length})
                 </button>
               </div>
 
@@ -1487,7 +1487,7 @@ export function GitTimeline({
                                 ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
                                 : 'bg-slate-950/70 border-slate-700/80 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
                             }`}
-                            title="Изолировать событие, его sync-связи и параллельные события"
+                            title="Изолировать событие, его прямые связи и параллельные процессы"
                           >
                             <Crosshair className="w-3 h-3" />
                             <span>{isFocusedTarget ? 'В фокусе' : 'Фокус'}</span>

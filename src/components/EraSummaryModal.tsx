@@ -226,7 +226,7 @@ export function EraSummaryModal({
               <div className="text-lg font-extrabold text-white mt-0.5 tabular-nums">
                 {eraRulers.length}
               </div>
-              <div className="text-[11px] text-slate-500">узлов государственной власти</div>
+              <div className="text-[11px] text-slate-500">правлений и государей</div>
             </div>
 
             <div className="rounded-xl bg-slate-900/90 border border-slate-800 p-3">
@@ -246,7 +246,7 @@ export function EraSummaryModal({
               </div>
               <div className="text-[11px] text-slate-500 tabular-nums">
                 {peakInterval
-                  ? `${peakInterval.count} активных узлов · связей: ${totalSyncLinks}`
+                  ? `${peakInterval.count} одновременных событий · связей: ${totalSyncLinks}`
                   : `связей: ${totalSyncLinks}`}
               </div>
             </div>
@@ -515,7 +515,7 @@ export function EraSummaryModal({
             <div className="rounded-xl bg-emerald-950/20 border border-emerald-500/30 p-4 space-y-3">
               <div className="text-xs font-mono uppercase tracking-wider text-emerald-300 flex items-center gap-2 font-bold">
                 <Flame className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Ключевые узлы эпохи (наибольшее число причинно-следственных связей)</span>
+                <span>Ключевые события эпохи (наибольшее число причинно-следственных связей)</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {topConnectedEvents.map((ev) => {

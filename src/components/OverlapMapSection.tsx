@@ -350,7 +350,7 @@ export function OverlapMapSection({
                     key={`${bin.startYear}-${bin.endYear}`}
                     type="button"
                     onClick={() => onSelectYearRange(bin.startYear, bin.endYear)}
-                    title={`${bin.startYear}–${bin.endYear} гг.: активных событий — ${bin.totalCount}, новых узлов — ${bin.commitCount}. Клик для фокуса`}
+                    title={`${bin.startYear}–${bin.endYear} гг.: активных событий — ${bin.totalCount}, новых событий — ${bin.commitCount}. Клик для фокуса`}
                     className="group flex-1 h-full flex flex-col justify-end items-stretch cursor-pointer focus:outline-none"
                   >
                     <div

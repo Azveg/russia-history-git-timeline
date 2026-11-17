@@ -17,7 +17,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   findMacroEraForYear,
   isBiographyNode,
@@ -38,6 +38,7 @@ interface CardDetailModalProps {
   enrichedEvents: EnrichedEvent[];
   matchingEvents?: EnrichedEvent[];
   branches: BranchDefinition[];
+  activeBranches?: Record<string, boolean>;
   eras?: MacroEra[];
   focusedEventId: string | null;
   modalHistory?: ModalHistoryItem[];
@@ -45,8 +46,10 @@ interface CardDetailModalProps {
   onNavigateBack?: () => void;
   onSelectCard: (id: string) => void;
   onJumpToTimelineRow: (id: string) => void;
+  onRevealBranch?: (branchId: string) => void;
   onToggleFocusEvent: (id: string) => void;
   onFilterByRuler: (rulerId: string) => void;
+  onFilterByPerson?: (personName: string) => void;
   onOpenRulerModal?: (rulerId: string) => void;
   onOpenEraModal?: (eraId: string) => void;
 }
@@ -69,6 +72,7 @@ export function CardDetailModal({
   enrichedEvents,
   matchingEvents,
   branches,
+  activeBranches,
   eras = [],
   focusedEventId,
   modalHistory = [],
@@ -76,11 +80,19 @@ export function CardDetailModal({
   onNavigateBack,
   onSelectCard,
   onJumpToTimelineRow,
+  onRevealBranch,
   onToggleFocusEvent,
   onFilterByRuler,
+  onFilterByPerson,
   onOpenRulerModal,
   onOpenEraModal,
 }: CardDetailModalProps) {
+  const [showAllConcurrent, setShowAllConcurrent] = useState(false);
+
+  useEffect(() => {
+    setShowAllConcurrent(false);
+  }, [card?.id]);
+
   useEffect(() => {
     if (!card) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -129,6 +141,7 @@ export function CardDetailModal({
     otherId: string;
     otherEvent: EnrichedEvent;
     badge: string;
+    directionMark: string;
     label: string;
   }> = [];
 
@@ -143,6 +156,7 @@ export function CardDetailModal({
           rLink.direction === 'depicts'
             ? 'Повествует об эпохе / событии'
             : 'Отражено в произведении',
+        directionMark: rLink.direction === 'depicts' ? '←' : '→',
         label: rLink.label,
       });
     }
@@ -152,6 +166,7 @@ export function CardDetailModal({
     otherId: string;
     otherEvent: EnrichedEvent;
     badge: string;
+    directionMark: string;
     label: string;
   }> = [];
 
@@ -159,6 +174,7 @@ export function CardDetailModal({
     otherId: string;
     otherEvent: EnrichedEvent;
     badge: string;
+    directionMark: string;
     label: string;
   }> = [];
 
@@ -180,35 +196,80 @@ export function CardDetailModal({
             : isLiteraryWorkNode(otherEv)
               ? 'Литературный памятник'
               : 'Лицо эпохи',
+          directionMark: link.direction === 'incoming' ? '←' : '→',
           label: link.label,
         });
       }
       return;
     }
 
-    if (link.direction === 'in' && (link.type === 'triggers' || link.type === 'enables')) {
+    if (culturalReflectionIds.has(otherEv.id)) {
+      return;
+    }
+
+    if (link.direction === 'incoming' && (link.type === 'triggers' || link.type === 'enables')) {
       prerequisiteLinks.push({
         otherId: otherEv.id,
         otherEvent: otherEv,
         badge: 'Предпосылка / причина',
+        directionMark: '←',
         label: link.label,
       });
-    } else if (link.direction === 'out' && (link.type === 'triggers' || link.type === 'enables')) {
+    } else if (link.direction === 'outgoing' && (link.type === 'triggers' || link.type === 'enables')) {
       consequenceLinks.push({
         otherId: otherEv.id,
         otherEvent: otherEv,
         badge: 'Прямое следствие',
+        directionMark: '→',
+        label: link.label,
+      });
+    } else if (
+      otherEv.startYear > card.endYear ||
+      (otherEv.startYear === card.endYear &&
+        otherEv.endYear > card.endYear &&
+        otherEv.startYear > card.startYear)
+    ) {
+      consequenceLinks.push({
+        otherId: otherEv.id,
+        otherEvent: otherEv,
+        badge: 'Последующая связь',
+        directionMark: '→',
+        label: link.label,
+      });
+    } else if (
+      otherEv.endYear < card.startYear ||
+      (otherEv.endYear === card.startYear &&
+        otherEv.startYear < card.startYear &&
+        otherEv.endYear < card.endYear)
+    ) {
+      prerequisiteLinks.push({
+        otherId: otherEv.id,
+        otherEvent: otherEv,
+        badge: 'Исторический контекст',
+        directionMark: '←',
         label: link.label,
       });
     } else {
       prerequisiteLinks.push({
         otherId: otherEv.id,
         otherEvent: otherEv,
-        badge: 'Синхронная взаимосвязь',
+        badge: 'Синхронный контекст',
+        directionMark: '↔',
         label: link.label,
       });
     }
   });
+
+  const isBranchHidden = (ev: EnrichedEvent) =>
+    activeBranches ? activeBranches[ev.task] === false : false;
+
+  const totalUniqueLinksCount =
+    prerequisiteLinks.length + consequenceLinks.length + culturalReflectionItems.length;
+
+  const hiddenBranchLinksCount =
+    prerequisiteLinks.filter((i) => isBranchHidden(i.otherEvent)).length +
+    consequenceLinks.filter((i) => isBranchHidden(i.otherEvent)).length +
+    culturalReflectionItems.filter((i) => isBranchHidden(i.otherEvent)).length;
 
   const durationText =
     card.duration === 0
@@ -340,7 +401,11 @@ export function CardDetailModal({
             <div className="flex items-center justify-between gap-2 text-xs font-mono uppercase tracking-wider text-amber-300/90">
               <span className="inline-flex items-center gap-1.5 font-bold">
                 <ScrollText className="w-3.5 h-3.5 text-amber-400" />
-                Паспорт исторического узла
+                {isWork
+                  ? 'Паспорт литературного произведения'
+                  : isBio
+                    ? 'Биографический паспорт'
+                    : 'Паспорт исторического события'}
               </span>
               {macroEra && onOpenEraModal && (
                 <button
@@ -367,17 +432,22 @@ export function CardDetailModal({
                   <span>{card.region || 'Общегосударственный масштаб'}</span>
                 </div>
                 <div className="text-[11px] text-slate-400 mt-0.5">
-                  {EVENT_TYPE_LABELS[card.eventType ?? ''] ?? branchObj.label}
+                  {card.type && card.type !== 'Событие'
+                    ? card.type
+                    : EVENT_TYPE_LABELS[card.eventType ?? ''] ?? branchObj.label}
                 </div>
               </div>
 
               <div className="rounded-lg bg-slate-950/75 border border-slate-800/80 p-2.5">
                 <div className="text-[10px] font-mono uppercase text-slate-400">Связи и параллели</div>
                 <div className="font-mono font-bold text-emerald-300 mt-0.5 tabular-nums">
-                  Прямых связей: {card.explicitLinks.length + card.retrospectiveLinks.length}
+                  Прямых связей: {totalUniqueLinksCount}
                 </div>
                 <div className="text-[11px] text-slate-400 mt-0.5 tabular-nums">
                   Синхронных процессов: {card.concurrentEvents.length}
+                  {hiddenBranchLinksCount > 0 ? (
+                    <span className="text-amber-300"> · скрытых веток: {hiddenBranchLinksCount}</span>
+                  ) : null}
                 </div>
               </div>
             </div>
@@ -388,7 +458,11 @@ export function CardDetailModal({
                 <Award className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                 <div className="space-y-1 min-w-0">
                   <div className="text-[11px] font-mono uppercase tracking-wider font-bold text-amber-300">
-                    Главный итог и историческое значение
+                    {isWork
+                      ? 'Художественный итог и значение'
+                      : isBio
+                        ? 'Место в истории литературы'
+                        : 'Главный итог и историческое значение'}
                   </div>
                   <p className="text-xs sm:text-sm text-amber-50/95 leading-relaxed font-medium">
                     {card.outcome}
@@ -400,28 +474,136 @@ export function CardDetailModal({
             {/* Ключевые исторические лица / участники (keyFigures) */}
             {card.keyFigures && card.keyFigures.length > 0 && (
               <div className="space-y-1.5 pt-1">
-                <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Ключевые участники и исторические фигуры:</span>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center justify-between gap-1.5">
+                  <span className="inline-flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-sky-400" />
+                    <span>
+                      {isWork
+                        ? 'Автор, прототипы, издатели и критики:'
+                        : isBio
+                          ? 'Круг общения, современники и адресаты:'
+                          : 'Ключевые участники и исторические фигуры:'}
+                    </span>
+                  </span>
+                  {onFilterByPerson && (
+                    <span className="text-[10px] text-slate-500 normal-case">
+                      нажмите на имя для поиска по таймлайну
+                    </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {card.keyFigures.map((person) => (
-                    <span
-                      key={person}
-                      className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700/90 text-xs font-medium text-slate-200"
-                    >
-                      {person}
-                    </span>
-                  ))}
+                  {card.keyFigures.map((person) =>
+                    onFilterByPerson ? (
+                      <button
+                        key={person}
+                        type="button"
+                        onClick={() => {
+                          onFilterByPerson(person);
+                          onClose();
+                        }}
+                        title={`Найти все события с участием: ${person}`}
+                        className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-sky-500/15 border border-slate-700/90 hover:border-sky-400/50 text-xs font-medium text-slate-200 hover:text-sky-200 transition-colors cursor-pointer"
+                      >
+                        {person}
+                      </button>
+                    ) : (
+                      <span
+                        key={person}
+                        className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700/90 text-xs font-medium text-slate-200"
+                      >
+                        {person}
+                      </span>
+                    ),
+                  )}
                 </div>
               </div>
             )}
           </div>
 
+          {/* Литературно-исторический профиль (жанр, темы, судьба текста, влияние, главные труды) */}
+          {card.literaryProfile && (
+            <div className="rounded-xl bg-slate-900/75 border border-slate-800 p-4 space-y-2.5">
+              <div className="flex items-center justify-between gap-2 pb-1 border-b border-slate-800/80">
+                <div className="text-xs font-mono uppercase tracking-wider text-rose-300 flex items-center gap-2 font-bold">
+                  <BookOpen className="w-3.5 h-3.5 text-rose-400" />
+                  <span>
+                    {isBio ? 'Творческий профиль писателя' : 'Литературный разбор и судьба текста'}
+                  </span>
+                </div>
+              </div>
+
+              <dl className="divide-y divide-slate-800/70 text-xs sm:text-sm">
+                {(card.literaryProfile.genre || card.literaryProfile.movement) && (
+                  <div className="py-2.5 grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-1 sm:gap-4">
+                    <dt className="text-xs text-slate-400 font-medium">
+                      {isBio ? 'Роль и направление' : 'Жанр и направление'}
+                    </dt>
+                    <dd className="text-slate-100 leading-relaxed">
+                      {[card.literaryProfile.genre, card.literaryProfile.movement]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </dd>
+                  </div>
+                )}
+
+                {card.literaryProfile.themes && (
+                  <div className="py-2.5 grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-1 sm:gap-4">
+                    <dt className="text-xs text-slate-400 font-medium">
+                      {isBio ? 'Сквозная тематика' : 'Темы и проблематика'}
+                    </dt>
+                    <dd className="text-slate-200 leading-relaxed">{card.literaryProfile.themes}</dd>
+                  </div>
+                )}
+
+                {card.literaryProfile.publicationFate && (
+                  <div className="py-2.5 grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-1 sm:gap-4">
+                    <dt className="text-xs text-slate-400 font-medium">
+                      {isBio ? 'Журналы и публикационная судьба' : 'Судьба текста и издания'}
+                    </dt>
+                    <dd className="text-slate-200 leading-relaxed">
+                      {card.literaryProfile.publicationFate}
+                    </dd>
+                  </div>
+                )}
+
+                {card.literaryProfile.culturalImpact && (
+                  <div className="py-2.5 grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-1 sm:gap-4">
+                    <dt className="text-xs text-slate-400 font-medium">
+                      {isBio ? 'Влияние и наследие' : 'Культурное и историческое влияние'}
+                    </dt>
+                    <dd className="text-slate-200 leading-relaxed">
+                      {card.literaryProfile.culturalImpact}
+                    </dd>
+                  </div>
+                )}
+
+                {card.literaryProfile.majorWorks && card.literaryProfile.majorWorks.length > 0 && (
+                  <div className="py-2.5 grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-1 sm:gap-4">
+                    <dt className="text-xs text-slate-400 font-medium">
+                      Корпус главных произведений
+                    </dt>
+                    <dd className="text-slate-200 leading-relaxed">
+                      <ul className="space-y-1">
+                        {card.literaryProfile.majorWorks.map((workTitle, idx) => (
+                          <li key={idx} className="flex items-start gap-2">
+                            <span className="text-rose-400/80 select-none">·</span>
+                            <span>{workTitle}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+
           {/* Развёрнутое историческое описание */}
           <div className="rounded-xl bg-slate-900/75 border border-slate-800 p-4 space-y-2">
             <div className="text-xs font-mono uppercase tracking-wider text-slate-400">
-              Историческая справка и контекст
+              {isWork || isBio
+                ? 'Историко-литературная справка и контекст'
+                : 'Историческая справка и контекст'}
             </div>
             <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">
               {card.details}
@@ -434,7 +616,13 @@ export function CardDetailModal({
               <div className="flex items-center justify-between gap-2">
                 <div className="text-xs font-mono uppercase tracking-wider text-amber-300 flex items-center gap-2 font-bold">
                   <GitBranch className="w-4 h-4 text-amber-400" />
-                  <span>Хронология ключевых этапов ({card.subEvents.length})</span>
+                  <span>
+                    {isWork
+                      ? `История замысла, создания и публикаций (${card.subEvents.length})`
+                      : isBio
+                        ? `Этапы жизни и творческого пути (${card.subEvents.length})`
+                        : `Хронология ключевых этапов (${card.subEvents.length})`}
+                  </span>
                 </div>
                 <span className="text-[11px] font-mono text-slate-400 tabular-nums">
                   {card.period}
@@ -452,9 +640,11 @@ export function CardDetailModal({
                       className="w-3 h-3 rounded-full bg-slate-950 border-2 border-amber-400 absolute -left-[19px] top-3.5"
                     />
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 font-mono text-xs font-bold text-amber-300 tabular-nums">
-                        {sub.year}
-                      </span>
+                      {sub.year !== undefined && sub.year !== '' && (
+                        <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 font-mono text-xs font-bold text-amber-300 tabular-nums">
+                          {sub.year}
+                        </span>
+                      )}
                       <span className="text-xs sm:text-sm font-bold text-white">{sub.title}</span>
                     </div>
                     <p className="text-xs text-slate-300 leading-relaxed">{sub.text}</p>
@@ -517,13 +707,18 @@ export function CardDetailModal({
           </div>
 
           {/* Наглядная схема связей: 3 смысловых блока (Предпосылки / Следствия / Культурный и научный след) */}
-          {(prerequisiteLinks.length > 0 ||
-            consequenceLinks.length > 0 ||
-            culturalReflectionItems.length > 0) && (
+          {totalUniqueLinksCount > 0 && (
             <div className="rounded-xl bg-slate-900/65 border border-emerald-500/30 p-4 space-y-4">
-              <div className="text-xs font-mono uppercase tracking-wider text-emerald-300 flex items-center gap-2 font-bold">
-                <Link2 className="w-4 h-4 text-emerald-400" />
-                <span>Наглядная схема исторических связей</span>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs font-mono uppercase tracking-wider text-emerald-300 flex items-center gap-2 font-bold">
+                  <Link2 className="w-4 h-4 text-emerald-400" />
+                  <span>Наглядная схема исторических связей ({totalUniqueLinksCount})</span>
+                </div>
+                {hiddenBranchLinksCount > 0 && (
+                  <span className="text-[11px] font-mono text-amber-300 tabular-nums">
+                    В скрытых ветках таймлайна: {hiddenBranchLinksCount}
+                  </span>
+                )}
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
@@ -537,32 +732,64 @@ export function CardDetailModal({
                     <div className="space-y-2">
                       {prerequisiteLinks.map((item, idx) => {
                         const ob = branches.find((b) => b.id === item.otherEvent.task);
+                        const hiddenBranch = isBranchHidden(item.otherEvent);
                         return (
-                          <button
+                          <div
                             key={`${item.otherId}-pre-${idx}`}
-                            type="button"
-                            onClick={() => onSelectCard(item.otherId)}
-                            className="w-full text-left p-2.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-sky-400/50 transition-all cursor-pointer space-y-1"
+                            className={`rounded-lg bg-slate-900/90 border transition-all ${
+                              hiddenBranch
+                                ? 'border-amber-500/40 hover:border-amber-400/60'
+                                : 'border-slate-800 hover:border-sky-400/50'
+                            }`}
                           >
-                            <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
-                              <span style={{ color: ob?.color ?? '#38bdf8' }} className="font-bold">
-                                {item.otherEvent.period}
-                              </span>
-                              <span className="text-slate-400 truncate">{ob?.short}</span>
-                            </div>
-                            <div className="text-xs font-bold text-white leading-snug">
-                              {item.otherEvent.title}
-                            </div>
-                            <div className="text-[11px] text-slate-400 leading-snug">
-                              {item.label}
-                            </div>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => onSelectCard(item.otherId)}
+                              className="w-full text-left p-2.5 hover:bg-slate-800/70 rounded-lg transition-colors cursor-pointer space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
+                                <span
+                                  style={{ color: ob?.color ?? '#38bdf8' }}
+                                  className="font-bold tabular-nums"
+                                >
+                                  {item.otherEvent.period}
+                                </span>
+                                <span className="text-slate-400 truncate">{ob?.short}</span>
+                              </div>
+                              <div className="text-[11px] font-mono text-sky-300 font-semibold flex items-center gap-1.5">
+                                <span aria-hidden="true">{item.directionMark}</span>
+                                <span>{item.badge}</span>
+                              </div>
+                              <div className="text-xs font-bold text-white leading-snug">
+                                {item.otherEvent.title}
+                              </div>
+                              <div className="text-[11px] text-slate-400 leading-snug">
+                                {item.label}
+                              </div>
+                            </button>
+                            {hiddenBranch && (
+                              <div className="px-2.5 pb-2 pt-1 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px] font-mono">
+                                <span className="text-amber-300/90 truncate">
+                                  Скрытая ветка: {ob?.label ?? item.otherEvent.task}
+                                </span>
+                                {onRevealBranch && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onRevealBranch(item.otherEvent.task)}
+                                    className="text-amber-300 hover:text-amber-200 underline decoration-amber-400/40 underline-offset-2 shrink-0 cursor-pointer"
+                                  >
+                                    Включить ветку
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
                   ) : (
                     <div className="text-xs text-slate-500 py-2">
-                      Нет выделенных предшествующих узлов
+                      Нет выделенных предшествующих событий
                     </div>
                   )}
                 </div>
@@ -577,32 +804,64 @@ export function CardDetailModal({
                     <div className="space-y-2">
                       {consequenceLinks.map((item, idx) => {
                         const ob = branches.find((b) => b.id === item.otherEvent.task);
+                        const hiddenBranch = isBranchHidden(item.otherEvent);
                         return (
-                          <button
+                          <div
                             key={`${item.otherId}-cons-${idx}`}
-                            type="button"
-                            onClick={() => onSelectCard(item.otherId)}
-                            className="w-full text-left p-2.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-emerald-400/50 transition-all cursor-pointer space-y-1"
+                            className={`rounded-lg bg-slate-900/90 border transition-all ${
+                              hiddenBranch
+                                ? 'border-amber-500/40 hover:border-amber-400/60'
+                                : 'border-slate-800 hover:border-emerald-400/50'
+                            }`}
                           >
-                            <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
-                              <span style={{ color: ob?.color ?? '#34d399' }} className="font-bold">
-                                {item.otherEvent.period}
-                              </span>
-                              <span className="text-slate-400 truncate">{ob?.short}</span>
-                            </div>
-                            <div className="text-xs font-bold text-white leading-snug">
-                              {item.otherEvent.title}
-                            </div>
-                            <div className="text-[11px] text-slate-400 leading-snug">
-                              {item.label}
-                            </div>
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => onSelectCard(item.otherId)}
+                              className="w-full text-left p-2.5 hover:bg-slate-800/70 rounded-lg transition-colors cursor-pointer space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
+                                <span
+                                  style={{ color: ob?.color ?? '#34d399' }}
+                                  className="font-bold tabular-nums"
+                                >
+                                  {item.otherEvent.period}
+                                </span>
+                                <span className="text-slate-400 truncate">{ob?.short}</span>
+                              </div>
+                              <div className="text-[11px] font-mono text-emerald-300 font-semibold flex items-center gap-1.5">
+                                <span aria-hidden="true">{item.directionMark}</span>
+                                <span>{item.badge}</span>
+                              </div>
+                              <div className="text-xs font-bold text-white leading-snug">
+                                {item.otherEvent.title}
+                              </div>
+                              <div className="text-[11px] text-slate-400 leading-snug">
+                                {item.label}
+                              </div>
+                            </button>
+                            {hiddenBranch && (
+                              <div className="px-2.5 pb-2 pt-1 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px] font-mono">
+                                <span className="text-amber-300/90 truncate">
+                                  Скрытая ветка: {ob?.label ?? item.otherEvent.task}
+                                </span>
+                                {onRevealBranch && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onRevealBranch(item.otherEvent.task)}
+                                    className="text-amber-300 hover:text-amber-200 underline decoration-amber-400/40 underline-offset-2 shrink-0 cursor-pointer"
+                                  >
+                                    Включить ветку
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
                   ) : (
                     <div className="text-xs text-slate-500 py-2">
-                      Прямые следствия отражены в паспорте события
+                      Выделенных следствий по связям не зафиксировано
                     </div>
                   )}
                 </div>
@@ -618,34 +877,63 @@ export function CardDetailModal({
                       {culturalReflectionItems.map((item, idx) => {
                         const ob = branches.find((b) => b.id === item.otherEvent.task);
                         const isSci = isScienceDiscoveryNode(item.otherEvent);
+                        const hiddenBranch = isBranchHidden(item.otherEvent);
                         return (
-                          <button
+                          <div
                             key={`${item.otherId}-cult-${idx}`}
-                            type="button"
-                            onClick={() => onSelectCard(item.otherId)}
-                            className="w-full text-left p-2.5 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-800 hover:border-amber-400/50 transition-all cursor-pointer space-y-1"
+                            className={`rounded-lg bg-slate-900/90 border transition-all ${
+                              hiddenBranch
+                                ? 'border-amber-500/50 hover:border-amber-400/70'
+                                : 'border-slate-800 hover:border-amber-400/50'
+                            }`}
                           >
-                            <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
-                              <span
-                                style={{ color: ob?.color ?? '#fbbf24' }}
-                                className="font-bold inline-flex items-center gap-1"
-                              >
-                                {isSci ? (
-                                  <FlaskConical className="w-3 h-3" />
-                                ) : (
-                                  <BookOpen className="w-3 h-3" />
+                            <button
+                              type="button"
+                              onClick={() => onSelectCard(item.otherId)}
+                              className="w-full text-left p-2.5 hover:bg-slate-800/70 rounded-lg transition-colors cursor-pointer space-y-1"
+                            >
+                              <div className="flex items-center justify-between gap-1 text-[10px] font-mono">
+                                <span
+                                  style={{ color: ob?.color ?? '#fbbf24' }}
+                                  className="font-bold inline-flex items-center gap-1 tabular-nums"
+                                >
+                                  {isSci ? (
+                                    <FlaskConical className="w-3 h-3" />
+                                  ) : (
+                                    <BookOpen className="w-3 h-3" />
+                                  )}
+                                  {item.otherEvent.period}
+                                </span>
+                                <span className="text-slate-400 truncate">{ob?.short}</span>
+                              </div>
+                              <div className="text-[11px] font-mono text-amber-300/95 font-semibold flex items-center gap-1.5">
+                                <span aria-hidden="true">{item.directionMark}</span>
+                                <span className="truncate">{item.badge}</span>
+                              </div>
+                              <div className="text-xs font-bold text-white leading-snug">
+                                {item.otherEvent.title}
+                              </div>
+                              <div className="text-[11px] text-slate-400 leading-snug">
+                                {item.label}
+                              </div>
+                            </button>
+                            {hiddenBranch && (
+                              <div className="px-2.5 pb-2 pt-1 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px] font-mono">
+                                <span className="text-amber-300/90 truncate">
+                                  Скрытая ветка: {ob?.label ?? item.otherEvent.task}
+                                </span>
+                                {onRevealBranch && (
+                                  <button
+                                    type="button"
+                                    onClick={() => onRevealBranch(item.otherEvent.task)}
+                                    className="text-amber-300 hover:text-amber-200 underline decoration-amber-400/40 underline-offset-2 shrink-0 cursor-pointer"
+                                  >
+                                    Включить ветку
+                                  </button>
                                 )}
-                                {item.otherEvent.period}
-                              </span>
-                              <span className="text-amber-300/90 truncate">{item.badge}</span>
-                            </div>
-                            <div className="text-xs font-bold text-white leading-snug">
-                              {item.otherEvent.title}
-                            </div>
-                            <div className="text-[11px] text-slate-400 leading-snug">
-                              {item.label}
-                            </div>
-                          </button>
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
@@ -662,14 +950,30 @@ export function CardDetailModal({
           {/* Параллельные процессы в других ветках */}
           {card.concurrentEvents.length > 0 && (
             <div className="rounded-xl bg-slate-900/60 border border-slate-800 p-4 space-y-3">
-              <div className="text-xs font-mono uppercase tracking-wider text-sky-400 flex items-center gap-2">
-                <Layers className="w-3.5 h-3.5" />
-                <span>
-                  Синхронные события в других ветках ({card.concurrentEvents.length})
-                </span>
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs font-mono uppercase tracking-wider text-sky-400 flex items-center gap-2">
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>
+                    Синхронные события в других ветках ({card.concurrentEvents.length})
+                  </span>
+                </div>
+                {card.concurrentEvents.length > 12 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllConcurrent((prev) => !prev)}
+                    className="text-xs font-mono text-sky-300 hover:text-sky-200 underline decoration-sky-400/40 underline-offset-2 cursor-pointer"
+                  >
+                    {showAllConcurrent
+                      ? 'Свернуть до 12'
+                      : `Показать все ${card.concurrentEvents.length}`}
+                  </button>
+                )}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {card.concurrentEvents.slice(0, 12).map((other) => {
+                {(showAllConcurrent
+                  ? card.concurrentEvents
+                  : card.concurrentEvents.slice(0, 12)
+                ).map((other) => {
                   const ob = branches.find((b) => b.id === other.task);
                   return (
                     <button

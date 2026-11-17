@@ -511,6 +511,18 @@ export default function App() {
 
     if (!isEventBranchActive(target, activeBranches)) {
       setActiveBranches((prev) => ({ ...prev, [target.task]: true }));
+      const branch = branches.find((b) => b.id === target.task);
+      if (branch?.parentBranchId) {
+        setCollapsedParents((prev) => {
+          const updated = { ...prev };
+          let cur: BranchDefinition | undefined = branch;
+          while (cur?.parentBranchId) {
+            updated[cur.parentBranchId] = false;
+            cur = branches.find((item) => item.id === cur!.parentBranchId);
+          }
+          return updated;
+        });
+      }
       adjustments.push('включена ветка');
     }
 
@@ -630,6 +642,30 @@ export default function App() {
     });
   }
 
+  function handleRevealBranch(branchId: string) {
+    const branch = branches.find((b) => b.id === branchId);
+    preserveViewportScrollAnchor(() => {
+      setActiveBranches((prev) => ({
+        ...prev,
+        [branchId]: true,
+      }));
+      if (branch?.parentBranchId) {
+        setCollapsedParents((prev) => {
+          const updated = { ...prev };
+          let cur: BranchDefinition | undefined = branch;
+          while (cur?.parentBranchId) {
+            updated[cur.parentBranchId] = false;
+            cur = branches.find((item) => item.id === cur!.parentBranchId);
+          }
+          return updated;
+        });
+      }
+    });
+    if (branch) {
+      showToast(`Включена ветвь: «${branch.label}».`);
+    }
+  }
+
   function handleToggleBranchCategory(branchIds: string[], enable: boolean) {
     preserveViewportScrollAnchor(() => {
       setActiveBranches((prev) => {
@@ -718,8 +754,8 @@ export default function App() {
     return (
       <div className="min-h-screen bg-[#050811] text-slate-100 flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-slate-900 border border-rose-500/40 rounded-2xl p-6 text-center space-y-4">
-          <h2 className="text-lg font-bold text-white">Не удалось загрузить файлы ветвей</h2>
-          <p className="text-sm text-slate-300">{loadError || 'Файл синхронизации недоступен.'}</p>
+          <h2 className="text-lg font-bold text-white">Не удалось загрузить данные хронографа</h2>
+          <p className="text-sm text-slate-300">{loadError || 'Каталог исторических данных временно недоступен.'}</p>
           <button
             type="button"
             onClick={() => void loadRepositoryData()}
@@ -881,6 +917,7 @@ export default function App() {
         enrichedEvents={enrichedEvents}
         matchingEvents={matchingEvents}
         branches={branches}
+        activeBranches={activeBranches}
         eras={manifest.macroEras}
         focusedEventId={focusedEventId}
         modalHistory={modalHistory}
@@ -888,8 +925,24 @@ export default function App() {
         onNavigateBack={handleModalNavigateBack}
         onSelectCard={handleOpenCardModal}
         onJumpToTimelineRow={handleJumpToEvent}
+        onRevealBranch={handleRevealBranch}
         onToggleFocusEvent={handleToggleFocusEvent}
         onFilterByRuler={handleSelectReign}
+        onFilterByPerson={(personName) => {
+          const cleanName = personName.replace(/\s*\([^)]*\)\s*/g, '').trim() || personName;
+          setFocusedEventId(null);
+          setSelectedEra('ALL');
+          setSelectedReign('ALL');
+          setYearFrom(timelineBounds.minYear);
+          setYearTo(timelineBounds.maxYear);
+          setActiveBranches((prev) => ({
+            ...prev,
+            ...computeBranchPresetMap(branches, 'all'),
+          }));
+          setSearchQuery(cleanName);
+          setIsFiltersCollapsed(false);
+          showToast(`Поиск по исторической личности: «${cleanName}» (включены все ветки)`);
+        }}
         onOpenRulerModal={handleOpenPeriodModal}
         onOpenEraModal={handleOpenEraModal}
       />

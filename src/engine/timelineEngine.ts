@@ -448,22 +448,38 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
     ? raw.subEvents
         .filter((se): se is Record<string, unknown> => isPlainRecord(se) && typeof se.title === 'string')
         .map((se) => {
+          const cleanTitle = (se.title as string).trim();
           const textVal =
             typeof se.text === 'string' && se.text.trim()
               ? se.text.trim()
               : typeof se.description === 'string'
                 ? se.description.trim()
                 : '';
-          const yearVal =
-            typeof se.year === 'number' || typeof se.year === 'string'
+          let yearVal: number | string | undefined =
+            typeof se.year === 'number' || (typeof se.year === 'string' && se.year.trim().length > 0)
               ? se.year
-              : typeof se.dateLabel === 'string'
-                ? se.dateLabel
+              : typeof se.dateLabel === 'string' && se.dateLabel.trim().length > 0
+                ? se.dateLabel.trim()
                 : undefined;
+
+          if (yearVal === undefined) {
+            const parenMatch = cleanTitle.match(/\(([^)]*\b\d{3,4}\b[^)]*)\)/);
+            if (parenMatch) {
+              yearVal = parenMatch[1].trim();
+            } else {
+              const yearMatch = cleanTitle.match(/\b(\d{3,4})\b/);
+              if (yearMatch) {
+                yearVal = Number(yearMatch[1]);
+              } else if (hasStartYear) {
+                yearVal = raw.startYear as number;
+              }
+            }
+          }
+
           return {
             year: yearVal,
             dateLabel: typeof se.dateLabel === 'string' ? se.dateLabel : undefined,
-            title: (se.title as string).trim(),
+            title: cleanTitle,
             text: textVal,
             description: typeof se.description === 'string' ? se.description : undefined,
           };
@@ -503,6 +519,35 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
           .filter(Boolean)
       : undefined;
 
+  const rawLit = isPlainRecord(raw.literaryProfile) ? raw.literaryProfile : null;
+  const literaryProfile = rawLit
+    ? {
+        genre:
+          typeof rawLit.genre === 'string' && rawLit.genre.trim().length > 0
+            ? rawLit.genre.trim()
+            : undefined,
+        movement:
+          typeof rawLit.movement === 'string' && rawLit.movement.trim().length > 0
+            ? rawLit.movement.trim()
+            : undefined,
+        themes:
+          typeof rawLit.themes === 'string' && rawLit.themes.trim().length > 0
+            ? rawLit.themes.trim()
+            : undefined,
+        publicationFate:
+          typeof rawLit.publicationFate === 'string' && rawLit.publicationFate.trim().length > 0
+            ? rawLit.publicationFate.trim()
+            : undefined,
+        culturalImpact:
+          typeof rawLit.culturalImpact === 'string' && rawLit.culturalImpact.trim().length > 0
+            ? rawLit.culturalImpact.trim()
+            : undefined,
+        majorWorks: Array.isArray(rawLit.majorWorks)
+          ? rawLit.majorWorks.filter((w): w is string => typeof w === 'string' && w.trim().length > 0)
+          : undefined,
+      }
+    : undefined;
+
   return {
     id,
     startYear: hasStartYear ? (raw.startYear as number) : undefined,
@@ -516,6 +561,16 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
     details: typeof raw.details === 'string' ? raw.details : '',
     outcome,
     keyFigures,
+    literaryProfile:
+      literaryProfile &&
+      (literaryProfile.genre ||
+        literaryProfile.movement ||
+        literaryProfile.themes ||
+        literaryProfile.publicationFate ||
+        literaryProfile.culturalImpact ||
+        (literaryProfile.majorWorks && literaryProfile.majorWorks.length > 0))
+        ? literaryProfile
+        : undefined,
     eventType: typeof raw.eventType === 'string' ? raw.eventType : undefined,
     task,
     region: typeof raw.region === 'string' ? raw.region : '',
@@ -594,11 +649,11 @@ export async function fetchTimelineRepository(): Promise<{
 }> {
   const manifestRes = await fetch('./data/sync.manifest.json', { cache: 'no-store' });
   if (!manifestRes.ok) {
-    throw new Error(`Не удалось загрузить файл синхронизации (HTTP ${manifestRes.status})`);
+    throw new Error(`Не удалось загрузить каталог хронографа (HTTP ${manifestRes.status})`);
   }
   const rawManifest = (await manifestRes.json()) as Partial<SyncManifest>;
   const manifest: SyncManifest = {
-    project: rawManifest.project || 'Git-таймлайн',
+    project: rawManifest.project || 'Исторический хронограф',
     schemaVersion: rawManifest.schemaVersion || '2.0.0',
     timeAxis: rawManifest.timeAxis || {
       minYear: 862,
@@ -777,7 +832,7 @@ export function extractBranchesFromStore(
         short: node.task.toLowerCase(),
         category: 'other',
         sourceFile: meta.path,
-        description: `Автоматически созданная ветка для узлов с task="${node.task}"`,
+        description: `Тематическая линия для событий раздела «${node.task}»`,
         color: pickFallbackBranchColor(node.task),
         badgeClass: 'bg-slate-500/15 text-slate-300 border-slate-500/40',
         isMilitary: false,
@@ -851,12 +906,16 @@ export function getEnrichedEvents(
         ev.linksTo.forEach((lnk, idx) => {
           if (!lnk?.targetId) return;
           const rawType = lnk.type || 'sync_context';
+          // Семантика 'consequence': текущий узел (ev) является следствием целевого узла (targetId),
+          // поэтому вектор причины направлен targetId -> ev.id.
+          // Для 'causes', 'triggers', 'enables' вектор направлен ev.id -> targetId.
+          const isConsequenceOfTarget = rawType === 'consequence';
           const normalizedType =
-            rawType === 'consequence' ? 'triggers' : rawType === 'causes' ? 'triggers' : rawType;
+            rawType === 'consequence' || rawType === 'causes' ? 'triggers' : rawType;
           inlineCrossLinks.push({
             id: `inline-${ev.id}-${lnk.targetId}-${idx}`,
-            from: ev.id,
-            to: lnk.targetId,
+            from: isConsequenceOfTarget ? lnk.targetId : ev.id,
+            to: isConsequenceOfTarget ? ev.id : lnk.targetId,
             type: normalizedType,
             label: lnk.label || 'Связанное событие',
           });
@@ -926,14 +985,30 @@ export function getEnrichedEvents(
     ...inlineCrossLinks,
   ];
 
+  // Сначала фиксируем пары, уже связанные направленной причинной связью (triggers/enables),
+  // чтобы избыточный недирективный sync_context для той же пары не дублировал карточку в Колонке 1.
+  const causalPairKeys = new Set<string>();
   combinedRawLinks.forEach((lnk) => {
     if (!lnk.from || !lnk.to || lnk.from === lnk.to) return;
-    const signature = `${lnk.from}|${lnk.to}|${lnk.type}`;
+    if (lnk.type === 'triggers' || lnk.type === 'enables') {
+      const pairKey = lnk.from < lnk.to ? `${lnk.from}|${lnk.to}` : `${lnk.to}|${lnk.from}`;
+      causalPairKeys.add(pairKey);
+    }
+  });
+
+  combinedRawLinks.forEach((lnk) => {
+    if (!lnk.from || !lnk.to || lnk.from === lnk.to) return;
+    const pairKey = lnk.from < lnk.to ? `${lnk.from}|${lnk.to}` : `${lnk.to}|${lnk.from}`;
+    if (lnk.type === 'sync_context' && causalPairKeys.has(pairKey)) {
+      return;
+    }
+    const signature =
+      lnk.type === 'sync_context'
+        ? `${pairKey}|sync_context`
+        : `${lnk.from}|${lnk.to}|${lnk.type}`;
     if (seenLinkSignatures.has(signature)) return;
     seenLinkSignatures.add(signature);
     explicitLinks.push(lnk);
-
-    const pairKey = lnk.from < lnk.to ? `${lnk.from}|${lnk.to}` : `${lnk.to}|${lnk.from}`;
     explicitPairKeys.add(pairKey);
   });
 
@@ -990,22 +1065,192 @@ export function getEnrichedEvents(
     }
   });
 
+  const TAG_HUMAN_LABELS: Record<string, string> = {
+    kulikovo: 'Куликовская битва (1380)',
+    napoleonic: 'Наполеоновские войны и 1812 год',
+    'northern-war': 'Великая Северная война (1700–1721)',
+    smuta: 'Смутное время',
+    'topic-silver-age': 'Серебряный век русской культуры',
+    ww1: 'Первая мировая война (1914–1918)',
+    ww2: 'Великая Отечественная и Вторая мировая война',
+    'person-akhmatova-anna': 'А. А. Ахматова',
+    'person-alferov': 'Ж. И. Алфёров',
+    'person-avvakum-petrov': 'протопоп Аввакум',
+    'person-blok-alexander': 'А. А. Блок',
+    'person-bulgakov-mikhail': 'М. А. Булгаков',
+    'person-bunin-ivan': 'И. А. Бунин',
+    'person-chekhov-anton': 'А. П. Чехов',
+    'person-derzhavin-gavrila': 'Г. Р. Державин',
+    'person-dostoevsky-fyodor': 'Ф. М. Достоевский',
+    'person-fet-afanasy': 'А. А. Фет',
+    'person-fonvizin-denis': 'Д. И. Фонвизин',
+    'person-gogol-nikolay': 'Н. В. Гоголь',
+    'person-goncharov-ivan': 'И. А. Гончаров',
+    'person-gorky-maxim': 'М. Горький',
+    'person-griboedov-aleksandr': 'А. С. Грибоедов',
+    'person-kapitsa': 'П. Л. Капица',
+    'person-karamzin-nikolay': 'Н. М. Карамзин',
+    'person-korolev': 'С. П. Королёв',
+    'person-krylov-ivan': 'И. А. Крылов',
+    'person-kulibin': 'И. П. Кулибин',
+    'person-kurchatov': 'И. В. Курчатов',
+    'person-lermontov-mikhail': 'М. Ю. Лермонтов',
+    'person-leskov-nikolay': 'Н. С. Лесков',
+    'person-lobachevsky': 'Н. И. Лобачевский',
+    'person-lomonosov': 'М. В. Ломоносов',
+    'person-mayakovsky-vladimir': 'В. В. Маяковский',
+    'person-mendeleev': 'Д. И. Менделеев',
+    'person-nabokov-vladimir': 'В. В. Набоков',
+    'person-nekrasov-nikolay': 'Н. А. Некрасов',
+    'person-nestor-chronicler': 'Нестор Летописец',
+    'person-ostrovsky-aleksandr': 'А. Н. Островский',
+    'person-pasternak-boris': 'Б. Л. Пастернак',
+    'person-pavlov': 'И. П. Павлов',
+    'person-pirogov': 'Н. И. Пирогов',
+    'person-popov': 'А. С. Попов',
+    'person-pushkin-alexander': 'А. С. Пушкин',
+    'person-sakharov': 'А. Д. Сахаров',
+    'person-saltykov-shchedrin-mikhail': 'М. Е. Салтыков-Щедрин',
+    'person-sechenov': 'И. М. Сеченов',
+    'person-sholokhov-mikhail': 'М. А. Шолохов',
+    'person-sofoniy-ryazanets': 'Софоний Рязанец',
+    'person-solzhenitsyn-alexander': 'А. И. Солженицын',
+    'person-tolstoy-leo': 'Л. Н. Толстой',
+    'person-tsiolkovsky': 'К. Э. Циолковский',
+    'person-tsvetaeva-marina': 'М. И. Цветаева',
+    'person-turgenev-ivan': 'И. С. Тургенев',
+    'person-tyutchev-fyodor': 'Ф. И. Тютчев',
+    'person-vernadsky': 'В. И. Вернадский',
+    'person-yesenin-sergey': 'С. А. Есенин',
+    'person-zhukovsky-vasily': 'В. А. Жуковский',
+    'reform-assignats': 'выпуск ассигнаций и губернская реформа',
+    'reform-chosen-council': 'реформы Избранной рады',
+    'reform-church-schism': 'церковная реформа и раскол XVII века',
+    'reform-customs-1754': 'отмена внутренних таможен и модернизация середины XVIII века',
+    'reform-glinskaya-money': 'денежная реформа Елены Глинской',
+    'reform-great-reforms': 'Великие реформы Александра II',
+    'reform-industrialization': 'план ГОЭЛРО и советская индустриализация',
+    'reform-kankrin-money': 'денежная реформа Е. Ф. Канкрина',
+    'reform-kosygin-1965': 'Косыгинская экономическая реформа',
+    'reform-market-1990s': 'рыночные реформы 1990-х годов',
+    'reform-ministries': 'министерская реформа Александра I',
+    'reform-new-trade-statute': 'Новоторговый устав 1667 года',
+    'reform-nuclear-project': 'советский Атомный проект',
+    'reform-oil-boom': 'освоение Западной Сибири и нефтегазовый бум 1970-х',
+    'reform-olga-pogosts': 'налоговая реформа княгини Ольги',
+    'reform-oprichnina': 'Опричнина Ивана Грозного',
+    'reform-perestroika-eco': 'экономические реформы Перестройки',
+    'reform-peter-army': 'военная и флотская реформа Петра I',
+    'reform-poll-tax': 'введение подушной подати и Табель о рангах',
+    'reform-russkaya-pravda': '«Русская Правда»',
+    'reform-rvsn': 'создание РВСН и ракетного щита',
+    'reform-sobornoye-ulozhenie': 'Соборное уложение 1649 года',
+    'reform-stolypin': 'Столыпинская аграрная реформа и Государственная дума',
+    'reform-sudebnik-1497': 'Судебник 1497 года',
+    'reform-war-communism': 'политика «военного коммунизма» и НЭП',
+    'reform-witte-transsib': 'денежная реформа С. Ю. Витте и строительство Транссиба',
+    'treaty-aigun-beijing': 'Айгунский и Пекинский договоры',
+    'treaty-belovezha': 'Беловежские соглашения и Будапештский меморандум',
+    'treaty-brest-1918': 'Брестский, Рижский и Рапалльский договоры',
+    'treaty-byzantium-911': 'русско-византийские договоры 911 и 944 годов',
+    'treaty-eternal-peace-1686': '«Вечный мир» 1686 года',
+    'treaty-jassy-1791': 'Ясский мир 1791 года и разделы Речи Посполитой',
+    'treaty-kuchuk-kainarji': 'Кючук-Кайнарджийский мир и присоединение Крыма',
+    'treaty-liubech-1097': 'Любечский и Долобский съезды князей',
+    'treaty-molotov-ribbentrop': 'советско-германские пакты 1939 года',
+    'treaty-moscow-sovereignty': 'европейская дипломатия Ивана III',
+    'treaty-nerchinsk-1689': 'Нерчинский договор 1689 года',
+    'treaty-nystad': 'Ништадтский мир 1721 года',
+    'treaty-paris-berlin': 'Парижский трактат и Лондонская конвенция',
+    'treaty-pereyaslav-andrusovo': 'Переяславская рада и Андрусовское перемирие',
+    'treaty-portsmouth-1905': 'Портсмутский мир 1905 года',
+    'treaty-salt-abm': 'договоры ОСВ-1 и ПРО 1972 года',
+    'treaty-stolbovo-deulino': 'Столбовский, Деулинский и Поляновский договоры',
+    'treaty-tilsit': 'Тильзитский, Фридрихсгамский и Бухарестский договоры',
+    'treaty-yalta-potsdam': 'Ялтинская и Потсдамская конференции 1945 года',
+    'war-crimean': 'Крымская война (1853–1856)',
+    'war-great-northern': 'Великая Северная война (1700–1721)',
+    'war-kulikovo-1380': 'Куликовская битва (1380)',
+    'war-polovtsian-steppe': 'степные походы против половцев',
+    'war-rus-byzantine': 'русско-византийские походы и договоры X века',
+    'war-rus-jap': 'Русско-японская война (1904–1905)',
+    'war-rus-turk-1877': 'Русско-турецкая война (1877–1878)',
+    'war-ww2-eastern': 'Великая Отечественная война (1941–1945)',
+    'world-austrian-succession': 'Война за австрийское наследство',
+    'world-axis-munich': 'подъём стран «Оси» и Мюнхенский сговор',
+    'world-constantinople-1453': 'падение Константинополя и автокефалия Русской церкви',
+    'world-crusade-1204': 'Четвёртый крестовый поход и натиск на Прибалтику',
+    'world-discovery-reformation': 'Великие географические открытия и Реформация',
+    'world-entente-1907': 'оформление Антанты и Тройственного союза',
+    'world-french-rev': 'война за независимость США и Французская революция',
+    'world-german-unification': 'объединение Германии в 1870–1871 годах',
+    'world-glorious-rev': '«Славная революция» и Война Аугсбургской лиги',
+    'world-great-depression': 'Великая депрессия 1929–1933 годов',
+    'world-great-schism-1054': 'Великая схизма 1054 года',
+    'world-helsinki-1975': 'Хельсинкские соглашения и эпоха Разрядки',
+    'world-nato-1999': 'расширение НАТО и распад социалистического блока',
+    'world-spanish-succession': 'Война за испанское наследство',
+    'world-spring-of-nations': 'европейские революции 1848–1849 годов («Весна народов»)',
+    'world-versailles': 'Версальско-Вашингтонская система',
+    'world-vienna-congress': 'Венский конгресс и «Священный союз»',
+    'world-warsaw-pact': 'создание ОВД и блоковое противостояние',
+    'world-westphalia-1648': 'Тридцатилетняя война и Вестфальский мир',
+    'world-yalta-nato': 'начало Холодной войны и создание НАТО',
+  };
+
+  const rulerLabelByTag = new Map<string, string>();
+  rulers.forEach((r) => {
+    rulerLabelByTag.set(r.id.toLowerCase(), r.shortRuler);
+  });
+  rulerLabelByTag.set('ruler-ryurik', rulerLabelByTag.get('ruler-rurik') || 'Рюрик');
+
+  const eraLabelByTag = new Map<string, string>();
+  resolvedEras.forEach((era) => {
+    const rawKey = era.id.toLowerCase();
+    eraLabelByTag.set(rawKey, era.displayShortTitle);
+    eraLabelByTag.set(rawKey.replace(/_/g, '-'), era.displayShortTitle);
+  });
+
+  const resolveHumanTagLabel = (rawTag: string): string => {
+    const tag = rawTag.trim().toLowerCase();
+    if (TAG_HUMAN_LABELS[tag]) return TAG_HUMAN_LABELS[tag];
+    if (tag.startsWith('event-')) {
+      const targetNode = byId.get(tag.slice('event-'.length));
+      if (targetNode) return `«${targetNode.title}»`;
+    }
+    if (eraLabelByTag.has(tag)) {
+      return `эпоха «${eraLabelByTag.get(tag)}»`;
+    }
+    if (rulerLabelByTag.has(tag)) {
+      return `правление (${rulerLabelByTag.get(tag)})`;
+    }
+    return 'общему историческому сюжету';
+  };
+
+  const formatHumanTagList = (tags: string[]): string => {
+    const resolved = Array.from(new Set(tags.map(resolveHumanTagLabel).filter(Boolean)));
+    return resolved.join(', ');
+  };
+
   const autoSyncLinks: Array<CrossLink & { isAutoSync: boolean; syncTag: string; isRetrospective?: boolean }> = [];
   autoSyncByPair.forEach(({ from, to, tags }, pairKey) => {
-    const formattedTags = tags.map((t) => `#${t}`).join(', ');
+    const formattedTags = formatHumanTagList(tags);
     autoSyncLinks.push({
       id: `auto-sync-${pairKey}`,
       from: from.id,
       to: to.id,
       type: 'sync_context',
-      label: `Авто-синхронизация по общему тегу кампании (${formattedTags})`,
+      label:
+        tags.length > 1
+          ? `Синхронная взаимосвязь по сюжетам: ${formattedTags}`
+          : `Синхронная взаимосвязь по сюжету: ${formattedTags}`,
       isAutoSync: true,
       syncTag: tags[0],
       isRetrospective: false,
     });
   });
 
-  // Слой 3: внеоконные и ретроспективные связи (referenceTags и канонические теги event-<id>) без ограничения в 3 года
+  // Слой 3: ретроспективные связи (referenceTags и канонические ссылки event-<id>) без ограничения в 3 года
   const retrospectivePairMap = new Map<
     string,
     { from: EnrichedEvent; to: EnrichedEvent; tags: string[] }
@@ -1031,7 +1276,7 @@ export function getEnrichedEvents(
   };
 
   list.forEach((ev) => {
-    // 3a. Канонический тег вида event-<node.id> в syncTags или referenceTags всегда связывает с целевым узлом
+    // 3a. Каноническая метка вида event-<node.id> в syncTags или referenceTags всегда связывает с целевым узлом
     const allNodeTags = Array.from(
       new Set(
         [
@@ -1075,13 +1320,16 @@ export function getEnrichedEvents(
     CrossLink & { isAutoSync: boolean; syncTag: string; isRetrospective: boolean }
   > = [];
   retrospectivePairMap.forEach(({ from, to, tags }, pairKey) => {
-    const formattedTags = tags.map((t) => `#${t}`).join(', ');
+    const formattedTags = formatHumanTagList(tags);
     retrospectiveTagLinks.push({
       id: `ref-sync-${pairKey}`,
       from: from.id,
       to: to.id,
       type: 'references',
-      label: `Внеоконная отсылка по тегу (${formattedTags})`,
+      label:
+        tags.length > 1
+          ? `Историко-культурная перекличка по темам: ${formattedTags}`
+          : `Историко-культурная перекличка: ${formattedTags}`,
       isAutoSync: true,
       syncTag: tags[0],
       isRetrospective: true,
@@ -1109,22 +1357,33 @@ export function getEnrichedEvents(
         const targetId = isOutgoing ? lnk.to : lnk.from;
         const targetEvent = byId.get(targetId);
         if (targetEvent) {
-          // Если причинная связь (triggers/enables) записана от более позднего события к более раннему, нормализуем направление по хронологии
+          // Для неперекрывающихся событий в явном хронологическом порядке нормализуем случайную инверсию,
+          // но при перекрытии интервалов или в одном году сохраняем авторский вектор причина -> следствие.
           if (lnk.type === 'triggers' || lnk.type === 'enables') {
-            if (isOutgoing && ev.startYear > targetEvent.startYear) {
-              isOutgoing = false;
-            } else if (!isOutgoing && targetEvent.startYear > ev.startYear) {
-              isOutgoing = true;
+            const fromEv = lnk.from === ev.id ? ev : targetEvent;
+            const toEv = lnk.to === ev.id ? ev : targetEvent;
+            const intervalsOverlap = fromEv.startYear <= toEv.endYear && toEv.startYear <= fromEv.endYear;
+            if (!intervalsOverlap && fromEv.startPrecision.sortKey > toEv.startPrecision.sortKey) {
+              isOutgoing = lnk.to === ev.id;
             }
           }
 
           const maxStart = Math.max(ev.startYear, targetEvent.startYear);
           const minEnd = Math.min(ev.endYear, targetEvent.endYear);
           const yearGap = maxStart > minEnd ? maxStart - minEnd : 0;
+          const isEvCulturalOrSci =
+            isLiteraryWorkNode(ev) || isScienceDiscoveryNode(ev) || isBiographyNode(ev);
+          const isTargetCulturalOrSci =
+            isLiteraryWorkNode(targetEvent) ||
+            isScienceDiscoveryNode(targetEvent) ||
+            isBiographyNode(targetEvent);
           const isRetrospective =
             lnk.isRetrospective === true ||
             RETROSPECTIVE_LINK_TYPES.has(lnk.type) ||
-            (yearGap > 3 && lnk.type !== 'triggers' && lnk.type !== 'enables');
+            ((isEvCulturalOrSci || isTargetCulturalOrSci) &&
+              yearGap > 3 &&
+              lnk.type !== 'triggers' &&
+              lnk.type !== 'enables');
 
           links.push({
             ...lnk,
@@ -1135,11 +1394,13 @@ export function getEnrichedEvents(
             yearGap,
           });
 
+          const isCrossDomainCulturalHighlight =
+            !isEvCulturalOrSci && isTargetCulturalOrSci;
+
           if (
-            (isRetrospective ||
-              isLiteraryWorkNode(targetEvent) ||
-              isScienceDiscoveryNode(targetEvent) ||
-              isBiographyNode(targetEvent)) &&
+            (lnk.isRetrospective === true ||
+              RETROSPECTIVE_LINK_TYPES.has(lnk.type) ||
+              isCrossDomainCulturalHighlight) &&
             !seenRetroOtherIds.has(targetId)
           ) {
             seenRetroOtherIds.add(targetId);
@@ -1452,7 +1713,32 @@ export function buildUnifiedTimelineStream(
         ev.period.toLowerCase().includes(q) ||
         ev.ruler.toLowerCase().includes(q) ||
         ev.region.toLowerCase().includes(q) ||
-        Boolean(ev.subEvents?.some((s) => s.title.toLowerCase().includes(q) || s.text.toLowerCase().includes(q)))
+        ev.type.toLowerCase().includes(q) ||
+        Boolean(ev.outcome && ev.outcome.toLowerCase().includes(q)) ||
+        Boolean(ev.keyFigures?.some((person) => person.toLowerCase().includes(q))) ||
+        Boolean(ev.literaryProfile?.genre && ev.literaryProfile.genre.toLowerCase().includes(q)) ||
+        Boolean(ev.literaryProfile?.movement && ev.literaryProfile.movement.toLowerCase().includes(q)) ||
+        Boolean(ev.literaryProfile?.themes && ev.literaryProfile.themes.toLowerCase().includes(q)) ||
+        Boolean(
+          ev.literaryProfile?.publicationFate &&
+            ev.literaryProfile.publicationFate.toLowerCase().includes(q),
+        ) ||
+        Boolean(
+          ev.literaryProfile?.culturalImpact &&
+            ev.literaryProfile.culturalImpact.toLowerCase().includes(q),
+        ) ||
+        Boolean(ev.literaryProfile?.majorWorks?.some((work) => work.toLowerCase().includes(q))) ||
+        Boolean(ev.syncTags?.some((tag) => tag.toLowerCase().includes(q))) ||
+        Boolean(ev.referenceTags?.some((tag) => tag.toLowerCase().includes(q))) ||
+        Boolean(ev.explicitLinks?.some((lnk) => lnk.label.toLowerCase().includes(q))) ||
+        Boolean(
+          ev.subEvents?.some(
+            (s) =>
+              s.title.toLowerCase().includes(q) ||
+              s.text.toLowerCase().includes(q) ||
+              (s.year !== undefined && String(s.year).toLowerCase().includes(q)),
+          ),
+        )
       );
     });
 

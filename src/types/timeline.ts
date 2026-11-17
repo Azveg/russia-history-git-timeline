@@ -93,6 +93,15 @@ export interface InlineNodeLink {
   label: string;
 }
 
+export interface LiteraryProfile {
+  genre?: string;
+  movement?: string;
+  themes?: string;
+  publicationFate?: string;
+  culturalImpact?: string;
+  majorWorks?: string[];
+}
+
 export interface TimelineNode {
   id: string;
   startYear?: number;
@@ -110,6 +119,7 @@ export interface TimelineNode {
   eventType?: string;
   outcome?: string;
   keyFigures?: string[];
+  literaryProfile?: LiteraryProfile;
   subEvents?: SubEvent[];
   linksTo?: InlineNodeLink[];
   campaignId?: string;
@@ -188,7 +198,7 @@ export interface BranchFile {
 export type TimelineDataFile = RulersFile | BranchFile;
 
 export interface ExplicitLinkInfo extends CrossLink {
-  direction: 'outgoing' | 'incoming' | 'out' | 'in';
+  direction: 'outgoing' | 'incoming';
   otherId: string;
   targetEvent: EnrichedEvent;
   isAutoSync?: boolean;
