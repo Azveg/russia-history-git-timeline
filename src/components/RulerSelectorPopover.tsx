@@ -118,7 +118,7 @@ export function RulerSelectorPopover({
         <span>Правители</span>
 
         {activeWindowRuler ? (
-          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] max-w-[76px] sm:max-w-[130px] truncate">
+          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] max-w-[72px] sm:max-w-[90px] xl:max-w-[130px] truncate">
             {activeWindowRuler.shortRuler}
           </span>
         ) : (

@@ -175,38 +175,8 @@ export function TopControlBar({
             onOpenRulerModal={onOpenRulerModal}
           />
 
-          {/* Широкие экраны: полный ряд кнопок сценариев без переноса */}
-          <div
-            className="hidden min-[1360px]:inline-flex items-center gap-0.5 bg-slate-900/90 border border-slate-800 rounded-lg p-0.5 text-[11px] shrink-0"
-            role="group"
-            aria-label="Сценарии веток"
-          >
-            <span className="px-1.5 py-0.5 text-slate-400 inline-flex items-center gap-1 font-mono text-[10px] whitespace-nowrap">
-              <Compass className="w-3 h-3 text-amber-400" />
-              <span>Срез:</span>
-            </span>
-            {QUICK_PRESETS.map((preset) => {
-              const active = isPresetActive(preset.id);
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => onApplyPreset(preset.id)}
-                  title={preset.title}
-                  className={`px-2 py-1 rounded-md font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                    active
-                      ? 'bg-amber-500 text-slate-950 font-bold shadow-xs'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-800/80'
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Средние и узкие экраны (< 1360px): компактное выпадающее меню «Срез» */}
-          <div ref={presetPopoverRef} className="relative min-[1360px]:hidden shrink-0">
+          {/* Выпадающее меню «Срез» для всех размеров экрана */}
+          <div ref={presetPopoverRef} className="relative shrink-0">
             <button
               type="button"
               onClick={() => setIsPresetMenuOpen((prev) => !prev)}
@@ -275,7 +245,7 @@ export function TopControlBar({
         </div>
 
         <div className="flex flex-nowrap items-center gap-1 sm:gap-2 ml-auto shrink-0">
-          <div className="hidden lg:flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-[11px] font-mono shrink-0">
+          <div className="hidden xl:flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-[11px] font-mono shrink-0">
             <span className="text-slate-400">Окно:</span>
             <input
               type="number"
@@ -307,7 +277,7 @@ export function TopControlBar({
               type="button"
               onClick={() => onChangeCardDensity('detailed')}
               aria-label="Подробный режим карточек"
-              className={`px-1.5 md:px-2 py-1 rounded-md inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
+              className={`px-1.5 lg:px-2 py-1 rounded-md inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
                 cardDensity === 'detailed'
                   ? 'bg-amber-500 text-slate-950 font-bold'
                   : 'text-slate-300 hover:text-white'
@@ -315,13 +285,13 @@ export function TopControlBar({
               title="Подробные карточки с ключевыми итогами, участниками и шкалой правлений"
             >
               <Rows3 className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden md:inline">Подробно</span>
+              <span className="hidden lg:inline">Подробно</span>
             </button>
             <button
               type="button"
               onClick={() => onChangeCardDensity('compact')}
               aria-label="Компактный режим карточек"
-              className={`px-1.5 md:px-2 py-1 rounded-md inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
+              className={`px-1.5 lg:px-2 py-1 rounded-md inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap ${
                 cardDensity === 'compact'
                   ? 'bg-amber-500 text-slate-950 font-bold'
                   : 'text-slate-300 hover:text-white'
@@ -329,7 +299,7 @@ export function TopControlBar({
               title="Компактные однострочные записи для быстрого обзора больших эпох"
             >
               <Rows4 className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden md:inline">Компактно</span>
+              <span className="hidden lg:inline">Компактно</span>
             </button>
           </div>
 

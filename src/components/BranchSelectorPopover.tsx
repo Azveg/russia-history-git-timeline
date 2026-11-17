@@ -281,7 +281,7 @@ export function BranchSelectorPopover({
         <GitBranch className="w-3.5 h-3.5 text-amber-400 shrink-0" />
         <span>Ветки</span>
 
-        <span className="hidden md:inline-flex items-center gap-1" aria-hidden="true">
+        <span className="hidden xl:inline-flex items-center gap-1" aria-hidden="true">
           {activeItems.slice(0, 4).map((b) => (
             <span
               key={b.id}
