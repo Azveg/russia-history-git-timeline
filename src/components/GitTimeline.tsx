@@ -68,6 +68,7 @@ interface GitTimelineProps {
   collapsedParents: Record<string, boolean>;
   manifest: SyncManifest;
   yearFrom: number;
+  yearTo?: number;
   minYear?: number;
   axisResolution: AxisResolution;
   hoveredEventId: string | null;
@@ -94,6 +95,7 @@ interface GitTimelineProps {
   onOpenCardModal: (eventId: string) => void;
   onOpenPeriodModal: (rulerId: string) => void;
   onOpenEraModal: (eraId: string) => void;
+  onOpenWindowModal?: (from: number, to: number) => void;
   onSelectYearRange: (from: number, to: number) => void;
 }
 
@@ -208,6 +210,7 @@ export function GitTimeline({
   collapsedParents,
   manifest,
   yearFrom,
+  yearTo,
   minYear = 862,
   axisResolution,
   hoveredEventId,
@@ -234,6 +237,7 @@ export function GitTimeline({
   onOpenCardModal,
   onOpenPeriodModal,
   onOpenEraModal,
+  onOpenWindowModal,
   onSelectYearRange,
 }: GitTimelineProps) {
   const streamContainerRef = useRef<HTMLDivElement | null>(null);
@@ -612,13 +616,13 @@ export function GitTimeline({
     });
   }
 
-  const activeLinkGeometry = useMemo(() => {
-    if (!hoveredEvent) return null;
-    const sourceRowIdx = rowIndexByEventId.get(hoveredEvent.id);
-    if (sourceRowIdx === undefined) return null;
+  const buildLinkGeometryForEvent = (sourceEvent: EnrichedEvent | null, requireInStream: boolean) => {
+    if (!sourceEvent) return null;
+    const sourceRowIdx = rowIndexByEventId.get(sourceEvent.id);
+    if (requireInStream && sourceRowIdx === undefined) return null;
 
-    let minSpanIdx = sourceRowIdx;
-    let maxSpanIdx = sourceRowIdx;
+    let minSpanIdx = sourceRowIdx ?? Number.POSITIVE_INFINITY;
+    let maxSpanIdx = sourceRowIdx ?? -1;
     const seenTargetIds = new Set<string>();
     const items: Array<{
       targetEvent: EnrichedEvent;
@@ -635,7 +639,7 @@ export function GitTimeline({
 
     const branchMap = new Map(branches.map((b) => [b.id, b]));
 
-    hoveredEvent.explicitLinks.forEach((lnk) => {
+    sourceEvent.explicitLinks.forEach((lnk) => {
       const t = lnk.targetEvent;
       if (seenTargetIds.has(t.id)) return;
       seenTargetIds.add(t.id);
@@ -650,11 +654,13 @@ export function GitTimeline({
       const directionOnStream =
         tRowIdx === undefined
           ? 'off_stream'
-          : tRowIdx < sourceRowIdx
-            ? 'up'
-            : tRowIdx > sourceRowIdx
-              ? 'down'
-              : 'same';
+          : sourceRowIdx === undefined
+            ? 'down'
+            : tRowIdx < sourceRowIdx
+              ? 'up'
+              : tRowIdx > sourceRowIdx
+                ? 'down'
+                : 'same';
 
       items.push({
         targetEvent: t,
@@ -663,8 +669,8 @@ export function GitTimeline({
         branchColor: tb?.color || '#34d399',
         targetRowIdx: tRowIdx,
         directionOnStream,
-        yearDelta: t.startYear - hoveredEvent.startYear,
-        rowDelta: tRowIdx !== undefined ? Math.abs(tRowIdx - sourceRowIdx) : null,
+        yearDelta: t.startYear - sourceEvent.startYear,
+        rowDelta: sourceRowIdx !== undefined && tRowIdx !== undefined ? Math.abs(tRowIdx - sourceRowIdx) : null,
         linkLabel: lnk.label,
         isHiddenBranch: activeBranches[t.task] === false,
       });
@@ -682,17 +688,61 @@ export function GitTimeline({
     });
 
     return {
-      sourceEvent: hoveredEvent,
-      sourceRowIdx,
+      sourceEvent,
+      sourceRowIdx: sourceRowIdx ?? -1,
       minSpanIdx,
       maxSpanIdx,
-      hasSpanOnCanvas: minSpanIdx < maxSpanIdx,
+      hasSpanOnCanvas: sourceRowIdx !== undefined && minSpanIdx < maxSpanIdx,
       upItems: items.filter((i) => i.directionOnStream === 'up'),
       downItems: items.filter((i) => i.directionOnStream === 'down' || i.directionOnStream === 'same'),
       offStreamItems: items.filter((i) => i.directionOnStream === 'off_stream'),
       totalCount: items.length,
     };
-  }, [hoveredEvent, rowIndexByEventId, branches, activeBranches]);
+  };
+
+  const activeLinkGeometry = useMemo(
+    () => buildLinkGeometryForEvent(hoveredEvent, true),
+    [hoveredEvent, rowIndexByEventId, branches, activeBranches],
+  );
+
+  const inspectorSourceEvent = hoveredEvent ?? focusedEvent ?? null;
+  const inspectorLinkGeometry = useMemo(
+    () => buildLinkGeometryForEvent(inspectorSourceEvent, false),
+    [inspectorSourceEvent, rowIndexByEventId, branches, activeBranches],
+  );
+
+  const linkedEventsInWindowCount = useMemo(
+    () => matchingEvents.filter((ev) => ev.explicitLinks.length > 0).length,
+    [matchingEvents],
+  );
+
+  const topLinkedEventsInWindow = useMemo(() => {
+    const branchMap = new Map(branches.map((b) => [b.id, b]));
+    return matchingEvents
+      .filter((ev) => ev.explicitLinks.length > 0)
+      .slice()
+      .sort((a, b) => {
+        const aInStream = rowIndexByEventId.has(a.id) ? 0 : 1;
+        const bInStream = rowIndexByEventId.has(b.id) ? 0 : 1;
+        if (aInStream !== bInStream) return aInStream - bInStream;
+        if (b.explicitLinks.length !== a.explicitLinks.length) {
+          return b.explicitLinks.length - a.explicitLinks.length;
+        }
+        return a.startYear - b.startYear;
+      })
+      .slice(0, 5)
+      .map((ev) => {
+        const br = branchMap.get(ev.task);
+        return {
+          ev,
+          branchLabel: br?.label || ev.task,
+          branchColor: br?.color || '#34d399',
+          inStream: rowIndexByEventId.has(ev.id),
+        };
+      });
+  }, [matchingEvents, branches, rowIndexByEventId]);
+
+  const effectiveSliceEndYear = yearTo ?? windowRange?.to ?? yearFrom;
 
   const connectorBusX = timeSpineX + 9;
 
@@ -732,7 +782,7 @@ export function GitTimeline({
                     y2={420}
                     stroke={slotColor}
                     strokeWidth={3}
-                    strokeOpacity={0.92}
+                    strokeOpacity={0.65}
                   />
                 );
               }
@@ -853,10 +903,10 @@ export function GitTimeline({
                         isSelfHovered || isLinkedHovered
                           ? 1
                           : isDimmed
-                            ? 0.35
+                            ? 0.28
                             : isBioRail
-                              ? 0.58
-                              : 0.9
+                              ? 0.5
+                              : 0.65
                       }
                     />
                   </g>
@@ -870,7 +920,8 @@ export function GitTimeline({
   }
 
   return (
-    <div className="min-w-0 w-full">
+    <div className="min-w-0 w-full xl:grid xl:grid-cols-[minmax(0,1fr)_316px] xl:gap-5 xl:items-start">
+      <div className="min-w-0">
       <div className="sticky top-[var(--top-bar-height,49px)] z-30 bg-[#050811]/95 backdrop-blur-md border border-slate-800/90 rounded-t-2xl shadow-md">
         <div className="px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0">
@@ -955,7 +1006,7 @@ export function GitTimeline({
             </span>
             {axisResolution !== 'year' && yearFrom <= 1918 && (
               <>
-                <span aria-hidden="true" className="hidden lg:inline text-slate-600">
+                <span aria-hidden="true" className="hidden lg:inline text-slate-400">
                   ·
                 </span>
                 <span
@@ -966,7 +1017,7 @@ export function GitTimeline({
                 </span>
               </>
             )}
-            <span aria-hidden="true" className="hidden md:inline text-slate-600">
+            <span aria-hidden="true" className="hidden md:inline text-slate-400">
               ·
             </span>
             <span className="hidden sm:inline text-amber-300/90 font-semibold">Клик — паспорт события</span>
@@ -1041,7 +1092,7 @@ export function GitTimeline({
                   >
                     {activeStickyEra.displayShortTitle}
                   </button>
-                  <span aria-hidden="true" className="text-slate-600 shrink-0">
+                  <span aria-hidden="true" className="text-slate-400 shrink-0">
                     ·
                   </span>
                 </>
@@ -1051,7 +1102,7 @@ export function GitTimeline({
                 <span className="truncate">{activeStickyRuler.shortRuler}</span>
               </span>
               <span className="text-amber-300/90 tabular-nums shrink-0">{activeStickyRuler.reignPeriod}</span>
-              <span className="hidden sm:inline text-slate-500 truncate">· {activeStickyRuler.reignTitle}</span>
+              <span className="hidden sm:inline text-slate-400 truncate">· {activeStickyRuler.reignTitle}</span>
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
@@ -1092,7 +1143,7 @@ export function GitTimeline({
                   <Crosshair className="w-3.5 h-3.5" />
                   Режим фокуса связей
                 </span>
-                <span aria-hidden="true" className="text-slate-600">
+                <span aria-hidden="true" className="text-slate-400">
                   ·
                 </span>
                 <span className="text-slate-300 tabular-nums">
@@ -1104,7 +1155,7 @@ export function GitTimeline({
                 </span>
                 {focusKeepWindow && outOfWindowFocusCount > 0 && (
                   <>
-                    <span aria-hidden="true" className="text-slate-600">
+                    <span aria-hidden="true" className="text-slate-400">
                       ·
                     </span>
                     <span className="text-amber-300 font-semibold tabular-nums">
@@ -1224,20 +1275,21 @@ export function GitTimeline({
         )}
 
         {yearFrom > minYear && alreadyRunningGroups.length > 0 && (
-          <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 space-y-2">
-            <div className="text-xs font-mono font-semibold text-amber-200 flex items-center gap-1.5">
+          <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 space-y-2 font-sans">
+            <div className="text-xs font-semibold text-amber-200 flex items-center gap-1.5">
               <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span className="tabular-nums">
-                Сквозные процессы, начавшиеся до {yearFrom} г. и продолжающиеся в окне ({alreadyRunningEvents.length}):
+                Сквозные процессы, начавшиеся до <span className="font-mono">{yearFrom}</span> г. и продолжающиеся в окне (
+                <span className="font-mono">{alreadyRunningEvents.length}</span>):
               </span>
             </div>
             <div className="space-y-1.5">
               {alreadyRunningGroups.map((group) => (
                 <div key={group.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-                  <span className="font-mono text-[11px] font-bold text-amber-300/90 shrink-0">
+                  <span className="text-xs font-bold text-amber-300/90 shrink-0">
                     {group.label}:
                   </span>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-amber-100">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-amber-100">
                     {group.items.map((e) => (
                       <button
                         key={e.id}
@@ -1256,26 +1308,26 @@ export function GitTimeline({
         )}
 
         {contemporaryBioGroups.length > 0 && (
-          <div className="bg-fuchsia-950/20 border-b border-fuchsia-500/25 px-4 py-2.5 space-y-2">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+          <div className="bg-fuchsia-950/20 border-b border-fuchsia-500/25 px-4 py-2.5 space-y-2 font-sans">
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-1.5 font-semibold text-fuchsia-200">
                 <span className="w-2 h-2 rounded-full bg-fuchsia-400 shrink-0" />
                 <span className="tabular-nums">
-                  Деятели эпохи (активны в окне: {totalContemporaryBios}):
+                  Деятели эпохи (активны в окне: <span className="font-mono">{totalContemporaryBios}</span>):
                 </span>
               </div>
-              <span className="text-[11px] text-slate-400 hidden sm:inline">
+              <span className="text-xs text-slate-400 hidden sm:inline">
                 показаны по периоду зрелой творческой и научной активности (клик — биография и труды)
               </span>
             </div>
             <div className="space-y-1.5">
               {contemporaryBioGroups.map((group) => (
                 <div key={group.id} className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <span
-                    className="font-mono text-[11px] font-bold shrink-0 mr-1"
-                    style={{ color: group.color }}
-                  >
-                    {group.label} ({group.items.length}):
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-200 shrink-0 mr-1">
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                    <span>
+                      {group.label} (<span className="font-mono tabular-nums">{group.items.length}</span>):
+                    </span>
                   </span>
                   {group.items.map((bio) => {
                     const isHoveredBio = effectiveActiveEventId === bio.id;
@@ -1287,17 +1339,17 @@ export function GitTimeline({
                         onMouseEnter={() => activateHoverEvent(bio.id)}
                         onMouseLeave={() => scheduleClearHoverEvent()}
                         title={`${bio.title} — годы жизни: ${bio.period}, активный период: ${bio.activeFrom}–${bio.activeTo} гг. Клик для паспорта деятеля`}
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap ${
+                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-sans transition-colors cursor-pointer whitespace-nowrap ${
                           isHoveredBio
                             ? 'bg-fuchsia-500/25 border-fuchsia-400 text-white shadow-sm'
                             : 'bg-slate-900/85 hover:bg-slate-800 border-slate-700/80 text-slate-200 hover:border-fuchsia-400/50'
                         }`}
                       >
                         <span className="font-semibold text-white">{bio.title}</span>
-                        <span className="text-[10px] text-amber-300/95 tabular-nums">
-                          акт. {bio.activeFrom}–{bio.activeTo}
+                        <span className="font-mono text-[11px] text-amber-300/95 tabular-nums">
+                          {bio.activeFrom}–{bio.activeTo}
                         </span>
-                        <span className="text-[10px] text-slate-400 tabular-nums hidden md:inline">
+                        <span className="font-mono text-[11px] text-slate-400 tabular-nums hidden md:inline">
                           ({bio.period})
                         </span>
                       </button>
@@ -1391,12 +1443,12 @@ export function GitTimeline({
                 <div
                   title={gutter.title}
                   className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/40 px-2 sm:px-2.5 py-1 flex flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none ${
-                    gutter.isDuplicate ? 'text-slate-600' : 'text-slate-400'
+                    gutter.isDuplicate ? 'text-slate-400/75' : 'text-slate-300'
                   }`}
                 >
                   <span>{gutter.label}</span>
                   {gutter.styleLabel && (
-                    <span className="text-[9px] text-sky-400/75 font-normal">{gutter.styleLabel}</span>
+                    <span className="text-[9px] text-sky-400/80 font-normal">{gutter.styleLabel}</span>
                   )}
                 </div>
 
@@ -1417,12 +1469,12 @@ export function GitTimeline({
                   </svg>
                 </div>
 
-                <div className="flex-1 min-w-0 overflow-hidden py-1 pr-4 sm:pr-6 flex items-center gap-2 text-[11px] font-mono text-slate-400">
-                  <span className="font-bold text-slate-300 tabular-nums">{item.label}</span>
-                  <span aria-hidden="true" className="text-slate-700">
+                <div className="flex-1 min-w-0 overflow-hidden py-1 pr-4 sm:pr-6 flex items-center gap-2 text-xs font-sans text-slate-400">
+                  <span className="font-mono font-bold text-slate-200 tabular-nums">{item.label}</span>
+                  <span aria-hidden="true" className="text-slate-400">
                     ·
                   </span>
-                  <span className="text-slate-500">хронологический рубеж</span>
+                  <span className="text-slate-400">хронологический рубеж</span>
                 </div>
               </div>
             );
@@ -1457,7 +1509,7 @@ export function GitTimeline({
                   title={gutter.title}
                   className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/40 px-2 sm:px-2.5 pt-[24px] pb-2 flex flex-col items-end justify-start font-mono text-[11px] leading-tight font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
                     gutter.isDuplicate
-                      ? 'text-amber-300/45 group-hover:text-amber-200'
+                      ? 'text-amber-300/75 group-hover:text-amber-200'
                       : 'text-amber-200 group-hover:text-amber-100'
                   }`}
                 >
@@ -1486,7 +1538,7 @@ export function GitTimeline({
                             fill="none"
                             stroke={rColor}
                             strokeWidth={2.6}
-                            strokeOpacity={0.95}
+                            strokeOpacity={0.65}
                           />
                         )}
                         <line
@@ -1496,7 +1548,7 @@ export function GitTimeline({
                           y2={420}
                           stroke={rColor}
                           strokeWidth={3}
-                          strokeOpacity={0.95}
+                          strokeOpacity={0.65}
                         />
                         <line
                           x1={timeSpineX + 6}
@@ -1506,7 +1558,7 @@ export function GitTimeline({
                           stroke={rColor}
                           strokeWidth={1.4}
                           strokeDasharray="3 3"
-                          strokeOpacity={0.7}
+                          strokeOpacity={0.48}
                         />
                         <circle cx={timeSpineX} cy={16} r={4} fill="#050811" stroke="#cbd5e1" strokeWidth={2} />
                         <circle
@@ -1553,24 +1605,23 @@ export function GitTimeline({
                           ) : null;
                         })()}
                       {r.center && (
-                        <span
-                          className="px-1.5 py-0.5 rounded bg-slate-950/90 border border-slate-700/80 text-[10px] font-mono font-semibold shrink-0"
-                          style={{ color: rColor }}
-                        >
-                          {r.center}
+                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-950/90 border border-slate-700/80 text-xs font-sans font-semibold text-slate-300 shrink-0">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: rColor }} />
+                          <span>{r.center}</span>
                         </span>
                       )}
-                      <span aria-hidden="true" className="text-slate-600">
+                      <span aria-hidden="true" className="text-slate-400">
                         ·
                       </span>
                       <span className="font-serif text-base sm:text-lg font-bold text-white tracking-tight">
                         {r.ruler}
                       </span>
-                      <span aria-hidden="true" className="text-slate-600">
+                      <span aria-hidden="true" className="text-slate-400">
                         ·
                       </span>
-                      <span className="text-[11px] font-mono text-slate-400 tabular-nums">
-                        правление {r.reignPeriod}
+                      <span className="text-xs font-sans text-slate-400">
+                        правление{' '}
+                        <span className="font-mono tabular-nums text-slate-300">{r.reignPeriod}</span>
                       </span>
                     </div>
 
@@ -1579,16 +1630,16 @@ export function GitTimeline({
                         <button
                           type="button"
                           onClick={() => onSelectYearRange(r.startYear, r.endYear)}
-                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-[11px] font-mono font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-sans font-semibold transition-colors cursor-pointer whitespace-nowrap"
                           title="Отфильтровать таймлайн строго по годам этого правления"
                         >
-                          Фокус: {r.startYear}–{r.endYear}
+                          Фокус: <span className="font-mono tabular-nums">{r.startYear}–{r.endYear}</span>
                         </button>
                       )}
                       <button
                         type="button"
                         onClick={() => onOpenPeriodModal(r.id)}
-                        className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-mono font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                        className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-sans font-semibold transition-colors cursor-pointer whitespace-nowrap"
                       >
                         Все события при правителе →
                       </button>
@@ -1598,14 +1649,14 @@ export function GitTimeline({
                   <p className="text-xs text-slate-300 mt-1">{r.reignThesis}</p>
 
                   {ongoingWarsAtAccession.length > 0 && (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-amber-200/90">
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs font-sans text-amber-200/90">
                       <span>Смена правителя в ходе военных кампаний:</span>
                       {ongoingWarsAtAccession.map((w) => (
                         <button
                           key={w.id}
                           type="button"
                           onClick={() => onOpenCardModal(w.id)}
-                          className="px-1.5 py-0.5 rounded bg-slate-900 border border-slate-700 text-white hover:border-amber-400 cursor-pointer"
+                          className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-white hover:border-amber-400 cursor-pointer text-xs"
                         >
                           {formatEventTitleWithPeriod(w)}
                         </button>
@@ -1634,12 +1685,12 @@ export function GitTimeline({
                   title={gutter.title}
                   className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/30 px-2 sm:px-2.5 py-2 flex flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
                     gutter.isDuplicate
-                      ? 'text-slate-600 group-hover:text-slate-300'
-                      : 'text-slate-400 group-hover:text-slate-200'
+                      ? 'text-slate-400/75 group-hover:text-slate-200'
+                      : 'text-slate-300 group-hover:text-white'
                   }`}
                 >
                   <span className="inline-flex items-center gap-1">
-                    <span aria-hidden="true" className="text-[9px] text-slate-600 group-hover:text-slate-400">
+                    <span aria-hidden="true" className="text-[9px] text-slate-400 group-hover:text-slate-200">
                       ↵
                     </span>
                     <span>{gutter.label}</span>
@@ -1669,14 +1720,14 @@ export function GitTimeline({
                           y2={mergeY - 6}
                           stroke={rColor}
                           strokeWidth={3}
-                          strokeOpacity={0.9}
+                          strokeOpacity={0.65}
                         />
                         <path
                           d={`M ${rx} ${mergeY - 6} C ${rx} ${mergeY + 6}, ${timeSpineX - 10} ${mergeY + 2}, ${timeSpineX} ${mergeY + 6}`}
                           fill="none"
                           stroke={rColor}
                           strokeWidth={2.4}
-                          strokeOpacity={0.9}
+                          strokeOpacity={0.65}
                         />
                         <circle cx={timeSpineX} cy={mergeY + 6} r={4} fill="#050811" stroke="#cbd5e1" strokeWidth={2} />
                         <rect
@@ -1695,27 +1746,26 @@ export function GitTimeline({
                 </div>
 
                 <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
-                  <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 min-h-[36px] py-1.5 flex items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden font-mono">
+                  <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 min-h-[36px] py-1.5 flex items-center justify-between gap-2 text-xs font-sans">
+                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                       <GitMerge className="w-3.5 h-3.5 shrink-0" style={{ color: rColor }} />
-                      <span className="font-bold tabular-nums shrink-0" style={{ color: rColor }}>
+                      <span className="font-mono font-bold text-slate-200 tabular-nums shrink-0">
                         {item.dateLabel}
                       </span>
                       {r.center && (
-                        <span
-                          className="hidden md:inline px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-[10px] shrink-0"
-                          style={{ color: rColor }}
-                        >
-                          {r.center}
+                        <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-xs text-slate-300 shrink-0">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: rColor }} />
+                          <span>{r.center}</span>
                         </span>
                       )}
                       <span className="text-slate-400 shrink-0 hidden sm:inline">Завершение правления:</span>
-                      <span className="font-sans font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
-                        {r.shortRuler} ({r.reignPeriod})
+                      <span className="font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
+                        {r.shortRuler}{' '}
+                        <span className="font-mono text-slate-300 tabular-nums">({r.reignPeriod})</span>
                       </span>
                     </div>
-                    <span className="text-[11px] font-mono text-slate-400 shrink-0 tabular-nums">
-                      ~{Math.max(1, r.endYear - r.startYear)} л. у власти
+                    <span className="text-xs font-sans text-slate-400 shrink-0 tabular-nums">
+                      ~<span className="font-mono">{Math.max(1, r.endYear - r.startYear)}</span> л. у власти
                     </span>
                   </div>
                 </div>
@@ -1839,7 +1889,7 @@ export function GitTimeline({
                     isSelfHovered || isFocusedTarget
                       ? 'text-white'
                       : gutter.isDuplicate
-                        ? 'text-slate-500 group-hover:text-slate-200'
+                        ? 'text-slate-400/80 group-hover:text-slate-200'
                         : 'text-slate-200 group-hover:text-white'
                   }`}
                 >
@@ -1903,7 +1953,7 @@ export function GitTimeline({
                               stroke={branchObj.color}
                               strokeWidth={isSelfHovered ? 3 : isBioNode ? 1.8 : 2}
                               strokeDasharray={isBioNode && !isSelfHovered ? '4 2' : undefined}
-                              strokeOpacity={isBioNode && !isSelfHovered ? 0.65 : 0.9}
+                              strokeOpacity={isSelfHovered ? 1 : isBioNode ? 0.5 : 0.65}
                             />
                             <circle
                               cx={forkOriginX}
@@ -1923,7 +1973,7 @@ export function GitTimeline({
                             stroke={branchObj.color}
                             strokeWidth={isSelfHovered ? 3.6 : isBioNode ? 2.1 : 2.6}
                             strokeDasharray={isBioNode && !isSelfHovered ? '6 3' : undefined}
-                            strokeOpacity={isBioNode && !isSelfHovered ? 0.62 : 0.92}
+                            strokeOpacity={isSelfHovered ? 1 : isBioNode ? 0.5 : 0.65}
                           />
                         )}
                         <line
@@ -1934,7 +1984,7 @@ export function GitTimeline({
                           stroke={branchObj.color}
                           strokeWidth={isSelfHovered ? 3.6 : isBioNode ? 2.1 : 2.6}
                           strokeDasharray={isBioNode && !isSelfHovered ? '6 3' : undefined}
-                          strokeOpacity={isSelfHovered ? 1 : isBioNode ? 0.62 : 0.92}
+                          strokeOpacity={isSelfHovered ? 1 : isBioNode ? 0.5 : 0.65}
                         />
                       </>
                     )}
@@ -1950,7 +2000,7 @@ export function GitTimeline({
                           stroke={branchObj.color}
                           strokeWidth={1.6}
                           strokeDasharray="2 2"
-                          strokeOpacity={0.75}
+                          strokeOpacity={isSelfHovered ? 1 : 0.55}
                         />
                         <circle cx={timeSpineX} cy={commitY} r={3.2} fill="#cbd5e1" />
                       </>
@@ -1964,7 +2014,7 @@ export function GitTimeline({
                       stroke={branchObj.color}
                       strokeWidth={1.5}
                       strokeDasharray="3 3"
-                      strokeOpacity={0.8}
+                      strokeOpacity={isSelfHovered ? 1 : 0.52}
                     />
 
                     {isAtomic || isBioNode ? (
@@ -2020,10 +2070,7 @@ export function GitTimeline({
                       className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3 min-h-[38px] py-1.5 flex items-center justify-between gap-2.5 transition-all ${cardHighlightClass}`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                        <span
-                          className="font-mono text-xs font-extrabold tabular-nums shrink-0"
-                          style={{ color: branchObj.color }}
-                        >
+                        <span className="font-mono text-xs font-extrabold text-slate-200 group-hover:text-white tabular-nums shrink-0">
                           {isBioNode
                             ? bioPeriodBadge
                             : axisResolution === 'year'
@@ -2047,15 +2094,15 @@ export function GitTimeline({
                             ) : null;
                           })()}
                         <span
-                          className="hidden sm:inline-flex items-center gap-1 font-mono text-[10px] text-slate-400 shrink-0 tabular-nums"
+                          className="hidden sm:inline-flex items-center gap-1 font-sans text-xs text-slate-400 shrink-0 tabular-nums"
                           title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
                         >
                           <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
-                          <span>{nodeStatus.compactDurationLabel}</span>
+                          <span className="font-mono text-[11px]">{nodeStatus.compactDurationLabel}</span>
                           {nodeStatus.kind !== 'milestone' && (
                             <span className="w-6 h-1 rounded-full bg-slate-800 overflow-hidden relative inline-block align-middle">
                               <span
-                                className="block h-full rounded-full"
+                                className="block h-full rounded-full opacity-80"
                                 style={{
                                   marginLeft: `${nodeStatus.trackStartPct}%`,
                                   width: `${nodeStatus.trackWidthPct}%`,
@@ -2065,33 +2112,40 @@ export function GitTimeline({
                             </span>
                           )}
                         </span>
-                        <span aria-hidden="true" className="text-slate-600 shrink-0">
+                        <span aria-hidden="true" className="text-slate-400 shrink-0">
                           ·
                         </span>
                         <span className="text-xs sm:text-sm font-bold text-white group-hover:text-amber-200 truncate min-w-0">
                           {ev.title}
                         </span>
-                        <span className="hidden md:inline text-[11px] font-mono text-slate-400 shrink-0 truncate max-w-[150px]">
-                          · {origBranchObj.label}
+                        <span className="hidden md:inline-flex items-center gap-1.5 text-xs font-sans text-slate-300 shrink-0 max-w-[175px]">
+                          <span aria-hidden="true" className="text-slate-400">
+                            ·
+                          </span>
+                          <span
+                            className="w-1.5 h-1.5 rounded-full shrink-0"
+                            style={{ backgroundColor: origBranchObj.color }}
+                          />
+                          <span className="truncate">{origBranchObj.label}</span>
                         </span>
                         {hasMultipleRulers && !isBioNode && (
-                          <span className="hidden lg:inline text-[11px] font-mono text-amber-300 shrink-0 tabular-nums">
-                            · {ev.overlappingRulers.length} правл.
+                          <span className="hidden lg:inline text-xs font-sans text-slate-300 shrink-0 tabular-nums">
+                            · <span className="font-mono">{ev.overlappingRulers.length}</span> правл.
                           </span>
                         )}
                         {ev.explicitLinks.length > 0 && (
-                          <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-mono text-emerald-300 shrink-0 tabular-nums">
+                          <span className="hidden sm:inline-flex items-center gap-1 text-xs font-mono text-emerald-300 shrink-0 tabular-nums">
                             · <Link2 className="w-3 h-3" /> {ev.explicitLinks.length}
                           </span>
                         )}
                         {focusedEvent && focusDepth > 1 && focusDistance !== undefined && focusDistance >= 1 && (
-                          <span className="hidden sm:inline text-[11px] font-mono text-emerald-300 shrink-0 tabular-nums">
-                            · {focusDistance} шаг
+                          <span className="hidden sm:inline text-xs font-sans text-emerald-300 shrink-0 tabular-nums">
+                            · <span className="font-mono">{focusDistance}</span> шаг
                           </span>
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono">
+                      <div className="flex items-center gap-2 shrink-0 text-xs font-sans">
                         {hasEndRowInStream && (
                           <button
                             type="button"
@@ -2099,10 +2153,10 @@ export function GitTimeline({
                               e.stopPropagation();
                               triggerScrollToDomRow(`row-end-${ev.id}`, ev.id);
                             }}
-                            className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 transition-colors cursor-pointer tabular-nums"
+                            className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 transition-colors cursor-pointer font-mono text-xs tabular-nums"
                             title={`Быстрый переход к строке завершения (${effEndYear} г.)`}
                           >
-                            <ArrowDown className="w-2.5 h-2.5 text-amber-400" />
+                            <ArrowDown className="w-3 h-3 text-amber-400" />
                             <span>{effEndYear}</span>
                           </button>
                         )}
@@ -2113,17 +2167,18 @@ export function GitTimeline({
                               e.stopPropagation();
                               onRevealBranches(hiddenBranchSummaries.map((b) => b.branchId));
                             }}
-                            className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 transition-colors cursor-pointer whitespace-nowrap tabular-nums"
+                            className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 font-sans text-xs transition-colors cursor-pointer whitespace-nowrap tabular-nums"
                             title={`Скрытых связей: ${hiddenLinksTotal} (${hiddenBranchSummaries.map((b) => b.label).join(', ')}). Нажмите, чтобы раскрыть ветки.`}
                           >
                             <Eye className="w-3 h-3 text-amber-400" />
                             <span>
-                              +{hiddenLinksTotal}: {hiddenBranchSummaries.slice(0, 2).map((b) => b.label).join(' · ')}
+                              <span className="font-mono">+{hiddenLinksTotal}</span>:{' '}
+                              {hiddenBranchSummaries.slice(0, 2).map((b) => b.label).join(' · ')}
                             </span>
                           </button>
                         )}
                         {auditInfo && (
-                          <span className="hidden sm:inline-flex items-center gap-1 text-amber-300 font-semibold tabular-nums">
+                          <span className="hidden sm:inline-flex items-center gap-1 text-amber-300 font-mono text-xs font-semibold tabular-nums">
                             <GitCompare className="w-3 h-3" /> {auditInfo.candidates.length}
                           </span>
                         )}
@@ -2133,7 +2188,7 @@ export function GitTimeline({
                             e.stopPropagation();
                             onToggleFocusEvent(ev.id);
                           }}
-                          className={`px-2 py-0.5 rounded border transition-colors cursor-pointer whitespace-nowrap ${
+                          className={`px-2 py-0.5 rounded border font-sans text-xs transition-colors cursor-pointer whitespace-nowrap ${
                             isFocusedTarget
                               ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
                               : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
@@ -2142,7 +2197,7 @@ export function GitTimeline({
                         >
                           {isFocusedTarget ? 'В фокусе' : 'Фокус'}
                         </button>
-                        <span className="text-amber-400 font-semibold hidden sm:inline whitespace-nowrap">
+                        <span className="text-amber-400 font-sans text-xs font-semibold hidden sm:inline whitespace-nowrap">
                           Паспорт →
                         </span>
                       </div>
@@ -2168,10 +2223,7 @@ export function GitTimeline({
                     >
                       <div className="flex items-center justify-between gap-2.5 min-w-0 min-h-[20px]">
                         <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                          <span
-                            className="font-mono text-xs font-extrabold tabular-nums shrink-0"
-                            style={{ color: branchObj.color }}
-                          >
+                          <span className="font-mono text-xs font-extrabold text-slate-200 group-hover:text-white tabular-nums shrink-0">
                             {isBioNode
                               ? bioPeriodBadge
                               : axisResolution === 'year'
@@ -2194,27 +2246,27 @@ export function GitTimeline({
                                 </span>
                               ) : null;
                             })()}
-                          <span aria-hidden="true" className="text-slate-600 shrink-0">
+                          <span aria-hidden="true" className="text-slate-400 shrink-0">
                             ·
                           </span>
                           <h4 className="text-sm sm:text-[15px] font-bold text-white group-hover:text-amber-200 transition-colors truncate min-w-0">
                             {ev.title}
                           </h4>
                           {!isAtomic && !isBioNode && item.startedBeforeWindow && (
-                            <span className="hidden lg:inline text-[10px] font-mono text-amber-300 shrink-0 whitespace-nowrap">
-                              · с {ev.startYear} г.
+                            <span className="hidden lg:inline text-xs font-sans text-amber-300 shrink-0 whitespace-nowrap">
+                              · с <span className="font-mono tabular-nums">{ev.startYear}</span> г.
                             </span>
                           )}
                           {focusedEvent && focusDepth > 1 && focusDistance !== undefined && focusDistance >= 1 && (
-                            <span className="hidden sm:inline text-[11px] font-mono text-emerald-300 shrink-0 whitespace-nowrap tabular-nums">
-                              · {focusDistance} шаг
+                            <span className="hidden sm:inline text-xs font-sans text-emerald-300 shrink-0 whitespace-nowrap tabular-nums">
+                              · <span className="font-mono">{focusDistance}</span> шаг
                             </span>
                           )}
                         </div>
 
-                        <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-slate-400 shrink-0 whitespace-nowrap">
+                        <div className="hidden sm:flex items-center gap-1.5 text-xs font-sans text-slate-400 shrink-0 whitespace-nowrap">
                           <span
-                            className="inline-flex items-center gap-1.5 text-[10px] text-slate-300 tabular-nums"
+                            className="inline-flex items-center gap-1.5 text-xs text-slate-300 tabular-nums"
                             title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
                           >
                             <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
@@ -2231,7 +2283,7 @@ export function GitTimeline({
                                 className="w-10 h-1.5 rounded-full bg-slate-800/95 border border-slate-700/70 overflow-hidden inline-block align-middle"
                               >
                                 <span
-                                  className="block h-full rounded-full"
+                                  className="block h-full rounded-full opacity-80"
                                   style={{
                                     marginLeft: `${nodeStatus.trackStartPct}%`,
                                     width: `${nodeStatus.trackWidthPct}%`,
@@ -2241,18 +2293,22 @@ export function GitTimeline({
                               </span>
                             )}
                           </span>
-                          <span aria-hidden="true" className="text-slate-600">
+                          <span aria-hidden="true" className="text-slate-400">
                             ·
                           </span>
-                          <span className="max-w-[165px] truncate font-semibold" style={{ color: origBranchObj.color }}>
-                            {origBranchObj.label}
+                          <span className="inline-flex items-center gap-1.5 max-w-[180px] font-semibold text-slate-300">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: origBranchObj.color }}
+                            />
+                            <span className="truncate">{origBranchObj.label}</span>
                           </span>
                           {ev.region && (
                             <>
-                              <span aria-hidden="true" className="text-slate-600">
+                              <span aria-hidden="true" className="text-slate-400">
                                 ·
                               </span>
-                              <span className="text-slate-400 max-w-[120px] truncate">{ev.region}</span>
+                              <span className="text-slate-400 max-w-[130px] truncate">{ev.region}</span>
                             </>
                           )}
                         </div>
@@ -2263,11 +2319,13 @@ export function GitTimeline({
                       </p>
 
                       {hiddenLinksTotal > 0 && (
-                        <div className="pt-1.5 border-t border-amber-500/20 flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                        <div className="rounded-lg bg-amber-500/10 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs font-sans">
                           <div className="flex items-center gap-1.5 text-amber-200/95 min-w-0">
                             <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                             <span className="truncate tabular-nums">
-                              Скрыто связей: <strong>{hiddenLinksTotal}</strong> ({hiddenBranchSummaries.slice(0, 3).map((b) => b.label).join(' · ')}
+                              Скрыто связей:{' '}
+                              <strong className="font-mono">{hiddenLinksTotal}</strong> (
+                              {hiddenBranchSummaries.slice(0, 3).map((b) => b.label).join(' · ')}
                               {hiddenBranchSummaries.length > 3 ? ` +${hiddenBranchSummaries.length - 3}` : ''})
                             </span>
                           </div>
@@ -2278,7 +2336,7 @@ export function GitTimeline({
                                 e.stopPropagation();
                                 onRevealBranches(hiddenBranchSummaries.map((b) => b.branchId));
                               }}
-                              className="px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 text-amber-200 font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                              className="px-2.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 text-amber-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
                             >
                               Раскрыть ветки →
                             </button>
@@ -2287,11 +2345,11 @@ export function GitTimeline({
                       )}
 
                       {auditInfo && (
-                        <div className="pt-1.5 border-t border-amber-500/25 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-mono">
+                        <div className="rounded-lg bg-slate-800/55 px-2.5 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-sans">
                           <span className="inline-flex items-center gap-1 text-amber-300 font-semibold shrink-0 tabular-nums">
                             <GitCompare className="w-3 h-3" />
                             <span>
-                              Без связи: {auditInfo.candidates.length}
+                              Без связи: <span className="font-mono">{auditInfo.candidates.length}</span>
                               {auditInfo.sameYearCandidatesCount > 0
                                 ? ` (в том же году: ${auditInfo.sameYearCandidatesCount})`
                                 : ''}
@@ -2308,31 +2366,31 @@ export function GitTimeline({
                                 }}
                                 className="underline decoration-slate-600 hover:text-amber-200 truncate max-w-[230px] cursor-pointer text-left"
                               >
-                                {cand.period} {cand.title}
+                                <span className="font-mono tabular-nums">{cand.period}</span> {cand.title}
                               </button>
                             ))}
                           </div>
                         </div>
                       )}
 
-                      <div className="pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-[11px] text-slate-400 min-w-0 min-h-[26px]">
-                        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden font-mono whitespace-nowrap">
+                      <div className="pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-xs font-sans text-slate-400 min-w-0 min-h-[26px]">
+                        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden whitespace-nowrap">
                           <span
-                            className="sm:hidden inline-flex items-center gap-1 text-[10px] text-slate-300 shrink-0 tabular-nums"
+                            className="sm:hidden inline-flex items-center gap-1 text-xs text-slate-300 shrink-0 tabular-nums"
                             title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
                           >
                             <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
-                            <span>{nodeStatus.compactDurationLabel}</span>
+                            <span className="font-mono text-[11px]">{nodeStatus.compactDurationLabel}</span>
                           </span>
                           {ev.ruler && (
                             <span
                               className={`inline-flex items-center gap-1 min-w-0 truncate ${
                                 hasMultipleRulers && !isBiographyNode(ev, branches)
-                                  ? 'text-amber-300 font-semibold'
+                                  ? 'text-slate-200 font-semibold'
                                   : 'text-slate-300'
                               }`}
                             >
-                              <Crown className="w-3 h-3 shrink-0" />
+                              <Crown className="w-3 h-3 text-slate-400 shrink-0" />
                               <span className="truncate">
                                 {isBiographyNode(ev, branches)
                                   ? `Эпоха: ${ev.overlappingRulers[0]?.shortRuler}${
@@ -2348,26 +2406,26 @@ export function GitTimeline({
                           )}
 
                           {ev.explicitLinks.length > 0 && (
-                            <span className="inline-flex items-center gap-1 text-emerald-300 font-semibold shrink-0 tabular-nums">
+                            <span className="inline-flex items-center gap-1 font-mono text-xs text-emerald-300 font-semibold shrink-0 tabular-nums">
                               <Link2 className="w-3 h-3 shrink-0" />
                               <span>{ev.explicitLinks.length}</span>
                             </span>
                           )}
 
                           {ev.concurrentEvents.length > 0 && (
-                            <span className="hidden md:inline text-sky-300 shrink-0 tabular-nums">
+                            <span className="hidden md:inline font-mono text-xs text-slate-300 shrink-0 tabular-nums">
                               ∥ {ev.concurrentEvents.length}
                             </span>
                           )}
 
                           {ev.subEvents && ev.subEvents.length > 0 && (
-                            <span className="hidden md:inline text-amber-300 font-semibold shrink-0 tabular-nums">
+                            <span className="hidden md:inline font-mono text-xs text-slate-300 shrink-0 tabular-nums">
                               ↳ {ev.subEvents.length}
                             </span>
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0 font-mono whitespace-nowrap">
+                        <div className="flex items-center gap-2 shrink-0 font-sans text-xs whitespace-nowrap">
                           {hasEndRowInStream && (
                             <button
                               type="button"
@@ -2380,7 +2438,7 @@ export function GitTimeline({
                             >
                               <ArrowDown className="w-3 h-3 text-amber-400" />
                               <span className="hidden sm:inline">К концу</span>
-                              <span>({effEndYear})</span>
+                              <span className="font-mono">({effEndYear})</span>
                             </button>
                           )}
 
@@ -2453,12 +2511,12 @@ export function GitTimeline({
                   isEndSelfHovered
                     ? 'text-slate-100'
                     : gutter.isDuplicate
-                      ? 'text-slate-600 group-hover:text-slate-300'
-                      : 'text-slate-400 group-hover:text-slate-200'
+                      ? 'text-slate-400/75 group-hover:text-slate-200'
+                      : 'text-slate-300 group-hover:text-white'
                 }`}
               >
                 <span className="inline-flex items-center gap-1">
-                  <span aria-hidden="true" className="text-[9px] text-slate-600 group-hover:text-slate-400">
+                  <span aria-hidden="true" className="text-[9px] text-slate-400 group-hover:text-slate-200">
                     ↵
                   </span>
                   <span>{gutter.label}</span>
@@ -2466,7 +2524,7 @@ export function GitTimeline({
                 {gutter.styleLabel && (
                   <span
                     className={`text-[9px] font-normal ${
-                      gutter.styleTone === 'gregorian' ? 'text-sky-300/75' : 'text-amber-300/75'
+                      gutter.styleTone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/80'
                     }`}
                   >
                     {gutter.styleLabel}
@@ -2484,7 +2542,7 @@ export function GitTimeline({
                     y2={mergeY - 4}
                     stroke={branchObj.color}
                     strokeWidth={isEndSelfHovered ? 3.6 : 2.6}
-                    strokeOpacity={isEndSelfHovered ? 1 : 0.92}
+                    strokeOpacity={isEndSelfHovered ? 1 : 0.65}
                   />
                   <path
                     d={`M ${commitX} ${mergeY - 4} C ${commitX} ${mergeY + 10}, ${mergeTargetX + 12} ${mergeY + 4}, ${mergeTargetX} ${mergeY + 10}`}
@@ -2492,7 +2550,7 @@ export function GitTimeline({
                     stroke={branchObj.color}
                     strokeWidth={isEndSelfHovered ? 2.6 : 1.9}
                     strokeDasharray="3 2"
-                    strokeOpacity={0.9}
+                    strokeOpacity={isEndSelfHovered ? 1 : 0.65}
                   />
                   <circle
                     cx={mergeTargetX}
@@ -2525,7 +2583,7 @@ export function GitTimeline({
                 >
                   <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                     <Flag className="w-3.5 h-3.5 shrink-0" style={{ color: branchObj.color }} />
-                    <span className="font-mono font-bold tabular-nums shrink-0" style={{ color: branchObj.color }}>
+                    <span className="font-mono font-bold text-slate-200 tabular-nums shrink-0">
                       {item.dateLabel}
                     </span>
                     {axisResolution !== 'year' &&
@@ -2541,7 +2599,7 @@ export function GitTimeline({
                           </span>
                         ) : null;
                       })()}
-                    <span className="text-slate-400 font-mono shrink-0 hidden sm:inline">
+                    <span className="text-slate-400 font-sans text-xs shrink-0 hidden sm:inline">
                       {isBiographyNode(ev, branches)
                         ? 'Завершение жизненного и творческого пути:'
                         : branchObj.isMilitary || ev.task.startsWith('WAR_')
@@ -2552,7 +2610,7 @@ export function GitTimeline({
                       {formatEventTitleWithPeriod(ev)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] tabular-nums whitespace-nowrap">
+                  <div className="flex items-center gap-2 shrink-0 font-sans text-xs tabular-nums whitespace-nowrap">
                     <span className="text-slate-400 hidden sm:inline">
                       {ev.overlappingRulers.length > 1
                         ? `Правлений: ${ev.overlappingRulers.length}`
@@ -2572,7 +2630,7 @@ export function GitTimeline({
                       >
                         <ArrowUp className="w-3 h-3 text-amber-400" />
                         <span className="hidden md:inline">К началу</span>
-                        <span>({effStartYearForEnd})</span>
+                        <span className="font-mono">({effStartYearForEnd})</span>
                       </button>
                     )}
                   </div>
@@ -2582,6 +2640,395 @@ export function GitTimeline({
           );
         })}
       </div>
+      </div>
+
+      {/* Липкий правый инспектор среза и быстрых связей на широких экранах (xl) */}
+      <aside
+        aria-label="Инспектор среза и быстрых связей"
+        onMouseEnter={() => cancelScheduledHoverClear()}
+        onMouseLeave={() => {
+          if (hoveredEvent && pinnedHoverEventId !== hoveredEvent.id) {
+            scheduleClearHoverEvent();
+          }
+        }}
+        className="hidden xl:flex xl:flex-col xl:gap-3.5 xl:sticky xl:top-[calc(var(--top-bar-height,49px)+0.875rem)] xl:max-h-[calc(100vh-var(--top-bar-height,49px)-1.75rem)] xl:overflow-y-auto no-scrollbar"
+      >
+        <section className="rounded-2xl border border-slate-800/90 bg-[#080e1c]/90 backdrop-blur-md p-3.5 space-y-3 shadow-lg">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-sans font-semibold text-slate-400">
+              Срез хронографа
+            </span>
+            {onOpenWindowModal ? (
+              <button
+                type="button"
+                onClick={() => onOpenWindowModal(yearFrom, effectiveSliceEndYear)}
+                className="font-mono text-xs font-bold text-amber-300 hover:text-amber-200 tabular-nums transition-colors cursor-pointer"
+                title="Открыть обзор выбранного окна времени"
+              >
+                {yearFrom}–{effectiveSliceEndYear} →
+              </button>
+            ) : (
+              <span className="font-mono text-xs font-bold text-amber-300 tabular-nums">
+                {yearFrom}–{effectiveSliceEndYear}
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 text-xs font-sans">
+            <div className="rounded-xl bg-slate-900/75 px-2.5 py-2">
+              <div className="text-slate-400">Событий в окне</div>
+              <div className="mt-0.5 flex items-baseline gap-1.5">
+                <span className="font-mono text-sm font-bold text-white tabular-nums">
+                  {matchingEvents.length}
+                </span>
+                <span className="text-slate-400 tabular-nums">
+                  · {thematicLanes.length} вет.
+                </span>
+              </div>
+            </div>
+            <div className="rounded-xl bg-slate-900/75 px-2.5 py-2">
+              <div className="text-slate-400">Узлов со связями</div>
+              <div className="mt-0.5 flex items-baseline gap-1.5">
+                <span className="font-mono text-sm font-bold text-emerald-300 tabular-nums">
+                  {linkedEventsInWindowCount}
+                </span>
+                <span className="text-slate-400 tabular-nums">в срезе</span>
+              </div>
+            </div>
+          </div>
+
+          {activeStickyRuler && (
+            <div className="pt-2.5 border-t border-slate-800/75 space-y-2">
+              {activeStickyEra && (
+                <button
+                  type="button"
+                  onClick={() => onOpenEraModal(activeStickyEra.id)}
+                  className="text-xs font-sans font-semibold text-amber-300/90 hover:text-amber-200 underline decoration-amber-400/35 underline-offset-2 text-left block truncate w-full cursor-pointer"
+                  title={`Открыть карточку эпохи «${activeStickyEra.displayShortTitle}» (${activeStickyEra.period})`}
+                >
+                  {activeStickyEra.displayShortTitle} · {activeStickyEra.period}
+                </button>
+              )}
+
+              <div className="space-y-0.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="font-serif text-base font-bold text-white leading-tight truncate">
+                      {activeStickyRuler.shortRuler}
+                    </span>
+                  </div>
+                  <span className="font-mono text-xs text-amber-300 tabular-nums shrink-0 pt-0.5">
+                    {activeStickyRuler.reignPeriod}
+                  </span>
+                </div>
+                <p className="text-xs font-sans text-slate-300 leading-snug line-clamp-2">
+                  {activeStickyRuler.reignTitle}
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-0.5 text-xs font-sans">
+                <span className="text-slate-400 tabular-nums">
+                  <span className="font-mono text-slate-200">{activeStickyRulerEventCount}</span> соб. в окне
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {!focusedEvent && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectYearRange(activeStickyRuler.startYear, activeStickyRuler.endYear)}
+                      className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 transition-colors cursor-pointer"
+                      title="Сузить окно до лет этого правления"
+                    >
+                      Окно
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onOpenPeriodModal(activeStickyRuler.id)}
+                    className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 font-semibold transition-colors cursor-pointer"
+                  >
+                    Сводка →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        {inspectorSourceEvent ? (
+          <section className="rounded-2xl border border-emerald-500/40 bg-[#0b1325]/95 backdrop-blur-md shadow-xl overflow-hidden flex flex-col">
+            <div className="px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-800 flex items-start justify-between gap-2 font-sans">
+              <div className="min-w-0">
+                <div className="text-xs text-emerald-300 font-bold flex items-center gap-1.5 tabular-nums">
+                  <Link2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {pinnedHoverEventId === inspectorSourceEvent.id
+                      ? 'Закреплённые связи'
+                      : focusedEvent?.id === inspectorSourceEvent.id && !hoveredEvent
+                        ? 'Связи в фокусе'
+                        : 'Быстрый обзор связей'}
+                    {inspectorLinkGeometry ? (
+                      <> (<span className="font-mono">{inspectorLinkGeometry.totalCount}</span>)</>
+                    ) : null}
+                  </span>
+                </div>
+                <div className="text-xs font-bold text-white leading-snug mt-1">
+                  <span className="font-mono tabular-nums text-slate-200">{inspectorSourceEvent.period}</span> —{' '}
+                  {inspectorSourceEvent.title}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPinnedHoverEventId((prev) =>
+                      prev === inspectorSourceEvent.id ? null : inspectorSourceEvent.id,
+                    )
+                  }
+                  className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
+                    pinnedHoverEventId === inspectorSourceEvent.id
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
+                      : 'bg-slate-950/80 border-slate-700 text-slate-300 hover:text-white'
+                  }`}
+                  title="Закрепить инспектор связей при перемещении мыши"
+                >
+                  <Pin className="w-3.5 h-3.5" />
+                </button>
+                {(hoveredEvent || pinnedHoverEventId) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPinnedHoverEventId(null);
+                      cancelScheduledHoverClear();
+                      onHoverEvent(null);
+                    }}
+                    aria-label="Снять фиксацию события"
+                    className="p-1.5 rounded-lg bg-slate-950/80 border border-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {inspectorLinkGeometry ? (
+              <div className="p-2.5 space-y-2.5 text-xs font-sans">
+                {inspectorLinkGeometry.upItems.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-xs text-slate-400 px-1 flex items-center gap-1">
+                      <ArrowUp className="w-3 h-3 text-emerald-400" />
+                      <span>
+                        Выше на ленте (<span className="font-mono tabular-nums">{inspectorLinkGeometry.upItems.length}</span>)
+                      </span>
+                    </div>
+                    {inspectorLinkGeometry.upItems.map((lnk) => (
+                      <button
+                        key={lnk.targetEvent.id}
+                        type="button"
+                        onClick={() => onJumpToEvent(lnk.targetEvent.id)}
+                        className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ backgroundColor: lnk.branchColor }}
+                            />
+                            <span className="truncate">
+                              <span className="font-mono tabular-nums">↑ {lnk.targetEvent.period}</span> · {lnk.branchLabel}
+                            </span>
+                          </span>
+                          <span className="font-mono text-xs text-emerald-300 shrink-0 tabular-nums">
+                            {lnk.rowDelta !== null ? `${lnk.rowDelta} стр.` : ''}
+                            {lnk.yearDelta !== 0 ? `${lnk.rowDelta !== null ? ' · ' : ''}${lnk.yearDelta} л.` : ''}
+                          </span>
+                        </div>
+                        <div className="text-xs font-semibold text-white truncate mt-0.5">
+                          {lnk.targetEvent.title}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {inspectorLinkGeometry.downItems.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-xs text-slate-400 px-1 flex items-center gap-1">
+                      <ArrowDown className="w-3 h-3 text-emerald-400" />
+                      <span>
+                        Ниже на ленте (<span className="font-mono tabular-nums">{inspectorLinkGeometry.downItems.length}</span>)
+                      </span>
+                    </div>
+                    {inspectorLinkGeometry.downItems.map((lnk) => (
+                      <button
+                        key={lnk.targetEvent.id}
+                        type="button"
+                        onClick={() => onJumpToEvent(lnk.targetEvent.id)}
+                        className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ backgroundColor: lnk.branchColor }}
+                            />
+                            <span className="truncate">
+                              <span className="font-mono tabular-nums">↓ {lnk.targetEvent.period}</span> · {lnk.branchLabel}
+                            </span>
+                          </span>
+                          <span className="font-mono text-xs text-emerald-300 shrink-0 tabular-nums">
+                            {lnk.rowDelta !== null ? `${lnk.rowDelta} стр.` : ''}
+                            {lnk.yearDelta !== 0 ? `${lnk.rowDelta !== null ? ' · ' : ''}+${Math.abs(lnk.yearDelta)} л.` : ''}
+                          </span>
+                        </div>
+                        <div className="text-xs font-semibold text-white truncate mt-0.5">
+                          {lnk.targetEvent.title}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {inspectorLinkGeometry.offStreamItems.length > 0 && (
+                  <div className="space-y-1">
+                    <div className="text-xs text-amber-300/90 px-1">
+                      Вне окна или в скрытых ветках (<span className="font-mono tabular-nums">{inspectorLinkGeometry.offStreamItems.length}</span>)
+                    </div>
+                    {inspectorLinkGeometry.offStreamItems.map((lnk) => (
+                      <button
+                        key={lnk.targetEvent.id}
+                        type="button"
+                        onClick={() => onJumpToEvent(lnk.targetEvent.id)}
+                        className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-amber-950/35 border border-slate-800 hover:border-amber-500/50 transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ backgroundColor: lnk.branchColor }}
+                            />
+                            <span className="truncate">
+                              <span className="font-mono tabular-nums">{lnk.targetEvent.period}</span> · {lnk.branchLabel}
+                            </span>
+                          </span>
+                          <span className="text-xs font-semibold text-amber-300 shrink-0">
+                            {lnk.isHiddenBranch ? 'Раскрыть →' : 'Перейти →'}
+                          </span>
+                        </div>
+                        <div className="text-xs font-semibold text-white truncate mt-0.5">
+                          {lnk.targetEvent.title}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-3.5 text-xs font-sans text-slate-400 space-y-2">
+                <p className="leading-relaxed">
+                  Прямых перекрёстных связей у этого события в текущем манифесте не отмечено.
+                </p>
+              </div>
+            )}
+
+            <div className="px-3.5 py-2 border-t border-slate-800/80 bg-slate-950/60 flex items-center justify-between gap-2 text-xs font-sans">
+              <button
+                type="button"
+                onClick={() => onToggleFocusEvent(inspectorSourceEvent.id)}
+                className={`px-2.5 py-1 rounded-lg border inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                  focusedEvent?.id === inspectorSourceEvent.id
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
+                    : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
+                }`}
+              >
+                <Crosshair className="w-3 h-3" />
+                <span>{focusedEvent?.id === inspectorSourceEvent.id ? 'В фокусе' : 'Фокус'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenCardModal(inspectorSourceEvent.id)}
+                className="text-amber-300 hover:text-amber-200 font-semibold inline-flex items-center gap-1 cursor-pointer"
+              >
+                <GitCommitHorizontal className="w-3.5 h-3.5" />
+                <span>Паспорт →</span>
+              </button>
+            </div>
+          </section>
+        ) : (
+          <section className="rounded-2xl border border-slate-800/90 bg-[#080e1c]/90 backdrop-blur-md p-3.5 space-y-2.5 shadow-lg font-sans">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
+                <Link2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>Поворотные узлы среза</span>
+              </span>
+              <span className="text-xs text-slate-400">по связям</span>
+            </div>
+
+            {topLinkedEventsInWindow.length > 0 ? (
+              <div className="space-y-1.5">
+                {topLinkedEventsInWindow.map(({ ev, branchLabel, branchColor }) => (
+                  <div
+                    key={ev.id}
+                    className="rounded-xl bg-slate-900/75 hover:bg-slate-900 border border-slate-800/80 hover:border-emerald-500/40 p-2.5 transition-colors space-y-1.5"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPinnedHoverEventId(ev.id);
+                        onJumpToEvent(ev.id);
+                      }}
+                      className="w-full text-left cursor-pointer group"
+                    >
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="inline-flex items-center gap-1.5 text-slate-300 min-w-0">
+                          <span
+                            className="w-2 h-2 rounded-full shrink-0"
+                            style={{ backgroundColor: branchColor }}
+                          />
+                          <span className="font-mono font-bold text-slate-200 tabular-nums shrink-0">
+                            {ev.period}
+                          </span>
+                          <span className="truncate text-slate-400">{branchLabel}</span>
+                        </span>
+                        <span className="font-mono text-xs font-semibold text-emerald-300 shrink-0 tabular-nums inline-flex items-center gap-1">
+                          <Link2 className="w-3 h-3" />
+                          {ev.explicitLinks.length}
+                        </span>
+                      </div>
+                      <div className="mt-1 text-xs font-semibold text-white group-hover:text-amber-200 leading-snug line-clamp-2">
+                        {ev.title}
+                      </div>
+                    </button>
+
+                    <div className="flex items-center justify-between gap-2 pt-0.5 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => onToggleFocusEvent(ev.id)}
+                        className="text-slate-300 hover:text-emerald-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Crosshair className="w-3 h-3" />
+                        <span>В фокус</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onOpenCardModal(ev.id)}
+                        className="text-amber-300 hover:text-amber-200 font-semibold cursor-pointer"
+                      >
+                        Паспорт →
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Наведите на любую карточку хронографа, чтобы увидеть её прямые связи и перейти к связанным событиям.
+              </p>
+            )}
+          </section>
+        )}
+      </aside>
 
       {hoveredCardTooltip && (
         <div
@@ -2605,7 +3052,7 @@ export function GitTimeline({
           }}
           className="fixed z-50 pointer-events-none rounded-xl border border-slate-700/95 bg-[#080e1d]/98 backdrop-blur-md shadow-2xl p-3.5 text-left"
         >
-          <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+          <div className="flex items-center justify-between gap-2 text-xs font-sans">
             <div className="flex items-center gap-1.5 min-w-0">
               <span
                 className="w-2 h-2 rounded-full shrink-0"
@@ -2613,10 +3060,7 @@ export function GitTimeline({
               />
               <span className="font-semibold text-slate-300 truncate">{hoveredCardTooltip.branchLabel}</span>
             </div>
-            <span
-              className="font-extrabold tabular-nums shrink-0"
-              style={{ color: hoveredCardTooltip.branchColor }}
-            >
+            <span className="font-mono font-extrabold text-slate-200 tabular-nums shrink-0">
               {hoveredCardTooltip.dateLabel}
             </span>
           </div>
@@ -2638,7 +3082,7 @@ export function GitTimeline({
               tEffEnd,
             );
             return (
-              <div className="mt-1 flex items-center gap-2 text-[11px] font-mono text-slate-300 tabular-nums">
+              <div className="mt-1 flex items-center gap-2 text-xs font-sans text-slate-300 tabular-nums">
                 <span style={{ color: hoveredCardTooltip.branchColor }}>{tStatus.symbol}</span>
                 <span className="font-semibold text-slate-200">{tStatus.kindLabel}:</span>
                 <span>{tStatus.durationLabel}</span>
@@ -2662,15 +3106,15 @@ export function GitTimeline({
             (() => {
               const cal = formatCalendarDetailBadge(hoveredCardTooltip.ev.startPrecision);
               return (
-                <div className="mt-1 text-[11px] font-mono tabular-nums text-slate-300 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                  <span className={cal.tone === 'gregorian' ? 'text-sky-300' : 'text-amber-300'}>
+                <div className="mt-1 text-xs font-sans tabular-nums text-slate-300 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className={`font-mono ${cal.tone === 'gregorian' ? 'text-sky-300' : 'text-amber-300'}`}>
                     {cal.primaryText}
                   </span>
                   <span className="text-slate-400">· {cal.styleLabel}</span>
                   {cal.counterpartText && (
-                    <span className="text-slate-300">/ {cal.counterpartText}</span>
+                    <span className="font-mono text-slate-300">/ {cal.counterpartText}</span>
                   )}
-                  {cal.offsetNote && <span className="text-slate-500">({cal.offsetNote})</span>}
+                  {cal.offsetNote && <span className="text-slate-400">({cal.offsetNote})</span>}
                 </div>
               );
             })()}
@@ -2680,15 +3124,15 @@ export function GitTimeline({
           </p>
 
           {hoveredCardTooltip.ev.prerequisitesList.length > 0 && (
-            <div className="mt-2 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1.5 text-[11px] text-indigo-100 leading-snug line-clamp-2">
-              <span className="font-mono font-bold text-indigo-300">Предпосылки: </span>
+            <div className="mt-2 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1.5 text-xs font-sans text-indigo-100 leading-snug line-clamp-2">
+              <span className="font-semibold text-indigo-300">Предпосылки: </span>
               {hoveredCardTooltip.ev.prerequisitesList[0]}
             </div>
           )}
 
           {hoveredCardTooltip.ev.outcome && (
-            <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-1.5 text-[11px] text-amber-100 leading-snug line-clamp-2">
-              <span className="font-mono font-bold text-amber-300">Итог: </span>
+            <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-1.5 text-xs font-sans text-amber-100 leading-snug line-clamp-2">
+              <span className="font-semibold text-amber-300">Итог: </span>
               {hoveredCardTooltip.ev.outcome}
             </div>
           )}
@@ -2697,18 +3141,18 @@ export function GitTimeline({
             hoveredCardTooltip.ev.details !== hoveredCardTooltip.ev.subtitle &&
             !hoveredCardTooltip.ev.outcome &&
             hoveredCardTooltip.ev.prerequisitesList.length === 0 && (
-              <p className="mt-1.5 text-[11px] text-slate-400 leading-relaxed line-clamp-3">
+              <p className="mt-1.5 text-xs font-sans text-slate-400 leading-relaxed line-clamp-3">
                 {hoveredCardTooltip.ev.details}
               </p>
             )}
 
-          <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 text-[10px] font-mono text-slate-400">
+          <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs font-sans text-slate-400">
             <span className="truncate">
               {hoveredCardTooltip.ev.ruler
                 ? `Правитель: ${hoveredCardTooltip.ev.ruler}`
                 : hoveredCardTooltip.branchLabel}
             </span>
-            <span className="text-amber-300 shrink-0">
+            <span className="text-amber-300 shrink-0 tabular-nums">
               {hoveredCardTooltip.ev.explicitLinks.length > 0
                 ? `Связей: ${hoveredCardTooltip.ev.explicitLinks.length} · Клик — паспорт`
                 : 'Клик — паспорт события'}
@@ -2717,7 +3161,7 @@ export function GitTimeline({
         </div>
       )}
 
-      {/* Плавающая панель быстрого перехода по дальним вертикальным связям */}
+      {/* Плавающая панель быстрого перехода по дальним вертикальным связям (на < xl, на xl её заменяет липкий инспектор справа) */}
       {activeLinkGeometry && (
         <aside
           aria-label="Навигация по связанным событиям"
@@ -2727,16 +3171,19 @@ export function GitTimeline({
               scheduleClearHoverEvent();
             }
           }}
-          className="fixed bottom-4 sm:bottom-5 left-3 right-3 sm:left-auto sm:right-5 z-40 max-w-md sm:max-w-none sm:w-[376px] mx-auto sm:mx-0 max-h-[58vh] flex flex-col rounded-2xl border border-emerald-500/45 bg-[#0b1325]/98 backdrop-blur-md shadow-2xl overflow-hidden"
+          className="xl:hidden fixed bottom-4 sm:bottom-5 left-3 right-3 sm:left-auto sm:right-5 z-40 max-w-md sm:max-w-none sm:w-[376px] mx-auto sm:mx-0 max-h-[58vh] flex flex-col rounded-2xl border border-emerald-500/45 bg-[#0b1325]/98 backdrop-blur-md shadow-2xl overflow-hidden"
         >
-          <div className="px-3.5 py-2.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2">
+          <div className="px-3.5 py-2.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2 font-sans">
             <div className="min-w-0">
-              <div className="text-[10px] font-mono text-emerald-300 font-bold flex items-center gap-1.5 tabular-nums">
-                <Link2 className="w-3 h-3 shrink-0" />
-                <span>Переход по связям ({activeLinkGeometry.totalCount})</span>
+              <div className="text-xs text-emerald-300 font-bold flex items-center gap-1.5 tabular-nums">
+                <Link2 className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  Переход по связям (<span className="font-mono">{activeLinkGeometry.totalCount}</span>)
+                </span>
               </div>
               <div className="text-xs font-bold text-white truncate mt-0.5">
-                {activeLinkGeometry.sourceEvent.period} — {activeLinkGeometry.sourceEvent.title}
+                <span className="font-mono tabular-nums">{activeLinkGeometry.sourceEvent.period}</span> —{' '}
+                {activeLinkGeometry.sourceEvent.title}
               </div>
             </div>
 
@@ -2750,7 +3197,7 @@ export function GitTimeline({
                       : activeLinkGeometry.sourceEvent.id,
                   )
                 }
-                className={`p-1.5 rounded-lg border text-[10px] font-mono transition-colors cursor-pointer ${
+                className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
                   pinnedHoverEventId === activeLinkGeometry.sourceEvent.id
                     ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
                     : 'bg-slate-950/80 border-slate-700 text-slate-300 hover:text-white'
@@ -2774,12 +3221,14 @@ export function GitTimeline({
             </div>
           </div>
 
-          <div className="p-2.5 overflow-y-auto space-y-2.5 text-xs">
+          <div className="p-2.5 overflow-y-auto space-y-2.5 text-xs font-sans">
             {activeLinkGeometry.upItems.length > 0 && (
               <div className="space-y-1">
-                <div className="text-[10px] font-mono text-slate-400 px-1 flex items-center gap-1">
+                <div className="text-xs text-slate-400 px-1 flex items-center gap-1">
                   <ArrowUp className="w-3 h-3 text-emerald-400" />
-                  <span>Выше на ленте ({activeLinkGeometry.upItems.length})</span>
+                  <span>
+                    Выше на ленте (<span className="font-mono tabular-nums">{activeLinkGeometry.upItems.length}</span>)
+                  </span>
                 </div>
                 {activeLinkGeometry.upItems.map((lnk) => (
                   <button
@@ -2788,11 +3237,17 @@ export function GitTimeline({
                     onClick={() => onJumpToEvent(lnk.targetEvent.id)}
                     className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
                   >
-                    <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
-                      <span className="font-bold tabular-nums" style={{ color: lnk.branchColor }}>
-                        ↑ {lnk.targetEvent.period} · {lnk.branchLabel}
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: lnk.branchColor }}
+                        />
+                        <span className="truncate">
+                          <span className="font-mono tabular-nums">↑ {lnk.targetEvent.period}</span> · {lnk.branchLabel}
+                        </span>
                       </span>
-                      <span className="text-emerald-300 shrink-0 tabular-nums">
+                      <span className="font-mono text-xs text-emerald-300 shrink-0 tabular-nums">
                         {lnk.rowDelta} стр.{lnk.yearDelta !== 0 ? ` · ${lnk.yearDelta} л.` : ''}
                       </span>
                     </div>
@@ -2806,9 +3261,11 @@ export function GitTimeline({
 
             {activeLinkGeometry.downItems.length > 0 && (
               <div className="space-y-1">
-                <div className="text-[10px] font-mono text-slate-400 px-1 flex items-center gap-1">
+                <div className="text-xs text-slate-400 px-1 flex items-center gap-1">
                   <ArrowDown className="w-3 h-3 text-emerald-400" />
-                  <span>Ниже на ленте ({activeLinkGeometry.downItems.length})</span>
+                  <span>
+                    Ниже на ленте (<span className="font-mono tabular-nums">{activeLinkGeometry.downItems.length}</span>)
+                  </span>
                 </div>
                 {activeLinkGeometry.downItems.map((lnk) => (
                   <button
@@ -2817,11 +3274,17 @@ export function GitTimeline({
                     onClick={() => onJumpToEvent(lnk.targetEvent.id)}
                     className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
                   >
-                    <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
-                      <span className="font-bold tabular-nums" style={{ color: lnk.branchColor }}>
-                        ↓ {lnk.targetEvent.period} · {lnk.branchLabel}
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: lnk.branchColor }}
+                        />
+                        <span className="truncate">
+                          <span className="font-mono tabular-nums">↓ {lnk.targetEvent.period}</span> · {lnk.branchLabel}
+                        </span>
                       </span>
-                      <span className="text-emerald-300 shrink-0 tabular-nums">
+                      <span className="font-mono text-xs text-emerald-300 shrink-0 tabular-nums">
                         {lnk.rowDelta} стр.{lnk.yearDelta !== 0 ? ` · +${Math.abs(lnk.yearDelta)} л.` : ''}
                       </span>
                     </div>
@@ -2835,8 +3298,8 @@ export function GitTimeline({
 
             {activeLinkGeometry.offStreamItems.length > 0 && (
               <div className="space-y-1">
-                <div className="text-[10px] font-mono text-amber-300/90 px-1">
-                  Вне окна или в скрытых ветках ({activeLinkGeometry.offStreamItems.length})
+                <div className="text-xs text-amber-300/90 px-1">
+                  Вне окна или в скрытых ветках (<span className="font-mono tabular-nums">{activeLinkGeometry.offStreamItems.length}</span>)
                 </div>
                 {activeLinkGeometry.offStreamItems.map((lnk) => (
                   <button
@@ -2845,11 +3308,17 @@ export function GitTimeline({
                     onClick={() => onJumpToEvent(lnk.targetEvent.id)}
                     className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-amber-950/35 border border-slate-800 hover:border-amber-500/50 transition-colors cursor-pointer"
                   >
-                    <div className="flex items-center justify-between gap-2 text-[10px] font-mono">
-                      <span className="font-bold tabular-nums" style={{ color: lnk.branchColor }}>
-                        {lnk.targetEvent.period} · {lnk.branchLabel}
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
+                        <span
+                          className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ backgroundColor: lnk.branchColor }}
+                        />
+                        <span className="truncate">
+                          <span className="font-mono tabular-nums">{lnk.targetEvent.period}</span> · {lnk.branchLabel}
+                        </span>
                       </span>
-                      <span className="text-amber-300 shrink-0">
+                      <span className="text-xs font-semibold text-amber-300 shrink-0">
                         {lnk.isHiddenBranch ? 'Раскрыть →' : 'Перейти →'}
                       </span>
                     </div>

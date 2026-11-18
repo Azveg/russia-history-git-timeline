@@ -1616,7 +1616,7 @@ export default function App() {
         maxYear={timelineBounds.maxYear}
       />
 
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-2 space-y-2">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-3.5 space-y-3.5">
         <FilterPanel
           yearFrom={effectiveYearFrom}
           yearTo={effectiveYearTo}
@@ -1705,7 +1705,7 @@ export default function App() {
         )}
       </div>
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-8">
         {stream.length === 0 ? (
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-12 text-center my-8">
             <h3 className="font-serif text-xl font-bold text-white">
@@ -1734,6 +1734,7 @@ export default function App() {
             collapsedParents={collapsedParents}
             manifest={manifest}
             yearFrom={effectiveYearFrom}
+            yearTo={effectiveYearTo}
             minYear={timelineBounds.minYear}
             axisResolution={axisResolution}
             hoveredEventId={hoveredEventId}
@@ -1760,6 +1761,7 @@ export default function App() {
             onOpenCardModal={handleOpenCardModal}
             onOpenPeriodModal={handleOpenPeriodModal}
             onOpenEraModal={handleOpenEraModal}
+            onOpenWindowModal={handleOpenWindowModal}
             onSelectYearRange={handleYearRangeChange}
           />
         )}

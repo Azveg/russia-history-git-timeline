@@ -39,8 +39,9 @@ export function HiddenLinksNotice({
             </span>{' '}
             связей в отключённых ветках
           </span>
-          <span className="text-slate-400 font-mono text-[11px] tabular-nums">
-            · затронуто веток: {visibility.hiddenGroups.length}
+          <span className="text-slate-400 font-sans text-xs tabular-nums">
+            · затронуто веток:{' '}
+            <span className="font-mono font-semibold text-slate-300">{visibility.hiddenGroups.length}</span>
           </span>
         </div>
 
@@ -55,21 +56,21 @@ export function HiddenLinksNotice({
                   ? `Включить ветку «${group.branchLabel}» (примеры: ${group.sampleTargetTitles.join('; ')})`
                   : `Включить ветку «${group.branchLabel}»`
               }
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-amber-400/60 text-xs text-slate-200 hover:text-white transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 hover:border-amber-400/60 font-sans text-xs text-slate-200 hover:text-white transition-colors cursor-pointer"
             >
               <span
                 className="w-2 h-2 rounded-full shrink-0"
                 style={{ backgroundColor: group.color }}
               />
               <span>+ {group.branchLabel}</span>
-              <span className="font-mono text-[11px] text-amber-300 tabular-nums">
+              <span className="font-mono text-xs text-amber-300 tabular-nums">
                 · {group.hiddenLinkCount}
               </span>
             </button>
           ))}
           {visibility.hiddenGroups.length > 5 && (
-            <span className="text-[11px] font-mono text-slate-400 px-1 tabular-nums">
-              и ещё {visibility.hiddenGroups.length - 5}
+            <span className="text-xs font-sans text-slate-400 px-1 tabular-nums">
+              и ещё <span className="font-mono">{visibility.hiddenGroups.length - 5}</span>
             </span>
           )}
         </div>
@@ -79,11 +80,11 @@ export function HiddenLinksNotice({
         <button
           type="button"
           onClick={() => onRevealBranches(allHiddenBranchIds)}
-          className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+          className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-sans text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
         >
           <Eye className="w-3.5 h-3.5" />
           <span className="tabular-nums">
-            Раскрыть связанные ветки ({allHiddenBranchIds.length})
+            Раскрыть связанные ветки (<span className="font-mono">{allHiddenBranchIds.length}</span>)
           </span>
         </button>
 
@@ -91,7 +92,7 @@ export function HiddenLinksNotice({
           <button
             type="button"
             onClick={onEnableAllBranches}
-            className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+            className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-sans text-xs inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
           >
             <Layers className="w-3.5 h-3.5 text-slate-400" />
             <span>Все ветки</span>

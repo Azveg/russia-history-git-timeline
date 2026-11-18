@@ -504,7 +504,7 @@ export function OverlapMapSection({
                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono font-semibold transition-colors whitespace-nowrap shrink-0 ${
                   zoomHistoryCount > 0
                     ? 'bg-slate-900 hover:bg-slate-800 border-amber-500/45 text-amber-200 cursor-pointer'
-                    : 'bg-slate-900/40 border-slate-800/80 text-slate-600 cursor-not-allowed'
+                    : 'bg-slate-900/40 border-slate-800/80 text-slate-400/65 cursor-not-allowed'
                 }`}
                 title={
                   lastZoomStep
@@ -534,7 +534,7 @@ export function OverlapMapSection({
                   className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
                     canZoomOut
                       ? 'text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer'
-                      : 'text-slate-600 cursor-not-allowed'
+                      : 'text-slate-400/65 cursor-not-allowed'
                   }`}
                   title={
                     canZoomOut
@@ -555,7 +555,7 @@ export function OverlapMapSection({
                   className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
                     canZoomIn
                       ? 'text-amber-300 hover:bg-slate-800 hover:text-amber-200 font-semibold cursor-pointer'
-                      : 'text-slate-600 cursor-not-allowed'
+                      : 'text-slate-400/65 cursor-not-allowed'
                   }`}
                   title={
                     canZoomIn
@@ -581,7 +581,7 @@ export function OverlapMapSection({
                   className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
                     canShiftLeft
                       ? 'text-slate-300 hover:bg-slate-800 hover:text-white cursor-pointer'
-                      : 'text-slate-600 cursor-not-allowed'
+                      : 'text-slate-400/65 cursor-not-allowed'
                   }`}
                   title={
                     canShiftLeft
@@ -602,7 +602,7 @@ export function OverlapMapSection({
                   className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
                     canShiftRight
                       ? 'text-slate-300 hover:bg-slate-800 hover:text-white cursor-pointer'
-                      : 'text-slate-600 cursor-not-allowed'
+                      : 'text-slate-400/65 cursor-not-allowed'
                   }`}
                   title={
                     canShiftRight
@@ -713,7 +713,7 @@ export function OverlapMapSection({
               <span
                 key={tick}
                 style={{ left: `${toGlobalPct(tick)}%` }}
-                className="absolute top-0.5 -translate-x-1/2 text-[9px] font-mono text-slate-400 tabular-nums"
+                className="absolute top-0.5 -translate-x-1/2 text-[9px] font-mono text-slate-300 tabular-nums"
               >
                 {tick}
               </span>
@@ -939,7 +939,7 @@ export function OverlapMapSection({
                         />
                         {parentBranch && (
                           <span title={`Ветка внутри группы «${parentBranch.label}»`}>
-                            <GitBranch className="w-3 h-3 text-slate-500 shrink-0" />
+                            <GitBranch className="w-3 h-3 text-slate-400 shrink-0" />
                           </span>
                         )}
                         <span className="truncate font-semibold" title={branch.label}>
@@ -1004,9 +1004,13 @@ export function OverlapMapSection({
                                 : isLinked
                                   ? '#10b981'
                                   : isAtScanYear
-                                    ? `${branch.color}88`
-                                    : `${branch.color}42`,
-                              borderColor: isLinked ? '#34d399' : branch.color,
+                                    ? `${branch.color}80`
+                                    : `${branch.color}36`,
+                              borderColor: isHovered
+                                ? branch.color
+                                : isLinked
+                                  ? '#34d399'
+                                  : `${branch.color}a6`,
                             }}
                             className={`absolute top-1 bottom-1 rounded border text-left px-1 overflow-hidden transition-all cursor-pointer hover:z-20 ${
                               isHovered
@@ -1100,17 +1104,17 @@ export function OverlapMapSection({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <Crosshair className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span className="text-xs font-mono font-bold text-amber-300 tabular-nums">
-                      Срез на {scanSlice.year} г.
+                    <span className="text-xs font-sans font-bold text-amber-300 tabular-nums">
+                      Срез на <span className="font-mono">{scanSlice.year}</span> г.
                     </span>
-                    <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                    <span className="text-xs font-mono text-slate-400 tabular-nums">
                       {scanSlice.totalEvents} соб. · {scanSlice.rulers.length} правл.
                     </span>
                   </div>
-                  <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
+                  <div className="mt-0.5 flex items-center gap-1.5 text-xs font-sans text-slate-400">
                     {isPinned ? (
                       <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
-                        <Pin className="w-2.5 h-2.5" />
+                        <Pin className="w-3 h-3" />
                         <span>Зафиксирован · кликните по пункту для открытия</span>
                       </span>
                     ) : (
@@ -1123,7 +1127,7 @@ export function OverlapMapSection({
                   <button
                     type="button"
                     onClick={() => setPinnedState(null)}
-                    className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-mono text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700/80 transition-colors cursor-pointer shrink-0"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-sans text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700/80 transition-colors cursor-pointer shrink-0"
                     title="Снять фиксацию года (Esc)"
                   >
                     <X className="w-3 h-3" />
@@ -1132,16 +1136,16 @@ export function OverlapMapSection({
                 )}
               </div>
 
-              <div className="p-2.5 overflow-y-auto space-y-2.5 text-xs">
+              <div className="p-2.5 overflow-y-auto space-y-2.5 text-xs font-sans">
                 {scanSlice.rulers.length === 0 && scanSlice.branchGroups.length === 0 ? (
-                  <p className="py-2 text-center text-[11px] font-mono text-slate-400">
-                    В {scanSlice.year} г. нет активных событий по выбранным фильтрам
+                  <p className="py-2 text-center text-xs font-sans text-slate-400">
+                    В <span className="font-mono tabular-nums">{scanSlice.year}</span> г. нет активных событий по выбранным фильтрам
                   </p>
                 ) : (
                   <>
                     {scanSlice.rulers.length > 0 && (
                       <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold text-amber-300/90">
+                        <div className="flex items-center gap-1.5 text-xs font-sans font-semibold text-amber-300/90">
                           <Crown className="w-3 h-3 text-amber-400 shrink-0" />
                           <span>Правление</span>
                         </div>
@@ -1151,14 +1155,14 @@ export function OverlapMapSection({
                               key={`slice-ruler-${r.id}`}
                               type="button"
                               onClick={() => onOpenPeriodModal(r.id)}
-                              className="w-full text-left px-2 py-1.5 rounded-lg bg-slate-900/85 hover:bg-slate-800 border border-slate-800/90 hover:border-amber-400/50 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                              className="w-full text-left px-2.5 py-1.5 rounded-lg bg-slate-900/85 hover:bg-slate-800 border border-slate-800/90 hover:border-amber-400/50 transition-colors flex items-center justify-between gap-2 cursor-pointer"
                             >
                               <div className="min-w-0">
-                                <div className="text-[11px] font-semibold text-slate-100 truncate">
+                                <div className="text-xs font-semibold text-slate-100 truncate">
                                   {r.ruler}
                                 </div>
-                                <div className="text-[10px] font-mono text-slate-400 tabular-nums truncate">
-                                  {r.reignPeriod}
+                                <div className="text-xs font-sans text-slate-400 truncate">
+                                  <span className="font-mono tabular-nums">{r.reignPeriod}</span>
                                   {r.center ? ` · ${r.center}` : ''}
                                 </div>
                               </div>
@@ -1173,7 +1177,7 @@ export function OverlapMapSection({
 
                     {scanSlice.branchGroups.map(({ branch, events }) => (
                       <div key={`slice-branch-${branch.id}`} className="space-y-1">
-                        <div className="flex items-center justify-between gap-2 text-[10px] font-mono font-semibold text-slate-300">
+                        <div className="flex items-center justify-between gap-2 text-xs font-sans font-semibold text-slate-300">
                           <span className="inline-flex items-center gap-1.5 min-w-0">
                             <span
                               className="w-2 h-2 rounded-full shrink-0"
@@ -1181,7 +1185,7 @@ export function OverlapMapSection({
                             />
                             <span className="truncate">{branch.label}</span>
                           </span>
-                          <span className="text-slate-500 tabular-nums shrink-0">{events.length}</span>
+                          <span className="font-mono text-slate-400 tabular-nums shrink-0">{events.length}</span>
                         </div>
                         <div className="space-y-1">
                           {events.map((ev) => {
@@ -1196,20 +1200,20 @@ export function OverlapMapSection({
                                 onMouseEnter={() => onHoverEvent(ev.id)}
                                 onMouseLeave={() => onHoverEvent(null)}
                                 onClick={() => onOpenCardModal(ev.id)}
-                                className={`w-full text-left px-2 py-1.5 rounded-lg border transition-colors flex items-start justify-between gap-2 cursor-pointer ${
+                                className={`w-full text-left px-2.5 py-1.5 rounded-lg border transition-colors flex items-start justify-between gap-2 cursor-pointer ${
                                   isEvHovered
                                     ? 'bg-slate-800 border-amber-400/70'
                                     : 'bg-slate-900/75 hover:bg-slate-800 border-slate-800/80 hover:border-slate-600'
                                 }`}
                               >
                                 <div className="min-w-0">
-                                  <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 tabular-nums">
-                                    <span className="text-amber-300/95 font-semibold">{ev.period}</span>
+                                  <div className="flex items-center gap-1.5 text-xs font-sans text-slate-400">
+                                    <span className="font-mono text-amber-300/95 font-semibold tabular-nums">{ev.period}</span>
                                     {isPoint && (
                                       <span className="text-slate-400">· точечное</span>
                                     )}
                                   </div>
-                                  <div className="text-[11px] font-medium text-slate-100 leading-snug line-clamp-2">
+                                  <div className="text-xs font-medium text-slate-100 leading-snug line-clamp-2">
                                     {ev.title}
                                   </div>
                                 </div>
