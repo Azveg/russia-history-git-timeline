@@ -261,13 +261,17 @@ function main() {
           return;
         }
 
+        const parsedPeriod = parseYearsFromPeriod(node.period);
+        const startYear = typeof node.startYear === 'number' ? node.startYear : parsedPeriod?.startYear;
+        const endYear = typeof node.endYear === 'number' ? node.endYear : (parsedPeriod?.endYear ?? startYear);
+
         if (allNodesById.has(nId)) {
           addError(
             relFromPublic,
             `nodes[${idx}]: дублирующийся id узла "${nId}" (уже существует в ${allNodesById.get(nId).file}).`,
           );
         } else {
-          allNodesById.set(nId, { file: relFromPublic, node });
+          allNodesById.set(nId, { file: relFromPublic, node, startYear, endYear });
         }
 
         for (const reqStr of ['title', 'subtitle', 'details', 'task', 'period', 'region', 'type']) {
@@ -276,10 +280,6 @@ function main() {
             level(relFromPublic, `Узел "${nId}": пустое или отсутствующее поле "${reqStr}".`);
           }
         }
-
-        const parsedPeriod = parseYearsFromPeriod(node.period);
-        const startYear = typeof node.startYear === 'number' ? node.startYear : parsedPeriod?.startYear;
-        const endYear = typeof node.endYear === 'number' ? node.endYear : (parsedPeriod?.endYear ?? startYear);
 
         if (typeof startYear !== 'number' || !Number.isFinite(startYear)) {
           addError(relFromPublic, `Узел "${nId}": невозможно определить startYear (укажите число "startYear" или год в "period").`);
@@ -366,13 +366,15 @@ function main() {
               if (!isPlainObject(lnk) || typeof lnk.targetId !== 'string' || !lnk.targetId.trim()) {
                 addError(relFromPublic, `Узел "${nId}": linksTo[${lIdx}] должен содержать "targetId".`);
               } else {
-                if (lnk.type !== undefined && !VALID_LINK_TYPES.has(lnk.type)) {
+                const linkType = typeof lnk.type === 'string' && lnk.type.trim() ? lnk.type.trim() : 'sync_context';
+                if (lnk.type !== undefined && !VALID_LINK_TYPES.has(linkType)) {
                   addWarning(relFromPublic, `Узел "${nId}": нестандартный тип связи "${lnk.type}".`);
                 }
                 collectedLinks.push({
                   file: relFromPublic,
                   from: nId,
                   to: lnk.targetId.trim(),
+                  type: linkType,
                   source: `linksTo[${lIdx}]`,
                 });
               }
@@ -391,10 +393,15 @@ function main() {
             if (!isPlainObject(lnk) || typeof lnk.from !== 'string' || typeof lnk.to !== 'string') {
               addError(relFromPublic, `crossLinks[${lIdx}] должен содержать "from", "to" и "label".`);
             } else {
+              const linkType = typeof lnk.type === 'string' && lnk.type.trim() ? lnk.type.trim() : 'sync_context';
+              if (lnk.type !== undefined && !VALID_LINK_TYPES.has(linkType)) {
+                addWarning(relFromPublic, `crossLinks[${lIdx}]: нестандартный тип связи "${lnk.type}".`);
+              }
               collectedLinks.push({
                 file: relFromPublic,
                 from: lnk.from.trim(),
                 to: lnk.to.trim(),
+                type: linkType,
                 source: `crossLinks[${lIdx}]`,
               });
             }
@@ -441,26 +448,75 @@ function main() {
   if (manifest && Array.isArray(manifest.crossLinks)) {
     manifest.crossLinks.forEach((lnk, idx) => {
       if (isPlainObject(lnk) && typeof lnk.from === 'string' && typeof lnk.to === 'string') {
+        const linkType = typeof lnk.type === 'string' && lnk.type.trim() ? lnk.type.trim() : 'sync_context';
+        if (lnk.type !== undefined && !VALID_LINK_TYPES.has(linkType)) {
+          addWarning('data/sync.manifest.json', `manifest.crossLinks[${idx}]: нестандартный тип связи "${lnk.type}".`);
+        }
         collectedLinks.push({
           file: 'data/sync.manifest.json',
           from: lnk.from.trim(),
           to: lnk.to.trim(),
+          type: linkType,
           source: `manifest.crossLinks[${idx}]`,
         });
       }
     });
   }
 
+  const CAUSAL_TYPES = new Set(['triggers', 'enables', 'causes', 'consequence']);
+  const causalVectorPairs = new Map();
+
   for (const lnk of collectedLinks) {
     if (lnk.from === lnk.to) {
       addError(lnk.file, `Связь ${lnk.source}: узел "${lnk.from}" ссылается сам на себя.`);
       continue;
     }
-    if (!allNodesById.has(lnk.from)) {
+    const fromExists = allNodesById.has(lnk.from);
+    const toExists = allNodesById.has(lnk.to);
+    if (!fromExists) {
       addWarning(lnk.file, `Висячая связь (${lnk.source}): исходный узел "${lnk.from}" не найден (пропускается на сайте).`);
     }
-    if (!allNodesById.has(lnk.to)) {
+    if (!toExists) {
       addWarning(lnk.file, `Висячая связь (${lnk.source}): целевой узел "${lnk.to}" не найден (пропускается на сайте).`);
+    }
+    if (!fromExists || !toExists || !CAUSAL_TYPES.has(lnk.type)) {
+      continue;
+    }
+
+    const causeId = lnk.type === 'consequence' ? lnk.to : lnk.from;
+    const effectId = lnk.type === 'consequence' ? lnk.from : lnk.to;
+    const causeEntry = allNodesById.get(causeId);
+    const effectEntry = allNodesById.get(effectId);
+
+    if (
+      typeof causeEntry?.startYear === 'number' &&
+      typeof causeEntry?.endYear === 'number' &&
+      typeof effectEntry?.startYear === 'number' &&
+      typeof effectEntry?.endYear === 'number'
+    ) {
+      if (effectEntry.endYear < causeEntry.startYear) {
+        addError(
+          lnk.file,
+          `Хронологическая инверсия (${lnk.source}): причина "${causeId}" (${causeEntry.startYear}–${causeEntry.endYear}) полностью позже следствия "${effectId}" (${effectEntry.startYear}–${effectEntry.endYear}) [type=${lnk.type}].`,
+        );
+      } else if (effectEntry.startYear < causeEntry.startYear) {
+        addWarning(
+          lnk.file,
+          `Перекрытие с ранним стартом следствия (${lnk.source}): причина "${causeId}" (${causeEntry.startYear}–${causeEntry.endYear}) начинается позже старта следствия "${effectId}" (${effectEntry.startYear}–${effectEntry.endYear}) [type=${lnk.type}]. Используйте sync_context или уточните вектор.`,
+        );
+      }
+    }
+
+    const pairKey = causeId < effectId ? `${causeId}|${effectId}` : `${effectId}|${causeId}`;
+    const existingCausal = causalVectorPairs.get(pairKey);
+    const curDesc = `${lnk.file} ${lnk.source} (${causeId} -> ${effectId}, ${lnk.type})`;
+    if (existingCausal && existingCausal.causeId !== causeId) {
+      addWarning(
+        lnk.file,
+        `Противоречивые встречные причинные связи между "${causeId}" и "${effectId}": ${existingCausal.desc} против ${curDesc}.`,
+      );
+    } else if (!existingCausal) {
+      causalVectorPairs.set(pairKey, { causeId, effectId, desc: curDesc });
     }
   }
 

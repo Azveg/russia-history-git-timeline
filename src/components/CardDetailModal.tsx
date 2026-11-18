@@ -4,7 +4,9 @@ import {
   Award,
   BookOpen,
   Calendar,
+  Check,
   Compass,
+  Copy,
   Crosshair,
   Crown,
   FlaskConical,
@@ -96,9 +98,11 @@ export function CardDetailModal({
   onOpenEraModal,
 }: CardDetailModalProps) {
   const [concurrentBranchFilter, setConcurrentBranchFilter] = useState<string>('ALL');
+  const [copiedSummary, setCopiedSummary] = useState(false);
 
   useEffect(() => {
     setConcurrentBranchFilter('ALL');
+    setCopiedSummary(false);
   }, [card?.id]);
 
   useEffect(() => {
@@ -371,6 +375,41 @@ export function CardDetailModal({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                const lines: string[] = [
+                  `${card.period} — ${card.title}`,
+                  card.subtitle,
+                ];
+                if (card.prerequisitesList.length > 0) {
+                  lines.push(
+                    `Предпосылки: ${card.prerequisitesList.join('; ')}`,
+                  );
+                }
+                if (card.outcome) {
+                  lines.push(`Главный итог: ${card.outcome}`);
+                }
+                if (card.details) {
+                  lines.push(card.details);
+                }
+                navigator.clipboard?.writeText(lines.join('\n\n'));
+                setCopiedSummary(true);
+                window.setTimeout(() => setCopiedSummary(false), 2000);
+              }}
+              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono text-indigo-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+              title="Скопировать краткий конспект карточки (предпосылки, суть, главный итог)"
+            >
+              {copiedSummary ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">
+                {copiedSummary ? 'Скопировано' : 'Конспект'}
+              </span>
+            </button>
+
             <button
               type="button"
               onClick={() => {

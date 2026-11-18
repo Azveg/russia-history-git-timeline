@@ -1286,7 +1286,24 @@ export function getEnrichedEvents(
     ...(manifest.crossLinks || []),
     ...fileCrossLinks,
     ...inlineCrossLinks,
-  ];
+  ].map((lnk) => {
+    const rawType = lnk.type || 'sync_context';
+    if (rawType === 'consequence') {
+      return {
+        ...lnk,
+        from: lnk.to,
+        to: lnk.from,
+        type: 'triggers',
+      };
+    }
+    if (rawType === 'causes') {
+      return {
+        ...lnk,
+        type: 'triggers',
+      };
+    }
+    return lnk;
+  });
 
   // Сначала фиксируем пары, уже связанные направленной причинной связью (triggers/enables),
   // чтобы избыточный недирективный sync_context для той же пары не дублировал карточку в Колонке 1.
