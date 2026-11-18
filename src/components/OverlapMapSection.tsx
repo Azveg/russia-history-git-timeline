@@ -1,20 +1,25 @@
 import {
+  ArrowUpRight,
   BarChart3,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  Crosshair,
   Crown,
   Flame,
   GitBranch,
   Layers,
   Link2,
   Minus,
+  Pin,
   Plus,
   SlidersHorizontal,
   Undo2,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   computeDensityBins,
   getEventEffectiveEndYear,
@@ -51,6 +56,15 @@ interface OverlapMapSectionProps {
 
 const RULER_BAR_COLORS = ['#fbbf24', '#38bdf8', '#c084fc', '#34d399', '#f472b6', '#fb923c'];
 
+interface ScanCursorState {
+  year: number;
+  clientX: number;
+  clientY: number;
+}
+
+const POPOVER_WIDTH = 344;
+const POPOVER_MAX_HEIGHT = 360;
+
 export function OverlapMapSection({
   matchingEvents,
   rulers,
@@ -76,7 +90,12 @@ export function OverlapMapSection({
   onRecordZoomCheckpoint,
 }: OverlapMapSectionProps) {
   const [isExpanded, setIsExpanded] = useState(false);
+  const [cursorState, setCursorState] = useState<ScanCursorState | null>(null);
+  const [pinnedState, setPinnedState] = useState<ScanCursorState | null>(null);
+  const [viewportTick, setViewportTick] = useState(0);
   const scrubberTrackRef = useRef<HTMLDivElement | null>(null);
+  const scaleTrackRef = useRef<HTMLDivElement | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const lastWheelCheckpointRef = useRef<number>(0);
 
   const span = Math.max(1, yearTo - yearFrom);
@@ -172,6 +191,150 @@ export function OverlapMapSection({
   const globalCenturyTicks = [900, 1000, 1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900, 2000].filter(
     (y) => y >= minYear && y <= maxYear,
   );
+
+  const activeScanState = pinnedState ?? cursorState;
+  const activeScanYear = activeScanState?.year ?? null;
+  const isPinned = pinnedState !== null;
+  const pointHitRadius = span > 500 ? 2 : span > 150 ? 1 : 0;
+
+  useEffect(() => {
+    if (!isExpanded) {
+      setCursorState(null);
+      setPinnedState(null);
+    }
+  }, [isExpanded]);
+
+  useEffect(() => {
+    if (pinnedState && (pinnedState.year < yearFrom || pinnedState.year > yearTo)) {
+      setPinnedState(null);
+    }
+  }, [pinnedState, yearFrom, yearTo]);
+
+  useEffect(() => {
+    if (!pinnedState) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPinnedState(null);
+      }
+    };
+    const handleReposition = () => {
+      setViewportTick((t) => t + 1);
+    };
+    const scrollEl = scrollContainerRef.current;
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('scroll', handleReposition, true);
+    window.addEventListener('resize', handleReposition);
+    scrollEl?.addEventListener('scroll', handleReposition);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', handleReposition, true);
+      window.removeEventListener('resize', handleReposition);
+      scrollEl?.removeEventListener('scroll', handleReposition);
+    };
+  }, [pinnedState]);
+
+  const scanSlice = useMemo(() => {
+    if (activeScanYear === null) return null;
+
+    const matchingRulers = rulersActive
+      ? visibleRulers.filter((r) => r.startYear <= activeScanYear && r.endYear >= activeScanYear)
+      : [];
+
+    const branchGroups: Array<{ branch: BranchDefinition; events: EnrichedEvent[] }> = [];
+    let totalEvents = 0;
+
+    for (const branch of visibleEventBranches) {
+      const hits: Array<{ ev: EnrichedEvent; dist: number }> = [];
+      for (const ev of matchingEvents) {
+        if (ev.task !== branch.id) continue;
+        const effStart = getEventEffectiveStartYear(ev, branches);
+        const effEnd = getEventEffectiveEndYear(ev, branches);
+        if (effStart === effEnd) {
+          const dist = Math.abs(effStart - activeScanYear);
+          if (dist <= pointHitRadius) {
+            hits.push({ ev, dist });
+          }
+        } else if (effStart <= activeScanYear && effEnd >= activeScanYear) {
+          hits.push({ ev, dist: 0 });
+        }
+      }
+      if (hits.length > 0) {
+        hits.sort((a, b) => a.dist - b.dist || a.ev.startYear - b.ev.startYear);
+        const events = hits.map((h) => h.ev);
+        branchGroups.push({ branch, events });
+        totalEvents += events.length;
+      }
+    }
+
+    return {
+      year: activeScanYear,
+      rulers: matchingRulers,
+      branchGroups,
+      totalEvents,
+    };
+  }, [activeScanYear, rulersActive, visibleRulers, visibleEventBranches, matchingEvents, branches, pointHitRadius]);
+
+  const popoverCoords = useMemo(() => {
+    if (!activeScanState || typeof window === 'undefined') return null;
+
+    let anchorX = activeScanState.clientX;
+    if (isPinned && scaleTrackRef.current) {
+      const rect = scaleTrackRef.current.getBoundingClientRect();
+      const clamped = Math.max(yearFrom, Math.min(yearTo, activeScanState.year));
+      const pct = (clamped - yearFrom) / span;
+      anchorX = rect.left + pct * rect.width;
+    }
+
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const safeWidth = Math.min(POPOVER_WIDTH, vw - 24);
+    const gap = 16;
+
+    const fitsRight = anchorX + gap + safeWidth <= vw - 12;
+    const rawLeft = fitsRight ? anchorX + gap : anchorX - gap - safeWidth;
+    const left = Math.max(12, Math.min(rawLeft, vw - safeWidth - 12));
+
+    const rawTop = activeScanState.clientY - 36;
+    const top = Math.max(12, Math.min(rawTop, vh - POPOVER_MAX_HEIGHT - 12));
+
+    return { left, top, width: safeWidth };
+  }, [activeScanState, isPinned, yearFrom, yearTo, span, viewportTick]);
+
+  const computeYearFromClientX = (clientX: number): number | null => {
+    const track = scaleTrackRef.current;
+    if (!track) return null;
+    const rect = track.getBoundingClientRect();
+    if (clientX < rect.left || clientX > rect.right || rect.width <= 0) {
+      return null;
+    }
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const rawYear = Math.round(yearFrom + ratio * span);
+    return Math.max(yearFrom, Math.min(yearTo, rawYear));
+  };
+
+  const handleStageMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const year = computeYearFromClientX(e.clientX);
+    if (year === null) {
+      setCursorState(null);
+      return;
+    }
+    setCursorState({ year, clientX: e.clientX, clientY: e.clientY });
+  };
+
+  const handleStageMouseLeave = () => {
+    setCursorState(null);
+  };
+
+  const handleStageBackgroundClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const year = computeYearFromClientX(e.clientX);
+    if (year === null) return;
+    if (pinnedState !== null) {
+      setPinnedState(null);
+      setCursorState({ year, clientX: e.clientX, clientY: e.clientY });
+    } else {
+      setPinnedState({ year, clientX: e.clientX, clientY: e.clientY });
+    }
+  };
 
   useEffect(() => {
     const track = scrubberTrackRef.current;
@@ -660,28 +823,37 @@ export function OverlapMapSection({
             </div>
           </div>
 
-          <div className="overflow-x-auto pb-1">
-            <div className="min-w-[680px] space-y-2.5">
-              {/* Шкала годов */}
-              <div className="flex items-center gap-3">
-                <div className="w-40 shrink-0 text-[11px] font-mono text-slate-400 uppercase tracking-wider">
-                  Шкала лет ({yearFrom}–{yearTo})
+          <div ref={scrollContainerRef} className="overflow-x-auto pb-1">
+            <div
+              onMouseMove={handleStageMouseMove}
+              onMouseLeave={handleStageMouseLeave}
+              onClick={handleStageBackgroundClick}
+              className="relative min-w-[680px]"
+            >
+              <div className="space-y-2.5">
+                {/* Шкала годов */}
+                <div className="flex items-center gap-3">
+                  <div className="w-40 shrink-0 text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+                    Шкала лет ({yearFrom}–{yearTo})
+                  </div>
+                  <div
+                    ref={scaleTrackRef}
+                    className="relative flex-1 h-6 bg-slate-950/90 rounded-lg border border-slate-800/80 overflow-hidden cursor-crosshair"
+                  >
+                    {ticks.map((tick) => {
+                      const left = toPct(tick);
+                      return (
+                        <div
+                          key={tick}
+                          style={{ left: `${left}%` }}
+                          className="absolute top-0 bottom-0 border-l border-slate-700/60 pointer-events-none"
+                        >
+                          <span className="pl-1 text-[10px] font-mono text-slate-400 tabular-nums">{tick}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="relative flex-1 h-6 bg-slate-950/90 rounded-lg border border-slate-800/80 overflow-hidden">
-                  {ticks.map((tick) => {
-                    const left = toPct(tick);
-                    return (
-                      <div
-                        key={tick}
-                        style={{ left: `${left}%` }}
-                        className="absolute top-0 bottom-0 border-l border-slate-700/60"
-                      >
-                        <span className="pl-1 text-[10px] font-mono text-slate-400 tabular-nums">{tick}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
 
               {/* Лента правителей */}
               {rulersActive && (
@@ -690,7 +862,7 @@ export function OverlapMapSection({
                     <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <span className="truncate">Правления</span>
                   </div>
-                  <div className="relative flex-1 h-9 bg-slate-950/90 rounded-lg border border-slate-800/90 overflow-hidden">
+                  <div className="relative flex-1 h-9 bg-slate-950/90 rounded-lg border border-slate-800/90 overflow-hidden cursor-crosshair">
                     {ticks.map((tick) => (
                       <div
                         key={tick}
@@ -707,21 +879,36 @@ export function OverlapMapSection({
                         hoveredEvent !== null &&
                         r.endYear >= hoveredEvent.startYear &&
                         r.startYear <= hoveredEvent.endYear;
+                      const isAtScanYear =
+                        activeScanYear !== null &&
+                        r.startYear <= activeScanYear &&
+                        r.endYear >= activeScanYear;
 
                       return (
                         <button
                           key={r.id}
                           type="button"
-                          onClick={() => onOpenPeriodModal(r.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenPeriodModal(r.id);
+                          }}
                           title={`${r.ruler} (${r.reignPeriod})${r.center ? ` [${r.center}]` : ''} — клик для сводки правления`}
                           style={{
                             left: `${left}%`,
                             width: `${width}%`,
-                            backgroundColor: isOverlappingHovered ? `${color}44` : `${color}24`,
+                            backgroundColor: isOverlappingHovered
+                              ? `${color}44`
+                              : isAtScanYear
+                                ? `${color}38`
+                                : `${color}24`,
                             borderColor: color,
                           }}
                           className={`absolute top-1 bottom-1 rounded border text-left px-1.5 overflow-hidden transition-all hover:z-20 hover:brightness-125 cursor-pointer ${
-                            isOverlappingHovered ? 'ring-1 ring-amber-300 z-10' : ''
+                            isOverlappingHovered
+                              ? 'ring-1 ring-amber-300 z-10'
+                              : isAtScanYear
+                                ? 'ring-1 ring-amber-400/60 z-10'
+                                : ''
                           }`}
                         >
                           <span className="block text-[10px] font-mono font-bold text-white truncate">
@@ -762,7 +949,7 @@ export function OverlapMapSection({
                       </span>
                     </div>
 
-                    <div className="relative flex-1 h-8 bg-slate-950/90 rounded-lg border border-slate-800/90 overflow-hidden">
+                    <div className="relative flex-1 h-8 bg-slate-950/90 rounded-lg border border-slate-800/90 overflow-hidden cursor-crosshair">
                       {ticks.map((tick) => (
                         <div
                           key={tick}
@@ -786,6 +973,11 @@ export function OverlapMapSection({
                           hoveredEvent.id !== ev.id &&
                           effStart <= getEventEffectiveEndYear(hoveredEvent, branches) &&
                           effEnd >= getEventEffectiveStartYear(hoveredEvent, branches);
+                        const isAtScanYear =
+                          activeScanYear !== null &&
+                          (isPoint
+                            ? Math.abs(effStart - activeScanYear) <= pointHitRadius
+                            : effStart <= activeScanYear && effEnd >= activeScanYear);
 
                         return (
                           <button
@@ -793,7 +985,10 @@ export function OverlapMapSection({
                             type="button"
                             onMouseEnter={() => onHoverEvent(ev.id)}
                             onMouseLeave={() => onHoverEvent(null)}
-                            onClick={() => onOpenCardModal(ev.id)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenCardModal(ev.id);
+                            }}
                             title={
                               isBio
                                 ? `${ev.title} (годы жизни: ${ev.period}, активен: ${ev.activeFrom}–${ev.activeTo}) · связей: ${ev.explicitLinks.length}`
@@ -806,7 +1001,9 @@ export function OverlapMapSection({
                                 ? branch.color
                                 : isLinked
                                   ? '#10b981'
-                                  : `${branch.color}42`,
+                                  : isAtScanYear
+                                    ? `${branch.color}88`
+                                    : `${branch.color}42`,
                               borderColor: isLinked ? '#34d399' : branch.color,
                             }}
                             className={`absolute top-1 bottom-1 rounded border text-left px-1 overflow-hidden transition-all cursor-pointer hover:z-20 ${
@@ -816,7 +1013,9 @@ export function OverlapMapSection({
                                   ? 'z-20 ring-2 ring-emerald-300'
                                   : isConcurrent
                                     ? 'z-10 ring-1 ring-amber-300/70'
-                                    : ''
+                                    : isAtScanYear
+                                      ? 'z-10 ring-1 ring-amber-300/85'
+                                      : ''
                             }`}
                           >
                             {width > 4.5 && (
@@ -827,30 +1026,229 @@ export function OverlapMapSection({
                           </button>
                         );
                       })}
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+
+              {/* Вертикальный сканлайн-курсор синхронизации поверх всех дорожек */}
+              {activeScanYear !== null && (
+                <div
+                  aria-hidden="true"
+                  style={{ left: 'calc(10rem + 0.75rem)', right: 0 }}
+                  className="pointer-events-none absolute inset-y-0 z-30"
+                >
+                  {(() => {
+                    const scanPct = toPct(activeScanYear);
+                    const badgeAlignClass =
+                      scanPct < 10
+                        ? 'translate-x-0.5'
+                        : scanPct > 90
+                          ? '-translate-x-full -ml-0.5'
+                          : '-translate-x-1/2';
+                    return (
+                      <div style={{ left: `${scanPct}%` }} className="absolute inset-y-0 w-0">
+                        <div
+                          className={`absolute top-0.5 ${badgeAlignClass} inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold tabular-nums shadow-md whitespace-nowrap ${
+                            isPinned
+                              ? 'bg-amber-300 text-slate-950 ring-1 ring-white/80'
+                              : 'bg-amber-400 text-slate-950'
+                          }`}
+                        >
+                          {isPinned && <Pin className="w-2.5 h-2.5 shrink-0" />}
+                          <span>{activeScanYear}</span>
+                        </div>
+                        <div
+                          className={`absolute top-6 bottom-0 -translate-x-1/2 ${
+                            isPinned
+                              ? 'w-0.5 bg-amber-300 shadow-[0_0_10px_rgba(252,211,77,0.7)]'
+                              : 'w-px bg-amber-400/90 shadow-[0_0_8px_rgba(251,191,36,0.55)]'
+                          }`}
+                        />
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           </div>
+
+          {/* Плавающий поповер синхронного среза выбранного года */}
+          {scanSlice && popoverCoords && typeof document !== 'undefined' &&
+            createPortal(
+              <div
+                role={isPinned ? 'dialog' : 'status'}
+                aria-label={`Срез процессов на ${scanSlice.year} год`}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  left: `${popoverCoords.left}px`,
+                  top: `${popoverCoords.top}px`,
+                  width: `${popoverCoords.width}px`,
+                  maxHeight: `${POPOVER_MAX_HEIGHT}px`,
+                  zIndex: 55,
+                }}
+                className={`fixed flex flex-col rounded-xl bg-slate-950/95 backdrop-blur-md border shadow-2xl overflow-hidden ${
+                  isPinned
+                    ? 'pointer-events-auto border-amber-400/65'
+                    : 'pointer-events-none border-slate-700/90'
+                }`}
+              >
+              <div className="px-3 py-2 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2 shrink-0">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Crosshair className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                    <span className="text-xs font-mono font-bold text-amber-300 tabular-nums">
+                      Срез на {scanSlice.year} г.
+                    </span>
+                    <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                      {scanSlice.totalEvents} соб. · {scanSlice.rulers.length} правл.
+                    </span>
+                  </div>
+                  <div className="mt-0.5 flex items-center gap-1.5 text-[10px] font-mono text-slate-400">
+                    {isPinned ? (
+                      <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
+                        <Pin className="w-2.5 h-2.5" />
+                        <span>Зафиксирован · кликните по пункту для открытия</span>
+                      </span>
+                    ) : (
+                      <span>Клик по фону дорожки фиксирует год</span>
+                    )}
+                  </div>
+                </div>
+
+                {isPinned && (
+                  <button
+                    type="button"
+                    onClick={() => setPinnedState(null)}
+                    className="inline-flex items-center gap-1 px-1.5 py-1 rounded-md text-[10px] font-mono text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700/80 transition-colors cursor-pointer shrink-0"
+                    title="Снять фиксацию года (Esc)"
+                  >
+                    <X className="w-3 h-3" />
+                    <span>Открепить</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="p-2.5 overflow-y-auto space-y-2.5 text-xs">
+                {scanSlice.rulers.length === 0 && scanSlice.branchGroups.length === 0 ? (
+                  <p className="py-2 text-center text-[11px] font-mono text-slate-400">
+                    В {scanSlice.year} г. нет активных событий по выбранным фильтрам
+                  </p>
+                ) : (
+                  <>
+                    {scanSlice.rulers.length > 0 && (
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono font-semibold text-amber-300/90">
+                          <Crown className="w-3 h-3 text-amber-400 shrink-0" />
+                          <span>Правление</span>
+                        </div>
+                        <div className="space-y-1">
+                          {scanSlice.rulers.map((r) => (
+                            <button
+                              key={`slice-ruler-${r.id}`}
+                              type="button"
+                              onClick={() => onOpenPeriodModal(r.id)}
+                              className="w-full text-left px-2 py-1.5 rounded-lg bg-slate-900/85 hover:bg-slate-800 border border-slate-800/90 hover:border-amber-400/50 transition-colors flex items-center justify-between gap-2 cursor-pointer"
+                            >
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-semibold text-slate-100 truncate">
+                                  {r.ruler}
+                                </div>
+                                <div className="text-[10px] font-mono text-slate-400 tabular-nums truncate">
+                                  {r.reignPeriod}
+                                  {r.center ? ` · ${r.center}` : ''}
+                                </div>
+                              </div>
+                              {isPinned && (
+                                <ArrowUpRight className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {scanSlice.branchGroups.map(({ branch, events }) => (
+                      <div key={`slice-branch-${branch.id}`} className="space-y-1">
+                        <div className="flex items-center justify-between gap-2 text-[10px] font-mono font-semibold text-slate-300">
+                          <span className="inline-flex items-center gap-1.5 min-w-0">
+                            <span
+                              className="w-2 h-2 rounded-full shrink-0"
+                              style={{ backgroundColor: branch.color }}
+                            />
+                            <span className="truncate">{branch.label}</span>
+                          </span>
+                          <span className="text-slate-500 tabular-nums shrink-0">{events.length}</span>
+                        </div>
+                        <div className="space-y-1">
+                          {events.map((ev) => {
+                            const effStart = getEventEffectiveStartYear(ev, branches);
+                            const effEnd = getEventEffectiveEndYear(ev, branches);
+                            const isPoint = effStart === effEnd;
+                            const isEvHovered = hoveredEventId === ev.id;
+                            return (
+                              <button
+                                key={`slice-ev-${ev.id}`}
+                                type="button"
+                                onMouseEnter={() => onHoverEvent(ev.id)}
+                                onMouseLeave={() => onHoverEvent(null)}
+                                onClick={() => onOpenCardModal(ev.id)}
+                                className={`w-full text-left px-2 py-1.5 rounded-lg border transition-colors flex items-start justify-between gap-2 cursor-pointer ${
+                                  isEvHovered
+                                    ? 'bg-slate-800 border-amber-400/70'
+                                    : 'bg-slate-900/75 hover:bg-slate-800 border-slate-800/80 hover:border-slate-600'
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 tabular-nums">
+                                    <span className="text-amber-300/95 font-semibold">{ev.period}</span>
+                                    {isPoint && (
+                                      <span className="text-slate-400">· точечное</span>
+                                    )}
+                                  </div>
+                                  <div className="text-[11px] font-medium text-slate-100 leading-snug line-clamp-2">
+                                    {ev.title}
+                                  </div>
+                                </div>
+                                {isPinned && (
+                                  <ArrowUpRight className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+            </div>,
+              document.body,
+            )}
 
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400 pt-1 border-t border-slate-800/70">
             <div className="flex flex-wrap items-center gap-4">
               <span className="inline-flex items-center gap-1.5">
                 <Layers className="w-3.5 h-3.5 text-amber-400" />
-                <span>Наведите курсор на полосу для подсветки одновременных событий и правлений</span>
+                <span>Наведите на шкалу для среза года, клик — фиксация курсора (Esc — сброс)</span>
               </span>
               <span className="inline-flex items-center gap-1.5 text-emerald-400">
                 <Link2 className="w-3.5 h-3.5" />
                 <span>Зелёное свечение = причинно-следственная или культурная связь</span>
               </span>
             </div>
-            {hoveredEvent && (
+            {hoveredEvent ? (
               <span className="text-amber-300 font-semibold">
                 Фокус: {hoveredEvent.period} — {hoveredEvent.title} (правлений:{' '}
                 {hoveredEvent.overlappingRulers.length}, связей: {hoveredEvent.explicitLinks.length})
               </span>
-            )}
+            ) : pinnedState ? (
+              <span className="inline-flex items-center gap-1.5 text-amber-300 font-semibold tabular-nums">
+                <Pin className="w-3.5 h-3.5" />
+                <span>Зафиксирован срез: {pinnedState.year} г.</span>
+              </span>
+            ) : null}
           </div>
         </div>
       )}
