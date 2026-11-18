@@ -417,7 +417,7 @@ export function buildSchemaOrgJsonLd(snapshot: RepositorySnapshot, siteUrl?: str
     '@graph': [
       {
         '@type': 'WebApplication',
-        name: `Git-Таймлайн истории (${snapshot.minYear}–${snapshot.maxYear})`,
+        name: 'Исторический атлас-хронограф',
         alternateName: snapshot.projectTitle,
         description:
           'Интерактивный мультиветочный Git-граф для синхронного изучения правлений, войн, реформ, дипломатии, мировой истории, науки и литературы.',
