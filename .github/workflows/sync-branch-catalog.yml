@@ -1,12 +1,6 @@
 name: Sync Branch Catalog
 
 on:
-  push:
-    branches: ["main", "master"]
-    paths:
-      - "public/data/**/*.json"
-      - "scripts/sync-branch-catalog.mjs"
-      - "scripts/validate-branches.mjs"
   pull_request:
     paths:
       - "public/data/**/*.json"

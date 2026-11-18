@@ -54,15 +54,16 @@ function timelineDataModulesIndex(): Plugin {
         if (cleanUrl === '/data/modules.index.json' || cleanUrl.endsWith('/data/modules.index.json')) {
           const payload = JSON.stringify(
             {
+              schemaVersion: '2.1.0',
               generatedAt: new Date().toISOString(),
-              files: scanDataModules(rootDir),
+              files: scanDataModules(rootDir).map((p) => p.replace(/^(?:\.\/|\/)+/, '')),
             },
             null,
             2,
           );
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
-          res.setHeader('Cache-Control', 'no-store');
+          res.setHeader('Cache-Control', 'no-cache');
           res.end(payload);
           return;
         }
@@ -75,8 +76,9 @@ function timelineDataModulesIndex(): Plugin {
         fileName: 'data/modules.index.json',
         source: JSON.stringify(
           {
+            schemaVersion: '2.1.0',
             generatedAt: new Date().toISOString(),
-            files: scanDataModules(rootDir),
+            files: scanDataModules(rootDir).map((p) => p.replace(/^(?:\.\/|\/)+/, '')),
           },
           null,
           2,
@@ -126,7 +128,7 @@ function timelineSeoSnapshotPlugin(): Plugin {
         if (!nextHtml.includes('rel="canonical"')) {
           nextHtml = nextHtml.replace(
             '</head>',
-            `    <link rel="canonical" href="${siteUrl}/" />\n    <meta property="og:url" content="${siteUrl}/" />\n  </head>`,
+            `    <link rel="canonical" href="${siteUrl}/" />\n    <meta property="og:url" content="${siteUrl}/" />\n    <meta name="twitter:url" content="${siteUrl}/" />\n  </head>`,
           );
         }
       }
@@ -148,10 +150,77 @@ function timelineSeoSnapshotPlugin(): Plugin {
   };
 }
 
+function sanitizePublicArtifactsPlugin(): Plugin {
+  const rootDir = process.cwd();
+  const forbiddenDirs = [
+    path.resolve(rootDir, 'public/assets/aistudio'),
+    path.resolve(rootDir, 'dist/assets/aistudio'),
+  ];
+
+  const purgeForbiddenDirs = () => {
+    for (const dir of forbiddenDirs) {
+      if (fs.existsSync(dir)) {
+        fs.rmSync(dir, {recursive: true, force: true});
+      }
+    }
+    const publicAssetsDir = path.resolve(rootDir, 'public/assets');
+    if (fs.existsSync(publicAssetsDir) && fs.readdirSync(publicAssetsDir).length === 0) {
+      fs.rmdirSync(publicAssetsDir);
+    }
+  };
+
+  return {
+    name: 'sanitize-public-artifacts',
+    buildStart() {
+      purgeForbiddenDirs();
+    },
+    transformIndexHtml(html) {
+      if (!html.includes('http-equiv="Content-Security-Policy"')) {
+        throw new Error('[AppSec Guard] Missing <meta http-equiv="Content-Security-Policy"> in index.html');
+      }
+      if (!html.includes("connect-src 'self'") || !html.includes("object-src 'none'")) {
+        throw new Error('[AppSec Guard] CSP meta directive in index.html is missing required core restrictions');
+      }
+      if (!html.includes('name="referrer"') || !html.includes('strict-origin-when-cross-origin')) {
+        throw new Error('[AppSec Guard] Missing <meta name="referrer" content="strict-origin-when-cross-origin"> in index.html');
+      }
+      return html;
+    },
+    closeBundle() {
+      purgeForbiddenDirs();
+    },
+  };
+}
+
 export default defineConfig(() => {
   return {
     base: './',
-    plugins: [react(), tailwindcss(), timelineDataModulesIndex(), timelineSeoSnapshotPlugin()],
+    build: {
+      emptyOutDir: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/scheduler/')) {
+              return 'react-vendor';
+            }
+            if (id.includes('node_modules/lucide-react/')) {
+              return 'icons-vendor';
+            }
+            if (id.includes('/src/engine/timelineEngine')) {
+              return 'timeline-engine';
+            }
+            return undefined;
+          },
+        },
+      },
+    },
+    plugins: [
+      sanitizePublicArtifactsPlugin(),
+      react(),
+      tailwindcss(),
+      timelineDataModulesIndex(),
+      timelineSeoSnapshotPlugin(),
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

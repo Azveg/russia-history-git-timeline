@@ -20,31 +20,32 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup Pages
+        id: configure_pages
+        uses: actions/configure-pages@v5
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Install dependencies
-        run: |
-          install_cmd() {
-            if [ -f package-lock.json ]; then
-              npm ci --legacy-peer-deps --fetch-retries=5 --fetch-retry-mintimeout=2000 --fetch-retry-maxtimeout=15000
-            else
-              npm install --legacy-peer-deps --no-audit --no-fund --fetch-retries=5 --fetch-retry-mintimeout=2000 --fetch-retry-maxtimeout=15000
-            fi
-          }
-          for attempt in 1 2 3; do
-            if install_cmd; then
-              exit 0
-            fi
-            if [ "$attempt" -lt 3 ]; then
-              echo "npm install failed (attempt $attempt/3), retrying in 15s..."
-              sleep 15
-            fi
-          done
-          exit 1
-      - name: Build static site
+          cache: "npm"
+
+      - name: Install dependencies (deterministic lockfile)
+        run: npm ci --legacy-peer-deps
+
+      - name: Validate historical JSON modules & branch manifests
+        run: npm run validate:branches
+
+      - name: Typecheck codebase
+        run: npm run lint
+
+      - name: Build static bundle with canonical GitHub Pages URL
+        env:
+          NODE_ENV: production
+          VITE_SITE_URL: ${{ steps.configure_pages.outputs.base_url || format('https://{0}.github.io/{1}', github.repository_owner, github.event.repository.name) }}
         run: npm run build
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

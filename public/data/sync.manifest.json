@@ -1,7 +1,7 @@
 {
   "$schema": "https://git-timeline.schema.org/v2/sync-manifest.json",
   "project": "История России и мира: модульный Git-таймлайн (862–2000)",
-  "schemaVersion": "2.0.0",
+  "schemaVersion": "2.1.0",
   "timeAxis": {
     "minYear": 862,
     "maxYear": 2000,

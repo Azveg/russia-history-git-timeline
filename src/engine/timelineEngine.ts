@@ -1324,14 +1324,29 @@ export function isBranchFile(file: TimelineDataFile | undefined): file is Branch
   return Boolean(file && isPlainRecord(file) && 'nodes' in file && Array.isArray(file.nodes));
 }
 
+const DATA_SCHEMA_CACHE_KEY = '2.1.0';
+
 function normalizeDataPath(rawPath: string): string {
-  return rawPath.trim().replace(/^\.?\//, '');
+  return rawPath.trim().replace(/^(?:\.\/|\/)+/, '');
+}
+
+function resolveRepoFetchUrl(rawPath: string): string {
+  return `./${normalizeDataPath(rawPath)}`;
+}
+
+function withCacheVersion(url: string, version = DATA_SCHEMA_CACHE_KEY): string {
+  const cleanVersion = (version || DATA_SCHEMA_CACHE_KEY).trim();
+  const separator = url.includes('?') ? '&' : '?';
+  return `${url}${separator}v=${encodeURIComponent(cleanVersion)}`;
 }
 
 function collectBranchesFromDataFile(fileData: TimelineDataFile, fallbackPath: string): BranchDefinition[] {
   const result: BranchDefinition[] = [];
   if (!isPlainRecord(fileData)) return result;
-  const pathHint = typeof fileData.path === 'string' && fileData.path.trim() ? fileData.path : fallbackPath;
+  const pathHint =
+    typeof fileData.path === 'string' && fileData.path.trim()
+      ? normalizeDataPath(fileData.path)
+      : normalizeDataPath(fallbackPath);
 
   if ('branch' in fileData && fileData.branch) {
     const parsed = sanitizeBranchDefinition(fileData.branch, pathHint);
@@ -1346,25 +1361,43 @@ function collectBranchesFromDataFile(fileData: TimelineDataFile, fallbackPath: s
   return result;
 }
 
-export async function fetchTimelineRepository(): Promise<{
+export interface TimelineRepositorySnapshot {
   manifest: SyncManifest;
   files: Record<string, TimelineDataFile>;
-}> {
-  const manifestRes = await fetch('./data/sync.manifest.json', { cache: 'no-store' });
+}
+
+let cachedRepositorySnapshot: TimelineRepositorySnapshot | null = null;
+let inFlightRepositoryPromise: Promise<TimelineRepositorySnapshot> | null = null;
+
+export function clearTimelineRepositoryCache(): void {
+  cachedRepositorySnapshot = null;
+  inFlightRepositoryPromise = null;
+}
+
+async function loadTimelineRepositoryNetwork(): Promise<TimelineRepositorySnapshot> {
+  const manifestUrl = resolveRepoFetchUrl('data/sync.manifest.json');
+  // Индексный манифест проверяет актуальность через ETag / 304 Not Modified (no-cache)
+  const manifestRes = await fetch(manifestUrl, { cache: 'no-cache' });
   if (!manifestRes.ok) {
     throw new Error(`Не удалось загрузить каталог хронографа (HTTP ${manifestRes.status})`);
   }
   const rawManifest = (await manifestRes.json()) as Partial<SyncManifest>;
+  const cacheVersion = (rawManifest.schemaVersion || DATA_SCHEMA_CACHE_KEY).trim();
   const manifest: SyncManifest = {
     project: rawManifest.project || 'Исторический хронограф',
-    schemaVersion: rawManifest.schemaVersion || '2.0.0',
+    schemaVersion: cacheVersion,
     timeAxis: rawManifest.timeAxis || {
       minYear: 862,
       maxYear: 2000,
       resolution: 'adaptive_year_month_day',
       overlapRule: 'inclusive_interval',
     },
-    mountedFiles: Array.isArray(rawManifest.mountedFiles) ? rawManifest.mountedFiles : [],
+    mountedFiles: Array.isArray(rawManifest.mountedFiles)
+      ? rawManifest.mountedFiles.map((m) => ({
+          ...m,
+          path: m?.path ? normalizeDataPath(m.path) : m.path,
+        }))
+      : [],
     macroEras: Array.isArray(rawManifest.macroEras) ? rawManifest.macroEras : [],
     crossLinks: Array.isArray(rawManifest.crossLinks) ? rawManifest.crossLinks : [],
   };
@@ -1373,7 +1406,8 @@ export async function fetchTimelineRepository(): Promise<{
   let hasDiscoveredIndex = false;
   let discoveredPaths: string[] = [];
   try {
-    const indexRes = await fetch('./data/modules.index.json', { cache: 'no-store' });
+    const indexUrl = withCacheVersion(resolveRepoFetchUrl('data/modules.index.json'), cacheVersion);
+    const indexRes = await fetch(indexUrl, { cache: 'no-cache' });
     const ct = indexRes.headers.get('content-type') || '';
     if (indexRes.ok && !ct.includes('text/html')) {
       const idxData = (await indexRes.json()) as ModulesIndexFile;
@@ -1431,7 +1465,9 @@ export async function fetchTimelineRepository(): Promise<{
   const fetchedEntries = await Promise.all(
     orderedCandidatePaths.map(async (normPath) => {
       try {
-        const res = await fetch(`./${normPath}`, { cache: 'no-store' });
+        // Тяжелые JSON-модули (1.6 МБ) загружаются с версией схемы из стандартного HTTP-кэша браузера (default)
+        const moduleUrl = withCacheVersion(resolveRepoFetchUrl(normPath), cacheVersion);
+        const res = await fetch(moduleUrl, { cache: 'default' });
         const ct = res.headers.get('content-type') || '';
         if (!res.ok || ct.includes('text/html')) {
           return { normPath, data: null as TimelineDataFile | null };
@@ -1451,7 +1487,8 @@ export async function fetchTimelineRepository(): Promise<{
   fetchedEntries.forEach(({ normPath, data }) => {
     if (!data) return;
     const existingMeta = manifestMetaByNormPath.get(normPath);
-    const storeKey = existingMeta?.path || (typeof data.path === 'string' && data.path.trim()) || normPath;
+    const rawDataPath = typeof data.path === 'string' && data.path.trim() ? normalizeDataPath(data.path) : '';
+    const storeKey = existingMeta?.path || rawDataPath || normPath;
     files[storeKey] = data;
 
     const declaredBranches = collectBranchesFromDataFile(data, storeKey);
@@ -1486,6 +1523,33 @@ export async function fetchTimelineRepository(): Promise<{
     },
     files,
   };
+}
+
+export async function fetchTimelineRepository(options?: {
+  forceRefresh?: boolean;
+}): Promise<TimelineRepositorySnapshot> {
+  if (options?.forceRefresh) {
+    clearTimelineRepositoryCache();
+  }
+  if (cachedRepositorySnapshot) {
+    return cachedRepositorySnapshot;
+  }
+  if (inFlightRepositoryPromise) {
+    return inFlightRepositoryPromise;
+  }
+
+  inFlightRepositoryPromise = loadTimelineRepositoryNetwork()
+    .then((snapshot) => {
+      cachedRepositorySnapshot = snapshot;
+      inFlightRepositoryPromise = null;
+      return snapshot;
+    })
+    .catch((err) => {
+      inFlightRepositoryPromise = null;
+      throw err;
+    });
+
+  return inFlightRepositoryPromise;
 }
 
 export function extractBranchesFromStore(
