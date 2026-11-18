@@ -441,33 +441,33 @@ export function OverlapMapSection({
     >
       {/* Компактный интерактивный скраббер окна времени (Time Brush) — виден всегда */}
       <div
-        className={`px-4 sm:px-5 py-2.5 bg-slate-950/75 space-y-2 ${
-          isExpanded ? 'border-b border-slate-800/80' : ''
+        className={`px-3 sm:px-4 py-2 bg-slate-950/75 ${
+          isExpanded ? 'space-y-2 border-b border-slate-800/80' : 'space-y-1.5'
         }`}
       >
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex flex-wrap items-center gap-2">
             <span className="inline-flex items-center gap-1.5 font-mono font-bold text-amber-300">
               <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400" />
-              <span>Шкала времени и плотность событий ({minYear}–{maxYear})</span>
+              <span>Шкала времени ({minYear}–{maxYear})</span>
             </span>
             <span className="text-[11px] font-mono text-slate-400 hidden xl:inline">
-              — перетаскивайте рамку, используйте кнопки зума или Alt/Ctrl + колесо мыши (шаг окна: {span} л.)
+              — перетаскивайте рамку или Alt/Ctrl + колесо (окно: {span} л.)
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="px-2 py-0.5 rounded bg-amber-500/15 border border-amber-500/35 text-amber-300 text-[11px] font-mono font-bold tabular-nums">
-              Окно: {yearFrom}–{yearTo} гг. ({matchingEvents.length} соб.)
+          <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+            <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+              <strong className="text-slate-200 font-semibold">{yearFrom}–{yearTo} гг.</strong> · {matchingEvents.length} соб.
             </span>
-            {onOpenWindowModal && (
+            {isExpanded && onOpenWindowModal && (
               <button
                 type="button"
                 onClick={() => onOpenWindowModal(yearFrom, yearTo)}
-                className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800/80 hover:bg-slate-700 text-amber-200 text-[11px] font-mono font-semibold transition-colors cursor-pointer whitespace-nowrap"
                 title={`Открыть сводное досье для выбранного отрезка ${yearFrom}–${yearTo} гг.`}
               >
-                <BarChart3 className="w-3 h-3" />
+                <BarChart3 className="w-3 h-3 text-amber-400" />
                 <span>Досье окна</span>
               </button>
             )}
@@ -475,208 +475,210 @@ export function OverlapMapSection({
               type="button"
               onClick={() => setIsExpanded((prev) => !prev)}
               aria-expanded={isExpanded}
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded border text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap ${
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap ${
                 isExpanded
                   ? 'bg-slate-800 border-amber-400/50 text-amber-200 hover:bg-slate-700'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                  : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
               }`}
               title="Показать или скрыть детальную гистограмму и горизонтальные полосы правлений и тематических веток"
             >
               <span>
                 {isExpanded
                   ? 'Свернуть карту полос'
-                  : `Развернуть карту полос (${visibleEventBranches.length + (rulersActive ? 1 : 0)})`}
+                  : `Карта полос (${visibleEventBranches.length + (rulersActive ? 1 : 0)})`}
               </span>
               {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
           </div>
         </div>
 
-        {/* Полная панель управления масштабом, шагом окна и пресетами охвата */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-          <div className="flex flex-wrap items-center gap-1.5">
-            {/* Кнопка возврата на предыдущий шаг масштаба */}
-            <button
-              type="button"
-              onClick={onStepBackZoom}
-              disabled={zoomHistoryCount === 0}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono font-semibold transition-colors whitespace-nowrap shrink-0 ${
-                zoomHistoryCount > 0
-                  ? 'bg-slate-900 hover:bg-slate-800 border-amber-500/45 text-amber-200 cursor-pointer'
-                  : 'bg-slate-900/40 border-slate-800/80 text-slate-600 cursor-not-allowed'
-              }`}
-              title={
-                lastZoomStep
-                  ? `Вернуться к предыдущему масштабу: ${lastZoomStep.from}–${lastZoomStep.to} гг. (шагов в стеке: ${zoomHistoryCount})`
-                  : 'История изменения масштаба пуста'
-              }
-            >
-              <Undo2 className="w-3.5 h-3.5 shrink-0" />
-              <span>Назад (шаг масштаба)</span>
-              {zoomHistoryCount > 0 && (
-                <span className="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold tabular-nums">
-                  {lastZoomStep ? `${lastZoomStep.from}–${lastZoomStep.to}` : zoomHistoryCount}
-                </span>
-              )}
-            </button>
-
-            {/* Кнопки приближения и отдаления ×2 вокруг центра текущего окна */}
-            <div
-              className="inline-flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[11px] font-mono shrink-0"
-              role="group"
-              aria-label="Приближение и отдаление масштаба"
-            >
+        {/* Полная панель управления масштабом, шагом окна и пресетами охвата — только при раскрытой карте */}
+        {isExpanded && (
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Кнопка возврата на предыдущий шаг масштаба */}
               <button
                 type="button"
-                onClick={onZoomOut}
-                disabled={!canZoomOut}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
-                  canZoomOut
-                    ? 'text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer'
-                    : 'text-slate-600 cursor-not-allowed'
+                onClick={onStepBackZoom}
+                disabled={zoomHistoryCount === 0}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[11px] font-mono font-semibold transition-colors whitespace-nowrap shrink-0 ${
+                  zoomHistoryCount > 0
+                    ? 'bg-slate-900 hover:bg-slate-800 border-amber-500/45 text-amber-200 cursor-pointer'
+                    : 'bg-slate-900/40 border-slate-800/80 text-slate-600 cursor-not-allowed'
                 }`}
                 title={
-                  canZoomOut
-                    ? `Отдалить временное окно в 2 раза вокруг ${midYear} г.`
-                    : 'Открыт весь доступный период (862–2000 гг.)'
+                  lastZoomStep
+                    ? `Вернуться к предыдущему масштабу: ${lastZoomStep.from}–${lastZoomStep.to} гг. (шагов в стеке: ${zoomHistoryCount})`
+                    : 'История изменения масштаба пуста'
                 }
               >
-                <Minus className="w-3.5 h-3.5 shrink-0" />
-                <span>Отдалить ×2</span>
+                <Undo2 className="w-3.5 h-3.5 shrink-0" />
+                <span>Назад (шаг масштаба)</span>
+                {zoomHistoryCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 text-[10px] font-bold tabular-nums">
+                    {lastZoomStep ? `${lastZoomStep.from}–${lastZoomStep.to}` : zoomHistoryCount}
+                  </span>
+                )}
               </button>
 
-              <span className="w-px h-4 bg-slate-800 mx-0.5" aria-hidden="true" />
-
-              <button
-                type="button"
-                onClick={onZoomIn}
-                disabled={!canZoomIn}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
-                  canZoomIn
-                    ? 'text-amber-300 hover:bg-slate-800 hover:text-amber-200 font-semibold cursor-pointer'
-                    : 'text-slate-600 cursor-not-allowed'
-                }`}
-                title={
-                  canZoomIn
-                    ? `Приблизить временное окно в 2 раза вокруг ${midYear} г.`
-                    : 'Достигнуто максимальное приближение (2–3 года)'
-                }
+              {/* Кнопки приближения и отдаления ×2 вокруг центра текущего окна */}
+              <div
+                className="inline-flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[11px] font-mono shrink-0"
+                role="group"
+                aria-label="Приближение и отдаление масштаба"
               >
-                <Plus className="w-3.5 h-3.5 shrink-0" />
-                <span>Приблизить ×2</span>
-              </button>
+                <button
+                  type="button"
+                  onClick={onZoomOut}
+                  disabled={!canZoomOut}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
+                    canZoomOut
+                      ? 'text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer'
+                      : 'text-slate-600 cursor-not-allowed'
+                  }`}
+                  title={
+                    canZoomOut
+                      ? `Отдалить временное окно в 2 раза вокруг ${midYear} г.`
+                      : 'Открыт весь доступный период (862–2000 гг.)'
+                  }
+                >
+                  <Minus className="w-3.5 h-3.5 shrink-0" />
+                  <span>Отдалить ×2</span>
+                </button>
+
+                <span className="w-px h-4 bg-slate-800 mx-0.5" aria-hidden="true" />
+
+                <button
+                  type="button"
+                  onClick={onZoomIn}
+                  disabled={!canZoomIn}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
+                    canZoomIn
+                      ? 'text-amber-300 hover:bg-slate-800 hover:text-amber-200 font-semibold cursor-pointer'
+                      : 'text-slate-600 cursor-not-allowed'
+                  }`}
+                  title={
+                    canZoomIn
+                      ? `Приблизить временное окно в 2 раза вокруг ${midYear} г.`
+                      : 'Достигнуто максимальное приближение (2–3 года)'
+                  }
+                >
+                  <Plus className="w-3.5 h-3.5 shrink-0" />
+                  <span>Приблизить ×2</span>
+                </button>
+              </div>
+
+              {/* Шаговый сдвиг окна влево / вправо */}
+              <div
+                className="inline-flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[11px] font-mono shrink-0"
+                role="group"
+                aria-label="Сдвиг временного окна"
+              >
+                <button
+                  type="button"
+                  onClick={() => onShiftWindow(-1)}
+                  disabled={!canShiftLeft}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
+                    canShiftLeft
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-white cursor-pointer'
+                      : 'text-slate-600 cursor-not-allowed'
+                  }`}
+                  title={
+                    canShiftLeft
+                      ? `Сдвинуть окно раньше на ${shiftStepYears} л.`
+                      : 'Достигнуто начало хронологии (862 г.)'
+                  }
+                >
+                  <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
+                  <span>Ранее</span>
+                </button>
+
+                <span className="w-px h-4 bg-slate-800 mx-0.5" aria-hidden="true" />
+
+                <button
+                  type="button"
+                  onClick={() => onShiftWindow(1)}
+                  disabled={!canShiftRight}
+                  className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
+                    canShiftRight
+                      ? 'text-slate-300 hover:bg-slate-800 hover:text-white cursor-pointer'
+                      : 'text-slate-600 cursor-not-allowed'
+                  }`}
+                  title={
+                    canShiftRight
+                      ? `Сдвинуть окно позже на ${shiftStepYears} л.`
+                      : 'Достигнут конец хронологии (2000 г.)'
+                  }
+                >
+                  <span>Позже</span>
+                  <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                </button>
+              </div>
             </div>
 
-            {/* Шаговый сдвиг окна влево / вправо */}
+            {/* Быстрые зум-переключатели масштаба */}
             <div
-              className="inline-flex items-center rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[11px] font-mono shrink-0"
+              className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[11px] font-mono"
               role="group"
-              aria-label="Сдвиг временного окна"
+              aria-label="Быстрые переключатели масштаба"
             >
+              <span className="px-2 py-0.5 text-[10px] text-slate-400 hidden sm:inline">Масштаб:</span>
               <button
                 type="button"
-                onClick={() => onShiftWindow(-1)}
-                disabled={!canShiftLeft}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
-                  canShiftLeft
-                    ? 'text-slate-300 hover:bg-slate-800 hover:text-white cursor-pointer'
-                    : 'text-slate-600 cursor-not-allowed'
+                onClick={() => onApplySpanPreset('all')}
+                className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                  isFullPeriodActive
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                 }`}
-                title={
-                  canShiftLeft
-                    ? `Сдвинуть окно раньше на ${shiftStepYears} л.`
-                    : 'Достигнуто начало хронологии (862 г.)'
-                }
+                title={`Показать весь исторический период (${minYear}–${maxYear} гг.)`}
               >
-                <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
-                <span>Ранее</span>
+                Весь период
               </button>
-
-              <span className="w-px h-4 bg-slate-800 mx-0.5" aria-hidden="true" />
-
               <button
                 type="button"
-                onClick={() => onShiftWindow(1)}
-                disabled={!canShiftRight}
-                className={`inline-flex items-center gap-1 px-2 py-1 rounded-md transition-colors whitespace-nowrap ${
-                  canShiftRight
-                    ? 'text-slate-300 hover:bg-slate-800 hover:text-white cursor-pointer'
-                    : 'text-slate-600 cursor-not-allowed'
+                onClick={() => onApplySpanPreset(100)}
+                className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                  isCenturyActive
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
                 }`}
-                title={
-                  canShiftRight
-                    ? `Сдвинуть окно позже на ${shiftStepYears} л.`
-                    : 'Достигнут конец хронологии (2000 г.)'
-                }
+                title={`Масштаб в 100 лет вокруг центра окна (${midYear} г.)`}
               >
-                <span>Позже</span>
-                <ChevronRight className="w-3.5 h-3.5 shrink-0" />
+                Столетие (100 л.)
+              </button>
+              <button
+                type="button"
+                onClick={() => onApplySpanPreset(10)}
+                className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                  isDecadeActive
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+                title={`Масштаб в 10 лет вокруг ${midYear} г. (включает помесячную детализацию оси)`}
+              >
+                Десятилетие (10 л.)
+              </button>
+              <button
+                type="button"
+                onClick={() => onApplySpanPreset(2)}
+                className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                  isMicroWindowActive
+                    ? 'bg-amber-500 text-slate-950 font-bold'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+                title={`Узкое окно 2–3 года вокруг ${midYear} г. (включает точную дневную детализацию оси)`}
+              >
+                2–3 года
               </button>
             </div>
           </div>
-
-          {/* Быстрые зум-переключатели масштаба */}
-          <div
-            className="inline-flex flex-wrap items-center gap-1 rounded-lg bg-slate-900 border border-slate-800 p-0.5 text-[11px] font-mono"
-            role="group"
-            aria-label="Быстрые переключатели масштаба"
-          >
-            <span className="px-2 py-0.5 text-[10px] text-slate-400 hidden sm:inline">Масштаб:</span>
-            <button
-              type="button"
-              onClick={() => onApplySpanPreset('all')}
-              className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                isFullPeriodActive
-                  ? 'bg-amber-500 text-slate-950 font-bold'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-              title={`Показать весь исторический период (${minYear}–${maxYear} гг.)`}
-            >
-              Весь период
-            </button>
-            <button
-              type="button"
-              onClick={() => onApplySpanPreset(100)}
-              className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                isCenturyActive
-                  ? 'bg-amber-500 text-slate-950 font-bold'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-              title={`Масштаб в 100 лет вокруг центра окна (${midYear} г.)`}
-            >
-              Столетие (100 л.)
-            </button>
-            <button
-              type="button"
-              onClick={() => onApplySpanPreset(10)}
-              className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                isDecadeActive
-                  ? 'bg-amber-500 text-slate-950 font-bold'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-              title={`Масштаб в 10 лет вокруг ${midYear} г. (включает помесячную детализацию оси)`}
-            >
-              Десятилетие (10 л.)
-            </button>
-            <button
-              type="button"
-              onClick={() => onApplySpanPreset(2)}
-              className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                isMicroWindowActive
-                  ? 'bg-amber-500 text-slate-950 font-bold'
-                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-              }`}
-              title={`Узкое окно 2–3 года вокруг ${midYear} г. (включает точную дневную детализацию оси)`}
-            >
-              2–3 года
-            </button>
-          </div>
-        </div>
+        )}
 
         {/* Интерактивная дорожка Time Brush с гистограммой */}
         <div
           ref={scrubberTrackRef}
-          className="relative h-12 rounded-xl bg-slate-900/95 border border-slate-800 select-none overflow-hidden"
+          className={`relative ${isExpanded ? 'h-12' : 'h-10'} rounded-xl bg-slate-900/95 border border-slate-800 select-none overflow-hidden`}
         >
           {/* Фоновая глобальная гистограмма плотности */}
           <div className="absolute inset-x-0 bottom-4 top-1.5 flex items-end gap-[2px] px-1">

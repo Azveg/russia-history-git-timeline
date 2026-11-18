@@ -107,14 +107,14 @@ export function RulerSelectorPopover({
         aria-haspopup="dialog"
         className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
           isOpen
-            ? 'bg-slate-800 border-amber-400/70 text-white shadow-md'
+            ? 'bg-slate-800/95 border-amber-400/60 text-white'
             : activeWindowRuler
-              ? 'bg-amber-500/15 border-amber-500/45 text-amber-200 hover:bg-amber-500/25'
-              : 'bg-slate-900 border-slate-700/80 text-slate-200 hover:bg-slate-800 hover:border-slate-500'
+              ? 'bg-amber-500/12 border-amber-500/40 text-amber-200 hover:bg-amber-500/20'
+              : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
         }`}
         title="Быстрый переход к правителю на ленте, фильтрация лет правления и открытие досье"
       >
-        <Crown className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+        <Crown className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
         <span>Правители</span>
 
         {activeWindowRuler ? (
@@ -122,13 +122,13 @@ export function RulerSelectorPopover({
             {activeWindowRuler.shortRuler}
           </span>
         ) : (
-          <span className="hidden lg:inline-block tabular-nums px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
+          <span className="hidden lg:inline-block tabular-nums text-[10px] text-slate-400 font-normal">
             {rulers.length}
           </span>
         )}
 
         <ChevronDown
-          className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-400 transition-transform ${
+          className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
             isOpen ? 'rotate-180' : ''
           }`}
         />

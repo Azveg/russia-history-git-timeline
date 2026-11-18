@@ -1,8 +1,68 @@
-import { ChevronDown, ExternalLink, Filter, RotateCcw, ScrollText, Search, X } from 'lucide-react';
+import { CalendarRange, ChevronDown, ExternalLink, Filter, RotateCcw, ScrollText, Search, Sparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { doesIntervalBelongToEra, resolveMacroEras } from '../engine/timelineEngine';
 import type { EnrichedEvent, MacroEra } from '../types/timeline';
 import { useWheelScrollContainment } from '../utils/scrollIsolation';
+
+export interface EpochSlicePreset {
+  label: string;
+  compactLabel: string;
+  subtitle?: string;
+  from: number;
+  to: number;
+  hot?: boolean;
+  anchorEventId?: string;
+  ensureBranches?: string[];
+}
+
+export const EPOCH_SLICE_PRESETS: EpochSlicePreset[] = [
+  { label: 'IX–XII вв. (Русь)', compactLabel: 'IX–XII вв. · Русь', from: 862, to: 1237, hot: false },
+  { label: 'XIII–XV вв. (Орда и Москва)', compactLabel: 'XIII–XV вв.', from: 1237, to: 1505, hot: false },
+  { label: 'XVI–XVII вв. (Царство и Смута)', compactLabel: 'XVI–XVII вв.', from: 1505, to: 1682, hot: false },
+  { label: 'XVIII в. (Империя)', compactLabel: 'XVIII в.', from: 1700, to: 1800, hot: false },
+  { label: 'XIX в. (Реформы и культура)', compactLabel: 'XIX в.', from: 1801, to: 1900, hot: false },
+  { label: 'XX в. (СССР и РФ)', compactLabel: 'XX в.', from: 1901, to: 2000, hot: false },
+  {
+    label: 'Пётр I и реформы (1689–1725)',
+    compactLabel: 'Пётр I · 1689–1725',
+    subtitle: 'Империя и флот',
+    from: 1689,
+    to: 1725,
+    hot: true,
+    anchorEventId: '1700-northern-war',
+    ensureBranches: ['MAIN_RULERS', 'SEAS', 'REFORMS_ECO', 'DIPLOMACY_TREATIES'],
+  },
+  {
+    label: 'Великие реформы (1855–1881)',
+    compactLabel: 'Реформы · 1855–1881',
+    subtitle: 'Отмена крепостничества',
+    from: 1855,
+    to: 1881,
+    hot: true,
+    anchorEventId: '1861-reform-emancipation',
+    ensureBranches: ['MAIN_RULERS', 'REFORMS_ECO', 'DIPLOMACY_TREATIES', 'WAR_CONTINENTAL'],
+  },
+  {
+    label: 'Излом 1914–1924',
+    compactLabel: 'Излом · 1914–1924',
+    subtitle: 'Мировая и революция',
+    from: 1914,
+    to: 1924,
+    hot: true,
+    anchorEventId: '1914-ww1',
+    ensureBranches: ['MAIN_RULERS', 'WAR_CONTINENTAL', 'INTERNAL_BUFFER', 'REFORMS_ECO'],
+  },
+  {
+    label: 'ВОВ и Атомный проект (1941–1953)',
+    compactLabel: 'ВОВ и атом · 1941–1953',
+    subtitle: 'Победа и паритет',
+    from: 1941,
+    to: 1953,
+    hot: true,
+    anchorEventId: '1941-ww2',
+    ensureBranches: ['MAIN_RULERS', 'WAR_CONTINENTAL', 'REFORMS_ECO', 'DIPLOMACY_TREATIES'],
+  },
+];
 
 interface EraSelectorPopoverProps {
   eras: MacroEra[];
@@ -13,6 +73,7 @@ interface EraSelectorPopoverProps {
   minYear: number;
   maxYear: number;
   onSelectEra: (eraId: string) => void;
+  onSelectYearRange?: (from: number, to: number) => void;
   onOpenEraModal: (eraId: string) => void;
 }
 
@@ -25,6 +86,7 @@ export function EraSelectorPopover({
   minYear,
   maxYear,
   onSelectEra,
+  onSelectYearRange,
   onOpenEraModal,
 }: EraSelectorPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -116,14 +178,14 @@ export function EraSelectorPopover({
         aria-haspopup="dialog"
         className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
           isOpen
-            ? 'bg-slate-800 border-amber-400/70 text-white shadow-md'
+            ? 'bg-slate-800/95 border-amber-400/60 text-white'
             : activeWindowEra
-              ? 'bg-amber-500/15 border-amber-500/45 text-amber-200 hover:bg-amber-500/25'
-              : 'bg-slate-900 border-slate-700/80 text-slate-200 hover:bg-slate-800 hover:border-slate-500'
+              ? 'bg-amber-500/12 border-amber-500/40 text-amber-200 hover:bg-amber-500/20'
+              : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
         }`}
         title="Выбор макро-периода истории, фокусировка окна времени и открытие досье эпохи"
       >
-        <ScrollText className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+        <ScrollText className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
         <span className="xl:hidden">Эпохи</span>
         <span className="hidden xl:inline">Макро-периоды</span>
 
@@ -132,13 +194,13 @@ export function EraSelectorPopover({
             {activeWindowEra.displayShortTitle}
           </span>
         ) : (
-          <span className="hidden lg:inline-block tabular-nums px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300">
+          <span className="hidden lg:inline-block tabular-nums text-[10px] text-slate-400 font-normal">
             {resolvedEras.length}
           </span>
         )}
 
         <ChevronDown
-          className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-400 transition-transform ${
+          className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
             isOpen ? 'rotate-180' : ''
           }`}
         />
@@ -200,6 +262,41 @@ export function EraSelectorPopover({
               <span>Клик по периоду — фокус окна времени</span>
               <span className="text-slate-500">Окно лет · Досье · Событий</span>
             </div>
+
+            {onSelectYearRange && (
+              <div className="pt-1.5 border-t border-slate-800/70">
+                <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 mb-1.5">
+                  <CalendarRange className="w-3 h-3 text-amber-400" />
+                  <span>Быстрые срезы веков и узлов:</span>
+                </div>
+                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5">
+                  {EPOCH_SLICE_PRESETS.map((preset) => {
+                    const isActive = yearFrom === preset.from && yearTo === preset.to;
+                    return (
+                      <button
+                        key={`era-popover-slice-${preset.label}`}
+                        type="button"
+                        onClick={() => {
+                          onSelectYearRange(preset.from, preset.to);
+                          setIsOpen(false);
+                        }}
+                        title={preset.label}
+                        className={`px-2 py-1 rounded-md text-[10px] font-mono border transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                          isActive
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
+                            : preset.hot
+                              ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
+                              : 'bg-slate-900 border-slate-800 text-slate-300 hover:border-slate-600 hover:text-white'
+                        }`}
+                      >
+                        {preset.hot && !isActive && <Sparkles className="w-2.5 h-2.5 inline mr-1 text-amber-400" />}
+                        {preset.compactLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           <div

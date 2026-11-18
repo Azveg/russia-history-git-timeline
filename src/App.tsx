@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CardDetailModal } from './components/CardDetailModal';
 import { ComparePeriodsModal } from './components/ComparePeriodsModal';
 import { DashboardHeader } from './components/DashboardHeader';
+import type { EpochSlicePreset } from './components/EraSelectorPopover';
 import { EraSummaryModal } from './components/EraSummaryModal';
 import { FilterPanel } from './components/FilterPanel';
 import { GitTimeline } from './components/GitTimeline';
@@ -1395,6 +1396,54 @@ export default function App() {
     });
   }
 
+  function handleQuickStartHotNode(preset: EpochSlicePreset) {
+    setSelectedEra('ALL');
+    setSelectedReign('ALL');
+    setSearchQuery('');
+    setSelectedPersonKey(null);
+    setSelectedSyncTag(null);
+    setBranchPairFilter(null);
+    setAuditUnlinkedMode(false);
+    setFocusedEventId(null);
+
+    if (preset.ensureBranches && preset.ensureBranches.length > 0) {
+      setActiveBranches((prev) => {
+        const next = { ...prev };
+        preset.ensureBranches!.forEach((id) => {
+          next[id] = true;
+        });
+        return next;
+      });
+      setCollapsedParents((prev) => {
+        const updated = { ...prev };
+        preset.ensureBranches!.forEach((id) => {
+          let cur: BranchDefinition | undefined = branches.find((b) => b.id === id);
+          while (cur?.parentBranchId) {
+            updated[cur.parentBranchId] = false;
+            cur = branches.find((item) => item.id === cur!.parentBranchId);
+          }
+        });
+        return updated;
+      });
+    }
+
+    handleYearRangeChange(preset.from, preset.to, true);
+
+    if (preset.anchorEventId) {
+      const anchorId = preset.anchorEventId;
+      setHighlightedJumpId(anchorId);
+      showToast(`Поворотный узел: ${preset.label} — подсвечено ключевое событие и связи.`);
+      window.setTimeout(() => {
+        const el = document.getElementById(`row-${anchorId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 90);
+    } else {
+      showToast(`Выбран срез: ${preset.label}.`);
+    }
+  }
+
   function handleToggleCollapseParent(parentId: string) {
     if (!hasChildBranches(parentId, branches)) return;
     preserveViewportScrollAnchor(() => {
@@ -1406,8 +1455,22 @@ export default function App() {
   }
 
   function handleToggleFilters() {
+    const willExpand = isFiltersCollapsed;
+    if (willExpand) {
+      setIsFiltersCollapsed(false);
+      window.setTimeout(() => {
+        const el = document.getElementById('filter-panel-console');
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          if (rect.top < 54 || rect.top > window.innerHeight * 0.7) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }
+      }, 40);
+      return;
+    }
     preserveViewportScrollAnchor(() => {
-      setIsFiltersCollapsed((prev) => !prev);
+      setIsFiltersCollapsed(true);
     });
   }
 
@@ -1522,6 +1585,12 @@ export default function App() {
         onChangeCardDensity={(density) =>
           preserveViewportScrollAnchor(() => setCardDensity(density))
         }
+        showEndNodes={showEndNodes}
+        onToggleShowEndNodes={() =>
+          preserveViewportScrollAnchor(() => setShowEndNodes((prev) => !prev))
+        }
+        onOpenCompareModal={handleOpenCompareFromHeader}
+        onOpenWindowModal={handleOpenWindowModal}
         isFiltersCollapsed={isFiltersCollapsed}
         activeAdvancedCount={activeAdvancedCount}
         onToggleFilters={handleToggleFilters}
@@ -1545,12 +1614,9 @@ export default function App() {
         }}
         minYear={timelineBounds.minYear}
         maxYear={timelineBounds.maxYear}
-        showEndNodes={showEndNodes}
-        onToggleShowEndNodes={() => setShowEndNodes((prev) => !prev)}
-        onOpenCompareModal={handleOpenCompareFromHeader}
       />
 
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-2.5 space-y-2.5">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-2 space-y-2">
         <FilterPanel
           yearFrom={effectiveYearFrom}
           yearTo={effectiveYearTo}
@@ -1583,6 +1649,7 @@ export default function App() {
             setSelectedReign('ALL');
             handleYearRangeChange(fromVal, toVal);
           }}
+          onQuickStartHotNode={handleQuickStartHotNode}
           onChangeSearch={setSearchQuery}
           onToggleOnlySynced={handleToggleOnlySynced}
           onChangeSyncLinkTypeFilter={handleChangeSyncLinkTypeFilter}
@@ -1638,7 +1705,7 @@ export default function App() {
         )}
       </div>
 
-      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-3.5">
+      <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2.5">
         {stream.length === 0 ? (
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-12 text-center my-8">
             <h3 className="font-serif text-xl font-bold text-white">

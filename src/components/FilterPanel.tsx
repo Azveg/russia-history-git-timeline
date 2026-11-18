@@ -1,14 +1,16 @@
 import {
   ArrowLeftRight,
+  ArrowRight,
   CalendarRange,
-  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
+  Compass,
+  Flame,
   GitCompare,
   Link2,
   RotateCcw,
   Search,
-  SlidersHorizontal,
-  Sparkles,
   Tag,
   User,
   X,
@@ -22,6 +24,7 @@ import type {
   SyncLinkTypeFilter,
   SyncTagOption,
 } from '../types/timeline';
+import { EPOCH_SLICE_PRESETS, type EpochSlicePreset } from './EraSelectorPopover';
 
 interface FilterPanelProps {
   yearFrom: number;
@@ -45,6 +48,7 @@ interface FilterPanelProps {
   onChangeYearFrom: (year: number) => void;
   onChangeYearTo: (year: number) => void;
   onSelectYearRange: (from: number, to: number) => void;
+  onQuickStartHotNode?: (preset: EpochSlicePreset) => void;
   onChangeSearch: (query: string) => void;
   onToggleOnlySynced: () => void;
   onChangeSyncLinkTypeFilter: (nextType: SyncLinkTypeFilter) => void;
@@ -56,19 +60,6 @@ interface FilterPanelProps {
   onClearPersonFilter?: () => void;
   onResetFilters: () => void;
 }
-
-const CENTURY_PRESETS = [
-  { label: 'IX–XII вв. (Русь)', from: 862, to: 1237, hot: false },
-  { label: 'XIII–XV вв. (Орда и Москва)', from: 1237, to: 1505, hot: false },
-  { label: 'XVI–XVII вв. (Царство и Смута)', from: 1505, to: 1682, hot: false },
-  { label: 'XVIII в. (Империя)', from: 1700, to: 1800, hot: false },
-  { label: 'XIX в. (Реформы и культура)', from: 1801, to: 1900, hot: false },
-  { label: 'XX в. (СССР и РФ)', from: 1901, to: 2000, hot: false },
-  { label: 'Пётр I и реформы (1689–1725)', from: 1689, to: 1725, hot: true },
-  { label: 'Великие реформы (1855–1881)', from: 1855, to: 1881, hot: true },
-  { label: 'Излом 1914–1924', from: 1914, to: 1924, hot: true },
-  { label: 'ВОВ и Атомный проект (1941–1953)', from: 1941, to: 1953, hot: true },
-];
 
 export function FilterPanel({
   yearFrom,
@@ -92,6 +83,7 @@ export function FilterPanel({
   onChangeYearFrom,
   onChangeYearTo,
   onSelectYearRange,
+  onQuickStartHotNode,
   onChangeSearch,
   onToggleOnlySynced,
   onChangeSyncLinkTypeFilter,
@@ -108,6 +100,7 @@ export function FilterPanel({
   const [draftBranchA, setDraftBranchA] = useState(branchPairFilter?.branchA ?? '');
   const [draftBranchB, setDraftBranchB] = useState(branchPairFilter?.branchB ?? '');
   const searchWrapperRef = useRef<HTMLDivElement | null>(null);
+  const slicesRailRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setDraftBranchA(branchPairFilter?.branchA ?? '');
@@ -146,16 +139,29 @@ export function FilterPanel({
     !branchPairFilter &&
     !auditUnlinkedMode;
 
-  const activeAdvancedCount =
-    (onlySynced || syncLinkTypeFilter !== 'all' ? 1 : 0) +
-    (selectedSyncTag ? 1 : 0) +
-    (branchPairFilter ? 1 : 0) +
-    (auditUnlinkedMode ? 1 : 0);
-
   const selectedSyncTagMeta = useMemo(
     () => (selectedSyncTag ? syncTagOptions.find((t) => t.tag === selectedSyncTag) ?? null : null),
     [selectedSyncTag, syncTagOptions],
   );
+
+  const hotPresets = useMemo(
+    () => EPOCH_SLICE_PRESETS.filter((p) => p.hot),
+    [],
+  );
+
+  const centuryPresets = useMemo(
+    () => EPOCH_SLICE_PRESETS.filter((p) => !p.hot),
+    [],
+  );
+
+  const activeHotIdx = hotPresets.findIndex(
+    (p) => yearFrom === p.from && yearTo === p.to && !selectedRulerId,
+  );
+  const primaryHotPreset =
+    activeHotIdx >= 0
+      ? hotPresets[(activeHotIdx + 1) % hotPresets.length]
+      : hotPresets[0];
+  const isCyclingHot = activeHotIdx >= 0;
 
   const handleBranchAChange = (nextA: string) => {
     setDraftBranchA(nextA);
@@ -181,12 +187,13 @@ export function FilterPanel({
 
   return (
     <section
+      id="filter-panel-console"
       aria-label="Консоль поиска, эпох и исторических срезов"
-      className="rounded-2xl bg-slate-900/65 border border-slate-800/80 p-3 sm:p-3.5 space-y-2.5"
+      className="rounded-2xl bg-slate-900/65 border border-slate-800/80 p-2.5 sm:px-3.5 sm:py-2.5 space-y-2"
     >
-      {/* Первая строка (всегда видна): Быстрый поиск + Досье окна + Расширенный анализ + Сброс */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-center">
-        <div ref={searchWrapperRef} className="lg:col-span-7 relative">
+      {/* Первая строка (всегда видна): Быстрый поиск + Досье окна + Сброс */}
+      <div className="flex flex-col lg:flex-row lg:items-center gap-2">
+        <div ref={searchWrapperRef} className="flex-1 min-w-0 relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
           <input
             type="search"
@@ -287,7 +294,7 @@ export function FilterPanel({
           )}
         </div>
 
-        <div className="lg:col-span-5 flex flex-wrap items-center justify-between lg:justify-end gap-1.5">
+        <div className="flex flex-wrap items-center justify-between lg:justify-end gap-1.5 shrink-0">
           <div className="flex lg:hidden items-center gap-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2.5 py-1 text-xs font-mono">
             <span className="text-slate-400">Окно:</span>
             <input
@@ -315,88 +322,157 @@ export function FilterPanel({
             <button
               type="button"
               onClick={() => onOpenWindowModal(yearFrom, yearTo)}
-              className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 border border-amber-500/40 text-xs font-mono font-bold text-amber-200 transition-colors cursor-pointer whitespace-nowrap tabular-nums shrink-0"
+              className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-transparent hover:bg-slate-800/75 text-xs font-mono font-medium text-slate-300 hover:text-amber-200 transition-colors cursor-pointer whitespace-nowrap tabular-nums shrink-0"
               title={`Открыть сводное досье произвольного окна ${yearFrom}–${yearTo} гг.`}
             >
-              <CalendarRange className="w-3.5 h-3.5 shrink-0" />
-              <span>Досье окна ({yearFrom}–{yearTo})</span>
+              <CalendarRange className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span>Досье ({yearFrom}–{yearTo})</span>
             </button>
           )}
-
-          <button
-            type="button"
-            onClick={onToggleAdvanced}
-            aria-expanded={isAdvancedExpanded}
-            className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-mono font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-              isAdvancedExpanded
-                ? 'bg-slate-800 border-amber-400/60 text-white'
-                : activeAdvancedCount > 0
-                  ? 'bg-emerald-500/15 border-emerald-400/60 text-emerald-200'
-                  : 'bg-slate-950/85 border-slate-800 text-slate-300 hover:border-slate-600 hover:text-white'
-            }`}
-            title="Открыть инструменты расширенного анализа: типы связей, сюжеты синхронизации, пару веток А ↔ Б и аудит без связей"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span>Расширенный анализ</span>
-            {activeAdvancedCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 text-[10px] font-bold tabular-nums">
-                {activeAdvancedCount}
-              </span>
-            )}
-            {isAdvancedExpanded ? (
-              <ChevronUp className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            ) : (
-              <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-            )}
-          </button>
 
           {!isFullRange && (
             <button
               type="button"
               onClick={onResetFilters}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-xs font-mono font-semibold text-amber-300 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-transparent hover:bg-slate-800/75 text-xs font-mono font-medium text-amber-300 hover:text-amber-200 transition-colors cursor-pointer whitespace-nowrap shrink-0"
               title="Сбросить поисковый запрос, теги, пару веток, аудит, правителя и вернуть весь диапазон"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <RotateCcw className="w-3.5 h-3.5 shrink-0" />
               <span>Все века</span>
+            </button>
+          )}
+
+          {/* Главная доминирующая кнопка быстрого старта (Primary Entry Point) */}
+          {primaryHotPreset && (
+            <button
+              type="button"
+              onClick={() =>
+                onQuickStartHotNode
+                  ? onQuickStartHotNode(primaryHotPreset)
+                  : onSelectYearRange(primaryHotPreset.from, primaryHotPreset.to)
+              }
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-sans font-bold shadow-[0_0_20px_-4px_rgba(245,158,11,0.5)] transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+              title={`Переключить окно на поворотный узел: ${primaryHotPreset.label} с ключевыми связями`}
+            >
+              <Compass className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {isCyclingHot
+                  ? `Далее: ${primaryHotPreset.compactLabel}`
+                  : `Начать: ${primaryHotPreset.compactLabel}`}
+              </span>
+              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
             </button>
           )}
         </div>
       </div>
 
-      {/* Вторая строка (всегда видна): Быстрые срезы веков и ключевых исторических узлов */}
-      <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-slate-800/60">
-        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-slate-400 mr-1">
-          <CalendarRange className="w-3.5 h-3.5 text-amber-400" />
-          <span>Срезы эпох:</span>
-        </span>
-        {CENTURY_PRESETS.map((preset) => {
-          const isActive = yearFrom === preset.from && yearTo === preset.to && !selectedRulerId;
-          return (
-            <button
-              key={preset.label}
-              type="button"
-              onClick={() => onSelectYearRange(preset.from, preset.to)}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-all cursor-pointer whitespace-nowrap ${
-                isActive
-                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
-                  : preset.hot
-                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-200 hover:bg-amber-500/20'
-                    : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
-              }`}
-            >
-              {preset.hot && !isActive && <Sparkles className="w-3 h-3 inline mr-1 text-amber-400" />}
-              {preset.label}
-            </button>
-          );
-        })}
+      {/* Вторая строка: 4 акцентных «горячих» узла быстрого старта + тихий ряд веков */}
+      <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/60 min-w-0">
+        <div
+          ref={slicesRailRef}
+          className="flex-1 min-w-0 flex items-center gap-1.5 flex-nowrap overflow-x-auto no-scrollbar scroll-smooth py-0.5"
+        >
+          <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-amber-300 shrink-0 whitespace-nowrap mr-0.5">
+            <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="hidden sm:inline">Горячие узлы:</span>
+          </span>
+
+          {hotPresets.map((preset) => {
+            const isActive = yearFrom === preset.from && yearTo === preset.to && !selectedRulerId;
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={(e) => {
+                  if (onQuickStartHotNode) {
+                    onQuickStartHotNode(preset);
+                  } else {
+                    onSelectYearRange(preset.from, preset.to);
+                  }
+                  e.currentTarget.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                    inline: 'center',
+                  });
+                }}
+                title={`${preset.label}${preset.subtitle ? ` — ${preset.subtitle}` : ''}`}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-mono border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  isActive
+                    ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold shadow-sm'
+                    : 'bg-amber-500/12 border-amber-500/35 text-amber-100 hover:bg-amber-500/22 hover:border-amber-400/60 font-semibold'
+                }`}
+              >
+                {preset.compactLabel}
+              </button>
+            );
+          })}
+
+          <span className="w-px h-4 bg-slate-800 mx-1 shrink-0" aria-hidden="true" />
+
+          <span className="text-[11px] font-mono text-slate-500 shrink-0 whitespace-nowrap hidden md:inline">
+            Века:
+          </span>
+
+          {centuryPresets.map((preset) => {
+            const isActive = yearFrom === preset.from && yearTo === preset.to && !selectedRulerId;
+            return (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={(e) => {
+                  onSelectYearRange(preset.from, preset.to);
+                  e.currentTarget.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                    inline: 'center',
+                  });
+                }}
+                title={preset.label}
+                className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                  isActive
+                    ? 'bg-slate-800 border-amber-400/50 text-amber-200 font-semibold'
+                    : 'bg-transparent border-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
+                }`}
+              >
+                {preset.compactLabel}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="hidden sm:inline-flex items-center gap-0.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => slicesRailRef.current?.scrollBy({ left: -240, behavior: 'smooth' })}
+            aria-label="Прокрутить срезы эпох влево"
+            className="p-1 rounded-md bg-transparent text-slate-500 hover:text-white hover:bg-slate-800/70 transition-colors cursor-pointer"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => slicesRailRef.current?.scrollBy({ left: 240, behavior: 'smooth' })}
+            aria-label="Прокрутить срезы эпох вправо"
+            className="p-1 rounded-md bg-transparent text-slate-500 hover:text-white hover:bg-slate-800/70 transition-colors cursor-pointer"
+          >
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Раскрываемый блок «Расширенный анализ» (Профессиональные аналитические инструменты) */}
       {isAdvancedExpanded && (
-        <div className="pt-2.5 border-t border-slate-800/80 space-y-2.5">
+        <div className="pt-2 border-t border-slate-800/80 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
-            <span>Инструменты перекрёстного анализа связей, пар веток и синхронии:</span>
+            <span>Расширенный анализ: связи, сюжеты синхронизации, пары веток и аудит</span>
+            <button
+              type="button"
+              onClick={onToggleAdvanced}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950/80 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[10px] font-mono transition-colors cursor-pointer whitespace-nowrap"
+            >
+              <ChevronUp className="w-3 h-3" />
+              <span>Свернуть</span>
+            </button>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">

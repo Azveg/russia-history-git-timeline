@@ -1,4 +1,4 @@
-import { BookOpenCheck, Flag, GitCompareArrows } from 'lucide-react';
+import { BookOpenCheck } from 'lucide-react';
 
 interface DashboardHeaderProps {
   visibleLanesCount: number;
@@ -9,9 +9,6 @@ interface DashboardHeaderProps {
   onRevealHiddenLinks?: () => void;
   minYear?: number;
   maxYear?: number;
-  showEndNodes: boolean;
-  onToggleShowEndNodes: () => void;
-  onOpenCompareModal?: () => void;
 }
 
 export function DashboardHeader({
@@ -23,101 +20,72 @@ export function DashboardHeader({
   onRevealHiddenLinks,
   minYear = 862,
   maxYear = 2000,
-  showEndNodes,
-  onToggleShowEndNodes,
-  onOpenCompareModal,
 }: DashboardHeaderProps) {
   return (
-    <header className="relative border-b border-slate-800/80 bg-gradient-to-b from-slate-900/75 via-[#060a15] to-[#050811]">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 relative z-10">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
-          <div className="max-w-3xl">
-            <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono uppercase tracking-wider text-amber-300/90 mb-0.5">
-              <BookOpenCheck className="w-3.5 h-3.5 text-amber-400" />
-              <span>Интерактивный исторический атлас-хронограф · {minYear}–{maxYear} гг.</span>
+    <header className="relative border-b border-slate-800/80 bg-gradient-to-b from-slate-900/70 via-[#060a15] to-[#050811]">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-2 sm:py-2.5 relative z-10">
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 lg:gap-4">
+          <div className="min-w-0 max-w-3xl">
+            <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-mono text-amber-300/90">
+              <BookOpenCheck className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>Исторический атлас-хронограф · {minYear}–{maxYear} гг.</span>
             </div>
 
-            <h1 className="font-serif text-xl sm:text-2xl lg:text-[30px] font-bold tracking-tight text-white leading-tight">
+            <h1 className="font-serif text-lg sm:text-xl lg:text-[26px] font-bold tracking-tight text-white leading-tight text-balance">
               История России и мира в параллельных линиях времени
             </h1>
 
-            <p className="mt-0.5 text-slate-300 text-xs sm:text-sm leading-snug max-w-2xl">
-              Синхронная хронология правлений, войн, реформ, дипломатии, литературы и научных открытий:
-              исследуйте пересечения процессов, их предпосылки, итоги и культурный след.
+            <p className="hidden sm:block mt-0.5 text-slate-400 text-xs leading-snug max-w-2xl truncate">
+              Синхронная хронология правлений, войн, реформ, дипломатии, литературы и научных открытий.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between lg:justify-end gap-3 shrink-0 border-t lg:border-t-0 border-slate-800/80 pt-2.5 lg:pt-0">
-            <div className="flex items-center divide-x divide-slate-800 bg-slate-900/60 border border-slate-800/90 rounded-xl px-3 py-1.5">
-              <div className="pr-3 text-center">
-                <div className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-amber-400">
-                  {visibleLanesCount}
-                </div>
-                <div className="text-[10px] text-slate-400">активных линий</div>
+          <div className="flex items-center justify-between sm:justify-start lg:justify-end divide-x divide-slate-800/90 shrink-0 border-t lg:border-t-0 border-slate-800/70 pt-1.5 lg:pt-0">
+            <div className="pr-3 sm:pr-3.5 text-center">
+              <div className="text-sm sm:text-base font-extrabold font-mono tabular-nums text-amber-400 leading-tight">
+                {visibleLanesCount}
               </div>
-              <div className="px-3 text-center">
-                <div className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-white">
-                  {matchingRulersCount}
-                </div>
-                <div className="text-[10px] text-slate-400">правлений</div>
+              <div className="text-[10px] text-slate-400 whitespace-nowrap">линий</div>
+            </div>
+            <div className="px-3 sm:px-3.5 text-center">
+              <div className="text-sm sm:text-base font-extrabold font-mono tabular-nums text-white leading-tight">
+                {matchingRulersCount}
               </div>
-              <div className="px-3 text-center">
-                <div className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-sky-400">
-                  {streamCount}
-                </div>
-                <div className="text-[10px] text-slate-400">вех на шкале</div>
+              <div className="text-[10px] text-slate-400 whitespace-nowrap">правлений</div>
+            </div>
+            <div className="px-3 sm:px-3.5 text-center">
+              <div className="text-sm sm:text-base font-extrabold font-mono tabular-nums text-sky-400 leading-tight">
+                {streamCount}
               </div>
-              <div className="pl-3 text-center">
-                <div
-                  className="text-base sm:text-lg font-extrabold font-mono tabular-nums text-emerald-400"
-                  title={
-                    hiddenLinksCount > 0
-                      ? `В текущем окне видимо связей: ${visibleLinksCount}. Ещё ${hiddenLinksCount} ведут в отключённые ветки.`
-                      : `Уникальных связей среди событий текущего окна: ${visibleLinksCount}`
-                  }
-                >
-                  {visibleLinksCount}
-                </div>
-                <div className="text-[10px] text-slate-400 whitespace-nowrap">связей в окне</div>
+              <div className="text-[10px] text-slate-400 whitespace-nowrap">вех</div>
+            </div>
+            <div className="pl-3 sm:pl-3.5 text-center">
+              <div
+                className="text-sm sm:text-base font-extrabold font-mono tabular-nums text-emerald-400 leading-tight"
+                title={
+                  hiddenLinksCount > 0
+                    ? `В текущем окне видимо связей: ${visibleLinksCount}. Ещё ${hiddenLinksCount} ведут в отключённые ветки.`
+                    : `Уникальных связей среди событий текущего окна: ${visibleLinksCount}`
+                }
+              >
+                {visibleLinksCount}
+              </div>
+              <div className="text-[10px] text-slate-400 whitespace-nowrap">
+                связей
                 {hiddenLinksCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={onRevealHiddenLinks}
-                    className="mt-0.5 block mx-auto text-[10px] font-mono text-amber-300 hover:text-amber-200 underline decoration-amber-500/45 underline-offset-2 cursor-pointer whitespace-nowrap tabular-nums"
-                    title="Показать и прокрутить к списку отключённых веток со скрытыми связями"
-                  >
-                    +{hiddenLinksCount} скрытых
-                  </button>
+                  <>
+                    {' · '}
+                    <button
+                      type="button"
+                      onClick={onRevealHiddenLinks}
+                      className="font-mono text-amber-300 hover:text-amber-200 underline decoration-amber-500/45 underline-offset-2 cursor-pointer whitespace-nowrap tabular-nums"
+                      title="Показать и прокрутить к списку отключённых веток со скрытыми связями"
+                    >
+                      +{hiddenLinksCount} скр.
+                    </button>
+                  </>
                 )}
               </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {onOpenCompareModal && (
-                <button
-                  type="button"
-                  onClick={onOpenCompareModal}
-                  className="px-2.5 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 hover:bg-sky-500/20 text-sky-200 text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                  title="Сравнить два правления, две макро-эпохи или два интервала лет"
-                >
-                  <GitCompareArrows className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Сравнить</span>
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={onToggleShowEndNodes}
-                className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-mono flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                  showEndNodes
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
-                    : 'border-slate-800 bg-slate-950 text-slate-400'
-                }`}
-                title="Показывать на хронографе отметки окончания правлений и длительных исторических процессов"
-              >
-                <Flag className="w-3 h-3" />
-                <span>Вехи завершения: {showEndNodes ? 'ВКЛ' : 'ВЫКЛ'}</span>
-              </button>
             </div>
           </div>
         </div>
