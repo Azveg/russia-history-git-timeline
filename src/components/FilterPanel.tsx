@@ -1,13 +1,14 @@
 import {
   ArrowLeftRight,
   ArrowRight,
-  CalendarRange,
+  BarChart3,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
   Compass,
   Flame,
   GitCompare,
+  GitCompareArrows,
   Link2,
   RotateCcw,
   Search,
@@ -55,6 +56,7 @@ interface FilterPanelProps {
   onSelectSyncTag: (tag: string | null) => void;
   onChangeBranchPair: (pair: BranchPairFilter | null) => void;
   onToggleAuditUnlinkedMode: () => void;
+  onOpenCompareModal?: () => void;
   onOpenWindowModal?: (from: number, to: number) => void;
   onOpenPersonModal?: (personKey: string) => void;
   onClearPersonFilter?: () => void;
@@ -90,6 +92,7 @@ export function FilterPanel({
   onSelectSyncTag,
   onChangeBranchPair,
   onToggleAuditUnlinkedMode,
+  onOpenCompareModal,
   onOpenWindowModal,
   onOpenPersonModal,
   onClearPersonFilter,
@@ -191,7 +194,7 @@ export function FilterPanel({
       aria-label="Консоль поиска, эпох и исторических срезов"
       className="rounded-2xl bg-slate-900/65 border border-slate-800/80 p-2.5 sm:px-3.5 sm:py-2.5 space-y-2"
     >
-      {/* Первая строка (всегда видна): Быстрый поиск + Досье окна + Сброс */}
+      {/* Первая строка (всегда видна): Быстрый поиск + Сброс + Быстрый старт */}
       <div className="flex flex-col lg:flex-row lg:items-center gap-2">
         <div ref={searchWrapperRef} className="flex-1 min-w-0 relative">
           <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -317,18 +320,6 @@ export function FilterPanel({
               className="w-14 bg-slate-900 border border-slate-800 rounded-lg px-1.5 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
             />
           </div>
-
-          {onOpenWindowModal && (
-            <button
-              type="button"
-              onClick={() => onOpenWindowModal(yearFrom, yearTo)}
-              className="inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-transparent hover:bg-slate-800/75 text-xs font-mono font-medium text-slate-300 hover:text-amber-200 transition-colors cursor-pointer whitespace-nowrap tabular-nums shrink-0"
-              title={`Открыть сводное досье произвольного окна ${yearFrom}–${yearTo} гг.`}
-            >
-              <CalendarRange className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span>Досье ({yearFrom}–{yearTo})</span>
-            </button>
-          )}
 
           {!isFullRange && (
             <button
@@ -462,9 +453,9 @@ export function FilterPanel({
 
       {/* Раскрываемый блок «Расширенный анализ» (Профессиональные аналитические инструменты) */}
       {isAdvancedExpanded && (
-        <div className="pt-2 border-t border-slate-800/80 space-y-2">
+        <div className="pt-2 border-t border-slate-800/80 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
-            <span>Расширенный анализ: связи, сюжеты синхронизации, пары веток и аудит</span>
+            <span>Расширенный анализ: связи, сюжеты, пары веток, сравнение периодов и досье окна</span>
             <button
               type="button"
               onClick={onToggleAdvanced}
@@ -614,6 +605,34 @@ export function FilterPanel({
                   className="p-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-400 hover:text-white cursor-pointer shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="pt-2 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {onOpenCompareModal && (
+                <button
+                  type="button"
+                  onClick={onOpenCompareModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-sky-500/35 bg-sky-500/10 hover:bg-sky-500/20 hover:border-sky-400/60 text-xs font-mono font-semibold text-sky-100 transition-colors cursor-pointer whitespace-nowrap"
+                  title="Сопоставить две исторические эпохи, два правления или произвольные интервалы лет"
+                >
+                  <GitCompareArrows className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>Сравнить два периода</span>
+                </button>
+              )}
+
+              {onOpenWindowModal && (
+                <button
+                  type="button"
+                  onClick={() => onOpenWindowModal(yearFrom, yearTo)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-amber-500/35 bg-amber-500/10 hover:bg-amber-500/20 hover:border-amber-400/60 text-xs font-mono font-semibold text-amber-100 transition-colors cursor-pointer whitespace-nowrap tabular-nums"
+                  title={`Открыть сводное досье выбранного окна ${yearFrom}–${yearTo} гг.`}
+                >
+                  <BarChart3 className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Досье окна ({yearFrom}–{yearTo})</span>
                 </button>
               )}
             </div>

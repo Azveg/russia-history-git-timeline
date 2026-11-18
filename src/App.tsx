@@ -1589,7 +1589,6 @@ export default function App() {
         onToggleShowEndNodes={() =>
           preserveViewportScrollAnchor(() => setShowEndNodes((prev) => !prev))
         }
-        onOpenCompareModal={handleOpenCompareFromHeader}
         onOpenWindowModal={handleOpenWindowModal}
         onResetTimeFilter={() => handleSelectEra('ALL')}
         isFiltersCollapsed={isFiltersCollapsed}
@@ -1657,6 +1656,7 @@ export default function App() {
           onSelectSyncTag={handleSelectSyncTag}
           onChangeBranchPair={handleChangeBranchPair}
           onToggleAuditUnlinkedMode={() => setAuditUnlinkedMode((prev) => !prev)}
+          onOpenCompareModal={handleOpenCompareFromHeader}
           onOpenWindowModal={handleOpenWindowModal}
           onOpenPersonModal={handleOpenPersonModal}
           onClearPersonFilter={() => setSelectedPersonKey(null)}
