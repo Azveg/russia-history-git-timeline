@@ -111,6 +111,92 @@ const RESOLUTION_LABELS: Record<AxisResolution, string> = {
   day: 'Дни и точные даты (окно ≤ 2 л.)',
 };
 
+type NodeVisualKind = 'milestone' | 'process' | 'biography';
+
+interface NodeVisualStatusMeta {
+  kind: NodeVisualKind;
+  symbol: '◆' | '●' | '◈';
+  kindLabel: string;
+  shortKindLabel: string;
+  durationLabel: string;
+  compactDurationLabel: string;
+  spanRangeLabel: string;
+  trackStartPct: number;
+  trackWidthPct: number;
+  secondaryTrackLabel?: string;
+}
+
+function formatDurationYearsRu(years: number): string {
+  const n = Math.max(1, Math.round(years));
+  const mod100 = n % 100;
+  const mod10 = n % 10;
+  if (mod100 >= 11 && mod100 <= 19) return `${n} лет`;
+  if (mod10 === 1) return `${n} год`;
+  if (mod10 >= 2 && mod10 <= 4) return `${n} года`;
+  return `${n} лет`;
+}
+
+function computeNodeVisualStatusMeta(
+  ev: EnrichedEvent,
+  isBioNode: boolean,
+  isAtomicInView: boolean,
+  effStartYear: number,
+  effEndYear: number,
+): NodeVisualStatusMeta {
+  if (isBioNode) {
+    const lifeYears = Math.max(1, ev.endYear - ev.startYear);
+    const activeYears = Math.max(1, effEndYear - effStartYear);
+    const rawStartPct = Math.round(((effStartYear - ev.startYear) / lifeYears) * 100);
+    const trackStartPct = Math.max(0, Math.min(82, rawStartPct));
+    const rawWidthPct = Math.round((activeYears / lifeYears) * 100);
+    const trackWidthPct = Math.max(16, Math.min(100 - trackStartPct, rawWidthPct));
+    return {
+      kind: 'biography',
+      symbol: '◈',
+      kindLabel: 'Биография',
+      shortKindLabel: 'биогр.',
+      durationLabel: `жизнь ${lifeYears} л. · пик ${activeYears} л.`,
+      compactDurationLabel: `акт. ${activeYears} л.`,
+      spanRangeLabel: `${ev.startYear}–${ev.endYear} (акт. ${effStartYear}–${effEndYear})`,
+      trackStartPct,
+      trackWidthPct,
+      secondaryTrackLabel: `${ev.startYear}–${ev.endYear}`,
+    };
+  }
+
+  const rawSpanYears = Math.max(0, ev.endYear - ev.startYear);
+  if (!isAtomicInView || rawSpanYears > 1) {
+    const spanYears = Math.max(1, rawSpanYears);
+    const trackWidthPct = Math.max(
+      20,
+      Math.min(100, Math.round(Math.sqrt(spanYears / 45) * 100)),
+    );
+    return {
+      kind: 'process',
+      symbol: '●',
+      kindLabel: 'Процесс',
+      shortKindLabel: 'процесс',
+      durationLabel: `${ev.startYear}–${ev.endYear} · ${formatDurationYearsRu(spanYears)}`,
+      compactDurationLabel: `${spanYears} л.`,
+      spanRangeLabel: `${ev.startYear}–${ev.endYear}`,
+      trackStartPct: 0,
+      trackWidthPct,
+    };
+  }
+
+  return {
+    kind: 'milestone',
+    symbol: '◆',
+    kindLabel: 'Веха',
+    shortKindLabel: 'веха',
+    durationLabel: rawSpanYears === 1 ? `${ev.startYear}–${ev.endYear} · 1 год` : 'Точечное событие (≤ 1 года)',
+    compactDurationLabel: 'веха',
+    spanRangeLabel: `${ev.startYear}`,
+    trackStartPct: 0,
+    trackWidthPct: 0,
+  };
+}
+
 export function GitTimeline({
   stream,
   matchingEvents,
@@ -157,6 +243,24 @@ export function GitTimeline({
   const [hoveredCardTooltip, setHoveredCardTooltip] = useState<HoveredCardTooltipState | null>(null);
   const [isGraphHelpOpen, setIsGraphHelpOpen] = useState(false);
   const [pinnedHoverEventId, setPinnedHoverEventId] = useState<string | null>(null);
+  const [localJumpDomId, setLocalJumpDomId] = useState<string | null>(null);
+  const localJumpTimerRef = useRef<number | null>(null);
+
+  const triggerScrollToDomRow = (domId: string, eventId: string) => {
+    const el = document.getElementById(domId);
+    if (!el) return;
+    setHoveredCardTooltip(null);
+    activateHoverEvent(eventId);
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setLocalJumpDomId(domId);
+    if (localJumpTimerRef.current !== null) {
+      window.clearTimeout(localJumpTimerRef.current);
+    }
+    localJumpTimerRef.current = window.setTimeout(() => {
+      setLocalJumpDomId(null);
+      localJumpTimerRef.current = null;
+    }, 2200);
+  };
 
   const cancelScheduledHoverClear = () => {
     if (hoverClearTimerRef.current !== null) {
@@ -179,7 +283,12 @@ export function GitTimeline({
   };
 
   useEffect(() => {
-    return () => cancelScheduledHoverClear();
+    return () => {
+      cancelScheduledHoverClear();
+      if (localJumpTimerRef.current !== null) {
+        window.clearTimeout(localJumpTimerRef.current);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -475,6 +584,16 @@ export function GitTimeline({
       }
     });
     return map;
+  }, [stream]);
+
+  const eventsWithEndRowInStream = useMemo(() => {
+    const set = new Set<string>();
+    stream.forEach((row) => {
+      if (row.rowType === 'EVENT_END') {
+        set.add(row.eventObj.id);
+      }
+    });
+    return set;
   }, [stream]);
 
   const effectiveActiveEventId = pinnedHoverEventId || hoveredEventId;
@@ -1648,7 +1767,16 @@ export function GitTimeline({
             const isSelfHovered = effectiveActiveEventId === ev.id;
             const isFocusedTarget = focusedEvent?.id === ev.id;
             const focusDistance = focusedEvent ? focusDistanceMap?.get(ev.id) : undefined;
-            const isJumpHighlighted = highlightedJumpId === ev.id;
+            const isJumpHighlighted =
+              highlightedJumpId === ev.id || localJumpDomId === `row-${ev.id}`;
+            const hasEndRowInStream = eventsWithEndRowInStream.has(ev.id);
+            const nodeStatus = computeNodeVisualStatusMeta(
+              ev,
+              isBioNode,
+              isAtomic,
+              effStartYear,
+              effEndYear,
+            );
 
             const hiddenBranchSummaries = getEventHiddenBranchSummaries(ev, activeBranches, branches);
             const hiddenLinksTotal = hiddenBranchSummaries.reduce((sum, b) => sum + b.linkCount, 0);
@@ -1878,6 +2006,17 @@ export function GitTimeline({
                     <div
                       onMouseEnter={(e) => openCardTooltip(e.currentTarget)}
                       onMouseLeave={() => setHoveredCardTooltip(null)}
+                      style={
+                        nodeStatus.kind === 'process'
+                          ? { borderLeftWidth: '3px', borderLeftColor: branchObj.color }
+                          : nodeStatus.kind === 'biography'
+                            ? {
+                                borderLeftWidth: '3px',
+                                borderLeftStyle: 'dashed',
+                                borderLeftColor: branchObj.color,
+                              }
+                            : undefined
+                      }
                       className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3 min-h-[38px] py-1.5 flex items-center justify-between gap-2.5 transition-all ${cardHighlightClass}`}
                     >
                       <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
@@ -1907,6 +2046,25 @@ export function GitTimeline({
                               </span>
                             ) : null;
                           })()}
+                        <span
+                          className="hidden sm:inline-flex items-center gap-1 font-mono text-[10px] text-slate-400 shrink-0 tabular-nums"
+                          title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
+                        >
+                          <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
+                          <span>{nodeStatus.compactDurationLabel}</span>
+                          {nodeStatus.kind !== 'milestone' && (
+                            <span className="w-6 h-1 rounded-full bg-slate-800 overflow-hidden relative inline-block align-middle">
+                              <span
+                                className="block h-full rounded-full"
+                                style={{
+                                  marginLeft: `${nodeStatus.trackStartPct}%`,
+                                  width: `${nodeStatus.trackWidthPct}%`,
+                                  backgroundColor: branchObj.color,
+                                }}
+                              />
+                            </span>
+                          )}
+                        </span>
                         <span aria-hidden="true" className="text-slate-600 shrink-0">
                           ·
                         </span>
@@ -1934,6 +2092,20 @@ export function GitTimeline({
                       </div>
 
                       <div className="flex items-center gap-2 shrink-0 text-[11px] font-mono">
+                        {hasEndRowInStream && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerScrollToDomRow(`row-end-${ev.id}`, ev.id);
+                            }}
+                            className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 transition-colors cursor-pointer tabular-nums"
+                            title={`Быстрый переход к строке завершения (${effEndYear} г.)`}
+                          >
+                            <ArrowDown className="w-2.5 h-2.5 text-amber-400" />
+                            <span>{effEndYear}</span>
+                          </button>
+                        )}
                         {hiddenLinksTotal > 0 && onRevealBranches && (
                           <button
                             type="button"
@@ -1981,6 +2153,17 @@ export function GitTimeline({
                     <div
                       onMouseEnter={(e) => openCardTooltip(e.currentTarget)}
                       onMouseLeave={() => setHoveredCardTooltip(null)}
+                      style={
+                        nodeStatus.kind === 'process'
+                          ? { borderLeftWidth: '3px', borderLeftColor: branchObj.color }
+                          : nodeStatus.kind === 'biography'
+                            ? {
+                                borderLeftWidth: '3px',
+                                borderLeftStyle: 'dashed',
+                                borderLeftColor: branchObj.color,
+                              }
+                            : undefined
+                      }
                       className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-xl border px-3.5 py-2.5 transition-all flex flex-col justify-between gap-2 ${cardHighlightClass}`}
                     >
                       <div className="flex items-center justify-between gap-2.5 min-w-0 min-h-[20px]">
@@ -2030,7 +2213,38 @@ export function GitTimeline({
                         </div>
 
                         <div className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-slate-400 shrink-0 whitespace-nowrap">
-                          <span className="max-w-[190px] truncate font-semibold" style={{ color: origBranchObj.color }}>
+                          <span
+                            className="inline-flex items-center gap-1.5 text-[10px] text-slate-300 tabular-nums"
+                            title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
+                          >
+                            <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
+                            <span>
+                              {nodeStatus.kind === 'milestone'
+                                ? 'Веха'
+                                : nodeStatus.kind === 'biography'
+                                  ? `Биогр. · ${nodeStatus.compactDurationLabel}`
+                                  : `Процесс · ${formatDurationYearsRu(Math.max(1, ev.endYear - ev.startYear))}`}
+                            </span>
+                            {nodeStatus.kind !== 'milestone' && (
+                              <span
+                                aria-hidden="true"
+                                className="w-10 h-1.5 rounded-full bg-slate-800/95 border border-slate-700/70 overflow-hidden inline-block align-middle"
+                              >
+                                <span
+                                  className="block h-full rounded-full"
+                                  style={{
+                                    marginLeft: `${nodeStatus.trackStartPct}%`,
+                                    width: `${nodeStatus.trackWidthPct}%`,
+                                    backgroundColor: branchObj.color,
+                                  }}
+                                />
+                              </span>
+                            )}
+                          </span>
+                          <span aria-hidden="true" className="text-slate-600">
+                            ·
+                          </span>
+                          <span className="max-w-[165px] truncate font-semibold" style={{ color: origBranchObj.color }}>
                             {origBranchObj.label}
                           </span>
                           {ev.region && (
@@ -2038,7 +2252,7 @@ export function GitTimeline({
                               <span aria-hidden="true" className="text-slate-600">
                                 ·
                               </span>
-                              <span className="text-slate-400 max-w-[140px] truncate">{ev.region}</span>
+                              <span className="text-slate-400 max-w-[120px] truncate">{ev.region}</span>
                             </>
                           )}
                         </div>
@@ -2103,6 +2317,13 @@ export function GitTimeline({
 
                       <div className="pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-[11px] text-slate-400 min-w-0 min-h-[26px]">
                         <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden font-mono whitespace-nowrap">
+                          <span
+                            className="sm:hidden inline-flex items-center gap-1 text-[10px] text-slate-300 shrink-0 tabular-nums"
+                            title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
+                          >
+                            <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
+                            <span>{nodeStatus.compactDurationLabel}</span>
+                          </span>
                           {ev.ruler && (
                             <span
                               className={`inline-flex items-center gap-1 min-w-0 truncate ${
@@ -2147,6 +2368,22 @@ export function GitTimeline({
                         </div>
 
                         <div className="flex items-center gap-2 shrink-0 font-mono whitespace-nowrap">
+                          {hasEndRowInStream && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerScrollToDomRow(`row-end-${ev.id}`, ev.id);
+                              }}
+                              className="px-2 py-0.5 rounded border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer tabular-nums"
+                              title={`Прокрутить ленту к точке завершения (${effEndYear} г.)`}
+                            >
+                              <ArrowDown className="w-3 h-3 text-amber-400" />
+                              <span className="hidden sm:inline">К концу</span>
+                              <span>({effEndYear})</span>
+                            </button>
+                          )}
+
                           <button
                             type="button"
                             onClick={(e) => {
@@ -2196,11 +2433,15 @@ export function GitTimeline({
             );
           const mergeTargetX = hasBaseContinuingAfter ? baseX : timeSpineX;
           const isEndSelfHovered = hoveredEventId === ev.id;
+          const isEndJumpHighlighted = localJumpDomId === `row-end-${ev.id}`;
+          const hasStartRowInStream = rowIndexByEventId.has(ev.id);
+          const effStartYearForEnd = getEventEffectiveStartYear(ev, branches);
           const mergeY = 22;
 
           return (
             <div
               key={`end-${ev.id}-${idx}`}
+              id={`row-end-${ev.id}`}
               onClick={() => onOpenCardModal(ev.id)}
               onMouseEnter={() => onHoverEvent(ev.id)}
               onMouseLeave={() => onHoverEvent(null)}
@@ -2275,7 +2516,13 @@ export function GitTimeline({
               </div>
 
               <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
-                <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 min-h-[36px] py-1.5 flex items-center justify-between gap-2 text-xs">
+                <div
+                  className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3.5 min-h-[36px] py-1.5 flex items-center justify-between gap-2 text-xs transition-all ${
+                    isEndJumpHighlighted
+                      ? 'jump-target-highlighted'
+                      : 'bg-slate-900/40 border-slate-800/70 group-hover:border-slate-700'
+                  }`}
+                >
                   <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
                     <Flag className="w-3.5 h-3.5 shrink-0" style={{ color: branchObj.color }} />
                     <span className="font-mono font-bold tabular-nums shrink-0" style={{ color: branchObj.color }}>
@@ -2305,13 +2552,30 @@ export function GitTimeline({
                       {formatEventTitleWithPeriod(ev)}
                     </span>
                   </div>
-                  <span className="text-[11px] font-mono text-slate-400 shrink-0 tabular-nums whitespace-nowrap hidden sm:inline">
-                    {ev.overlappingRulers.length > 1
-                      ? `Правлений: ${ev.overlappingRulers.length}`
-                      : ev.duration > 0
-                        ? `${ev.duration} л.`
-                        : 'Завершение'}
-                  </span>
+                  <div className="flex items-center gap-2 shrink-0 font-mono text-[11px] tabular-nums whitespace-nowrap">
+                    <span className="text-slate-400 hidden sm:inline">
+                      {ev.overlappingRulers.length > 1
+                        ? `Правлений: ${ev.overlappingRulers.length}`
+                        : ev.duration > 0
+                          ? formatDurationYearsRu(ev.duration)
+                          : 'Завершение'}
+                    </span>
+                    {hasStartRowInStream && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerScrollToDomRow(`row-${ev.id}`, ev.id);
+                        }}
+                        className="px-2 py-0.5 rounded border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        title={`Вернуться к началу процесса (${effStartYearForEnd} г.)`}
+                      >
+                        <ArrowUp className="w-3 h-3 text-amber-400" />
+                        <span className="hidden md:inline">К началу</span>
+                        <span>({effStartYearForEnd})</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -2360,6 +2624,39 @@ export function GitTimeline({
           <div className="mt-1.5 text-sm font-bold text-white leading-snug">
             {hoveredCardTooltip.ev.title}
           </div>
+
+          {(() => {
+            const tEv = hoveredCardTooltip.ev;
+            const tBio = isBiographyNode(tEv, branches);
+            const tEffStart = getEventEffectiveStartYear(tEv, branches);
+            const tEffEnd = getEventEffectiveEndYear(tEv, branches);
+            const tStatus = computeNodeVisualStatusMeta(
+              tEv,
+              tBio,
+              tEv.isAtomic,
+              tEffStart,
+              tEffEnd,
+            );
+            return (
+              <div className="mt-1 flex items-center gap-2 text-[11px] font-mono text-slate-300 tabular-nums">
+                <span style={{ color: hoveredCardTooltip.branchColor }}>{tStatus.symbol}</span>
+                <span className="font-semibold text-slate-200">{tStatus.kindLabel}:</span>
+                <span>{tStatus.durationLabel}</span>
+                {tStatus.kind !== 'milestone' && (
+                  <span className="w-12 h-1.5 rounded-full bg-slate-800 border border-slate-700 overflow-hidden inline-block">
+                    <span
+                      className="block h-full rounded-full"
+                      style={{
+                        marginLeft: `${tStatus.trackStartPct}%`,
+                        width: `${tStatus.trackWidthPct}%`,
+                        backgroundColor: hoveredCardTooltip.branchColor,
+                      }}
+                    />
+                  </span>
+                )}
+              </div>
+            );
+          })()}
 
           {hoveredCardTooltip.ev.startPrecision.precision !== 'year' &&
             (() => {
