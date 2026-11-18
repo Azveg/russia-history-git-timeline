@@ -104,6 +104,7 @@ interface HoveredCardTooltipState {
   branchLabel: string;
   branchColor: string;
   dateLabel: string;
+  mode: 'full' | 'supplemental';
   rect: { top: number; bottom: number; left: number; width: number };
 }
 
@@ -243,6 +244,7 @@ export function GitTimeline({
   const streamContainerRef = useRef<HTMLDivElement | null>(null);
   const graphHelpRef = useRef<HTMLDivElement | null>(null);
   const hoverClearTimerRef = useRef<number | null>(null);
+  const tooltipOpenTimerRef = useRef<number | null>(null);
   const [activeStickyRulerId, setActiveStickyRulerId] = useState<string | null>(null);
   const [hoveredCardTooltip, setHoveredCardTooltip] = useState<HoveredCardTooltipState | null>(null);
   const [isGraphHelpOpen, setIsGraphHelpOpen] = useState(false);
@@ -250,10 +252,22 @@ export function GitTimeline({
   const [localJumpDomId, setLocalJumpDomId] = useState<string | null>(null);
   const localJumpTimerRef = useRef<number | null>(null);
 
+  const cancelScheduledTooltip = () => {
+    if (tooltipOpenTimerRef.current !== null) {
+      window.clearTimeout(tooltipOpenTimerRef.current);
+      tooltipOpenTimerRef.current = null;
+    }
+  };
+
+  const closeCardTooltip = () => {
+    cancelScheduledTooltip();
+    setHoveredCardTooltip(null);
+  };
+
   const triggerScrollToDomRow = (domId: string, eventId: string) => {
     const el = document.getElementById(domId);
     if (!el) return;
-    setHoveredCardTooltip(null);
+    closeCardTooltip();
     activateHoverEvent(eventId);
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setLocalJumpDomId(domId);
@@ -289,6 +303,7 @@ export function GitTimeline({
   useEffect(() => {
     return () => {
       cancelScheduledHoverClear();
+      cancelScheduledTooltip();
       if (localJumpTimerRef.current !== null) {
         window.clearTimeout(localJumpTimerRef.current);
       }
@@ -332,19 +347,18 @@ export function GitTimeline({
 
   useEffect(() => {
     setActiveStickyRulerId(defaultStickyRulerId);
-    setHoveredCardTooltip(null);
+    closeCardTooltip();
   }, [defaultStickyRulerId, stream.length, cardDensity]);
 
   useEffect(() => {
-    if (!hoveredCardTooltip) return;
-    const clearTooltip = () => setHoveredCardTooltip(null);
-    window.addEventListener('scroll', clearTooltip, { passive: true });
-    window.addEventListener('resize', clearTooltip, { passive: true });
+    const handleClear = () => closeCardTooltip();
+    window.addEventListener('scroll', handleClear, { passive: true });
+    window.addEventListener('resize', handleClear, { passive: true });
     return () => {
-      window.removeEventListener('scroll', clearTooltip);
-      window.removeEventListener('resize', clearTooltip);
+      window.removeEventListener('scroll', handleClear);
+      window.removeEventListener('resize', handleClear);
     };
-  }, [hoveredCardTooltip]);
+  }, []);
 
   useEffect(() => {
     const container = streamContainerRef.current;
@@ -565,10 +579,10 @@ export function GitTimeline({
 
   const gutterWidthClass =
     axisResolution === 'day'
-      ? 'w-[100px] sm:w-[116px]'
+      ? 'hidden sm:flex sm:w-[116px]'
       : axisResolution === 'month'
-        ? 'w-[80px] sm:w-[96px]'
-        : 'w-[56px] sm:w-[68px]';
+        ? 'hidden sm:flex sm:w-[96px]'
+        : 'hidden sm:flex sm:w-[68px]';
 
   const gutterMeta = useMemo(() => {
     let prevLabel = '';
@@ -919,13 +933,252 @@ export function GitTimeline({
     );
   }
 
+  const mobileSpineWidth = 36;
+  const mobileSpineX = 16;
+  const mobileConnectorBusX = 27;
+
+  function renderMobileSpineCell(
+    rowIdx: number,
+    options: {
+      kind: 'era' | 'tick' | 'ruler_start' | 'ruler_end' | 'event_commit' | 'event_end';
+      color?: string;
+      isAtomic?: boolean;
+      isBioNode?: boolean;
+      isCompact?: boolean;
+      isSelfHovered?: boolean;
+      isConnectedToBus?: boolean;
+      startedBeforeWindow?: boolean;
+    },
+  ) {
+    const showVerticalBusSegment =
+      activeLinkGeometry !== null &&
+      activeLinkGeometry.hasSpanOnCanvas &&
+      rowIdx >= activeLinkGeometry.minSpanIdx &&
+      rowIdx <= activeLinkGeometry.maxSpanIdx;
+    const nodeColor = options.color ?? '#f59e0b';
+    const commitY = options.kind === 'event_commit' ? (options.isCompact ? 22 : 28) : 22;
+
+    return (
+      <div className="sm:hidden w-[36px] shrink-0 relative select-none overflow-hidden">
+        <svg className="w-full h-full absolute inset-0" width={mobileSpineWidth} height="100%">
+          {/* Компактный центральный ствол времени */}
+          <line
+            x1={mobileSpineX}
+            y1={0}
+            x2={mobileSpineX}
+            y2={420}
+            stroke="#cbd5e1"
+            strokeWidth={2.6}
+            strokeOpacity={0.78}
+          />
+
+          {/* Шина активных связей при наведении / фокусе */}
+          {showVerticalBusSegment && activeLinkGeometry && (
+            <line
+              x1={mobileConnectorBusX}
+              y1={rowIdx === activeLinkGeometry.minSpanIdx ? 22 : 0}
+              x2={mobileConnectorBusX}
+              y2={rowIdx === activeLinkGeometry.maxSpanIdx ? 22 : 420}
+              stroke="#10b981"
+              strokeWidth={2}
+              strokeDasharray="4 3"
+              strokeOpacity={0.9}
+            />
+          )}
+
+          {options.kind === 'era' && (
+            <>
+              <line
+                x1={mobileSpineX + 8}
+                y1={36}
+                x2={mobileSpineWidth}
+                y2={36}
+                stroke="#f59e0b"
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+                strokeOpacity={0.7}
+              />
+              <circle cx={mobileSpineX} cy={36} r={9} fill="#050811" stroke="#cbd5e1" strokeWidth={2.6} />
+              <circle cx={mobileSpineX} cy={36} r={4} fill="#f59e0b" />
+            </>
+          )}
+
+          {options.kind === 'tick' && (
+            <>
+              <line
+                x1={mobileSpineX + 4}
+                y1={14}
+                x2={mobileSpineWidth}
+                y2={14}
+                stroke="#475569"
+                strokeWidth={1}
+                strokeDasharray="2 3"
+                strokeOpacity={0.55}
+              />
+              <circle cx={mobileSpineX} cy={14} r={3.2} fill="#050811" stroke="#94a3b8" strokeWidth={1.8} />
+            </>
+          )}
+
+          {options.kind === 'ruler_start' && (
+            <>
+              <line
+                x1={mobileSpineX - 7}
+                y1={options.startedBeforeWindow ? 0 : 28}
+                x2={mobileSpineX - 7}
+                y2={420}
+                stroke={nodeColor}
+                strokeWidth={2.4}
+                strokeOpacity={0.6}
+              />
+              <line
+                x1={mobileSpineX + 6}
+                y1={28}
+                x2={mobileSpineWidth}
+                y2={28}
+                stroke={nodeColor}
+                strokeWidth={1.4}
+                strokeDasharray="3 3"
+                strokeOpacity={0.55}
+              />
+              <circle cx={mobileSpineX} cy={28} r={5.5} fill="#050811" stroke={nodeColor} strokeWidth={2.6} />
+              <circle cx={mobileSpineX} cy={28} r={2.2} fill={nodeColor} />
+            </>
+          )}
+
+          {options.kind === 'ruler_end' && (
+            <>
+              <line
+                x1={mobileSpineX - 7}
+                y1={0}
+                x2={mobileSpineX - 7}
+                y2={22}
+                stroke={nodeColor}
+                strokeWidth={2.4}
+                strokeOpacity={0.6}
+              />
+              <rect
+                x={mobileSpineX - 4}
+                y={18}
+                width={8}
+                height={8}
+                rx={2}
+                fill="#050811"
+                stroke={nodeColor}
+                strokeWidth={2.2}
+              />
+            </>
+          )}
+
+          {options.kind === 'event_commit' && (
+            <>
+              {options.isConnectedToBus && (
+                <g>
+                  <line
+                    x1={mobileSpineX}
+                    y1={commitY}
+                    x2={mobileConnectorBusX}
+                    y2={commitY}
+                    stroke="#10b981"
+                    strokeWidth={1.8}
+                  />
+                  <circle
+                    cx={mobileConnectorBusX}
+                    cy={commitY}
+                    r={3.2}
+                    fill={options.isSelfHovered ? '#10b981' : '#050811'}
+                    stroke="#10b981"
+                    strokeWidth={1.8}
+                  />
+                </g>
+              )}
+
+              {!options.isAtomic && (
+                <line
+                  x1={mobileSpineX + 5}
+                  y1={options.startedBeforeWindow ? 0 : commitY}
+                  x2={mobileSpineX + 5}
+                  y2={420}
+                  stroke={nodeColor}
+                  strokeWidth={options.isSelfHovered ? 2.6 : 1.8}
+                  strokeDasharray={options.isBioNode ? '4 2' : undefined}
+                  strokeOpacity={options.isSelfHovered ? 0.95 : 0.45}
+                />
+              )}
+
+              <line
+                x1={mobileSpineX + 6}
+                y1={commitY}
+                x2={mobileSpineWidth}
+                y2={commitY}
+                stroke={nodeColor}
+                strokeWidth={1.5}
+                strokeDasharray="3 3"
+                strokeOpacity={options.isSelfHovered ? 1 : 0.6}
+              />
+
+              {options.isAtomic || options.isBioNode ? (
+                <g>
+                  <polygon
+                    points={`${mobileSpineX},${commitY - 6.5} ${mobileSpineX + 6.5},${commitY} ${mobileSpineX},${commitY + 6.5} ${mobileSpineX - 6.5},${commitY}`}
+                    fill="#050811"
+                    stroke={nodeColor}
+                    strokeWidth={2.3}
+                  />
+                  <circle cx={mobileSpineX} cy={commitY} r={1.8} fill={nodeColor} />
+                </g>
+              ) : (
+                <>
+                  <circle cx={mobileSpineX} cy={commitY} r={8.5} fill={nodeColor} fillOpacity={0.22} />
+                  <circle
+                    cx={mobileSpineX}
+                    cy={commitY}
+                    r={5}
+                    fill="#050811"
+                    stroke={nodeColor}
+                    strokeWidth={2.5}
+                  />
+                  <circle cx={mobileSpineX} cy={commitY} r={2} fill={nodeColor} />
+                </>
+              )}
+            </>
+          )}
+
+          {options.kind === 'event_end' && (
+            <>
+              <line
+                x1={mobileSpineX + 5}
+                y1={22}
+                x2={mobileSpineWidth}
+                y2={22}
+                stroke={nodeColor}
+                strokeWidth={1.3}
+                strokeDasharray="3 3"
+                strokeOpacity={0.5}
+              />
+              <rect
+                x={mobileSpineX - 4.5}
+                y={17.5}
+                width={9}
+                height={9}
+                rx={2}
+                fill="#050811"
+                stroke={nodeColor}
+                strokeWidth={2.3}
+              />
+            </>
+          )}
+        </svg>
+      </div>
+    );
+  }
+
   return (
     <div className="min-w-0 w-full xl:grid xl:grid-cols-[minmax(0,1fr)_316px] xl:gap-5 xl:items-start">
       <div className="min-w-0">
       <div className="sticky top-[var(--top-bar-height,49px)] z-30 bg-[#050811]/95 backdrop-blur-md border border-slate-800/90 rounded-t-2xl shadow-md">
         <div className="px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar min-w-0">
-            {visibleLanes.map((lane) => {
+          <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar min-w-0">
+            {visibleLanes.map((lane, laneIdx) => {
               const isTimeAxis = lane.id === 'TIME_AXIS';
               const subCount =
                 lane.id === 'MAIN_RULERS'
@@ -944,16 +1197,16 @@ export function GitTimeline({
                     key={lane.id}
                     type="button"
                     onClick={() => onToggleCollapseParent(lane.id)}
-                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-[10px] font-mono text-amber-100 shrink-0 cursor-pointer transition-colors"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-xs font-sans text-amber-100 shrink-0 cursor-pointer transition-colors"
                     title={`${lane.label}: свёрнуто веток (${activeChildCount}). Нажмите, чтобы развернуть в отдельные линии.`}
                   >
-                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: lane.color }} />
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
                     <span className="font-semibold">{lane.label}</span>
                     {subCount > 1 && (
-                      <span className="text-amber-300 font-bold tabular-nums">×{subCount}</span>
+                      <span className="font-mono text-amber-300 font-bold tabular-nums">×{subCount}</span>
                     )}
-                    <GitBranch className="w-3 h-3 text-amber-300 ml-0.5" />
-                    <span className="text-amber-300 font-bold">Развернуть ({activeChildCount})</span>
+                    <GitBranch className="w-3 h-3 text-amber-300 ml-0.5 shrink-0" />
+                    <span className="text-amber-300 font-semibold">Развернуть ({activeChildCount})</span>
                   </button>
                 );
               }
@@ -961,10 +1214,8 @@ export function GitTimeline({
               return (
                 <div
                   key={lane.id}
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-[10px] font-mono shrink-0 ${
-                    isTimeAxis
-                      ? 'bg-slate-800/90 border-slate-600 text-white font-bold'
-                      : 'bg-slate-900 border-slate-800 text-slate-300'
+                  className={`inline-flex items-center gap-1.5 text-xs font-sans shrink-0 whitespace-nowrap ${
+                    isTimeAxis ? 'text-white font-semibold' : 'text-slate-300'
                   }`}
                   title={
                     subCount > 1
@@ -972,10 +1223,15 @@ export function GitTimeline({
                       : lane.label
                   }
                 >
-                  <span className="w-2 h-2 rounded-full" style={{ backgroundColor: lane.color }} />
+                  {laneIdx > 0 && (
+                    <span aria-hidden="true" className="text-slate-600 mr-0.5">
+                      ·
+                    </span>
+                  )}
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
                   <span>{lane.label}</span>
                   {subCount > 1 && (
-                    <span className="text-amber-300 font-bold tabular-nums">×{subCount}</span>
+                    <span className="font-mono text-amber-300 font-bold tabular-nums">×{subCount}</span>
                   )}
                 </div>
               );
@@ -990,10 +1246,10 @@ export function GitTimeline({
                   key={`collapse-${parent.id}`}
                   type="button"
                   onClick={() => onToggleCollapseParent(parent.id)}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 hover:border-amber-400/50 text-[10px] font-mono text-slate-300 hover:text-amber-200 shrink-0 cursor-pointer transition-colors whitespace-nowrap"
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 hover:border-amber-400/50 text-xs font-sans text-slate-300 hover:text-amber-200 shrink-0 cursor-pointer transition-colors whitespace-nowrap"
                   title={`Свернуть ${activeChildCount} веток группы «${parent.label}» в одну линию`}
                 >
-                  <GitMerge className="w-3 h-3 text-amber-400" />
+                  <GitMerge className="w-3 h-3 text-amber-400 shrink-0" />
                   <span>Свернуть «{parent.label}» ({activeChildCount} → 1)</span>
                 </button>
               );
@@ -1024,14 +1280,14 @@ export function GitTimeline({
             <button
               type="button"
               onClick={() => setIsGraphHelpOpen((prev) => !prev)}
-              className={`px-2 py-0.5 rounded-md border text-[10px] font-mono inline-flex items-center gap-1 transition-colors cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg border text-xs font-sans inline-flex items-center gap-1 transition-colors cursor-pointer ${
                 isGraphHelpOpen
                   ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-bold'
                   : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-slate-500 hover:text-white'
               }`}
               title="Памятка: как читать линии, события и связи хронографа"
             >
-              <HelpCircle className="w-3 h-3 text-amber-400" />
+              <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
               <span>Как читать схему</span>
             </button>
 
@@ -1380,12 +1636,14 @@ export function GitTimeline({
               >
                 <div
                   title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/70 bg-slate-950/60 px-2 sm:px-2.5 pt-[27px] pb-2 flex items-start justify-end font-mono text-[11px] font-bold text-amber-300 tabular-nums whitespace-nowrap select-none`}
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/70 bg-slate-950/60 px-2 sm:px-2.5 pt-[27px] pb-2 items-start justify-end font-mono text-[11px] font-bold text-amber-300 tabular-nums whitespace-nowrap select-none`}
                 >
                   {gutter.label}
                 </div>
 
-                <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
+                {renderMobileSpineCell(idx, { kind: 'era' })}
+
+                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey)}
                     <line
@@ -1403,7 +1661,7 @@ export function GitTimeline({
                   </svg>
                 </div>
 
-                <div className="flex-1 min-w-0 overflow-hidden py-4 pr-4 sm:pr-6">
+                <div className="flex-1 min-w-0 overflow-hidden py-4 pr-3 sm:pr-6">
                   <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="px-2.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black tabular-nums">
@@ -1442,7 +1700,7 @@ export function GitTimeline({
               >
                 <div
                   title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/40 px-2 sm:px-2.5 py-1 flex flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none ${
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/40 px-2 sm:px-2.5 py-1 flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none ${
                     gutter.isDuplicate ? 'text-slate-400/75' : 'text-slate-300'
                   }`}
                 >
@@ -1452,7 +1710,9 @@ export function GitTimeline({
                   )}
                 </div>
 
-                <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
+                {renderMobileSpineCell(idx, { kind: 'tick' })}
+
+                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey)}
                     <line
@@ -1469,8 +1729,11 @@ export function GitTimeline({
                   </svg>
                 </div>
 
-                <div className="flex-1 min-w-0 overflow-hidden py-1 pr-4 sm:pr-6 flex items-center gap-2 text-xs font-sans text-slate-400">
+                <div className="flex-1 min-w-0 overflow-hidden py-1.5 sm:py-1 pr-3 sm:pr-6 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-sans text-slate-400">
                   <span className="font-mono font-bold text-slate-200 tabular-nums">{item.label}</span>
+                  {gutter.styleLabel && (
+                    <span className="sm:hidden font-mono text-[10px] text-sky-400/85">{gutter.styleLabel}</span>
+                  )}
                   <span aria-hidden="true" className="text-slate-400">
                     ·
                   </span>
@@ -1507,7 +1770,7 @@ export function GitTimeline({
               >
                 <div
                   title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/40 px-2 sm:px-2.5 pt-[24px] pb-2 flex flex-col items-end justify-start font-mono text-[11px] leading-tight font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/40 px-2 sm:px-2.5 pt-[24px] pb-2 flex-col items-end justify-start font-mono text-[11px] leading-tight font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
                     gutter.isDuplicate
                       ? 'text-amber-300/75 group-hover:text-amber-200'
                       : 'text-amber-200 group-hover:text-amber-100'
@@ -1525,7 +1788,13 @@ export function GitTimeline({
                   )}
                 </div>
 
-                <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
+                {renderMobileSpineCell(idx, {
+                  kind: 'ruler_start',
+                  color: rColor,
+                  startedBeforeWindow: item.startedBeforeWindow,
+                })}
+
+                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey, { skipRulerId: r.id })}
 
@@ -1575,9 +1844,9 @@ export function GitTimeline({
                   </svg>
                 </div>
 
-                <div className="flex-1 min-w-0 overflow-hidden py-3.5 pr-4 sm:pr-6">
+                <div className="flex-1 min-w-0 overflow-hidden py-3.5 pr-2.5 sm:pr-6">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2 min-w-0">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
                       <span
                         className="inline-flex items-center gap-1.5 font-mono text-xs font-black tabular-nums shrink-0"
                         style={{ color: rColor }}
@@ -1610,7 +1879,7 @@ export function GitTimeline({
                           <span>{r.center}</span>
                         </span>
                       )}
-                      <span aria-hidden="true" className="text-slate-400">
+                      <span aria-hidden="true" className="text-slate-400 hidden sm:inline">
                         ·
                       </span>
                       <span className="font-serif text-base sm:text-lg font-bold text-white tracking-tight">
@@ -1625,12 +1894,12 @@ export function GitTimeline({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {!focusedEvent && (
                         <button
                           type="button"
                           onClick={() => onSelectYearRange(r.startYear, r.endYear)}
-                          className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-sans font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-sans font-semibold transition-colors cursor-pointer whitespace-nowrap"
                           title="Отфильтровать таймлайн строго по годам этого правления"
                         >
                           Фокус: <span className="font-mono tabular-nums">{r.startYear}–{r.endYear}</span>
@@ -1639,7 +1908,7 @@ export function GitTimeline({
                       <button
                         type="button"
                         onClick={() => onOpenPeriodModal(r.id)}
-                        className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-sans font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                        className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-sans font-semibold transition-colors cursor-pointer whitespace-nowrap"
                       >
                         Все события при правителе →
                       </button>
@@ -1683,7 +1952,7 @@ export function GitTimeline({
               >
                 <div
                   title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/30 px-2 sm:px-2.5 py-2 flex flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/30 px-2 sm:px-2.5 py-2 flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
                     gutter.isDuplicate
                       ? 'text-slate-400/75 group-hover:text-slate-200'
                       : 'text-slate-300 group-hover:text-white'
@@ -1706,7 +1975,9 @@ export function GitTimeline({
                   )}
                 </div>
 
-                <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
+                {renderMobileSpineCell(idx, { kind: 'ruler_end', color: rColor })}
+
+                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey, { skipRulerId: r.id })}
 
@@ -1745,13 +2016,22 @@ export function GitTimeline({
                   </svg>
                 </div>
 
-                <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
-                  <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3.5 min-h-[36px] py-1.5 flex items-center justify-between gap-2 text-xs font-sans">
-                    <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                <div className="flex-1 min-w-0 overflow-hidden py-2 pr-2.5 sm:pr-6">
+                  <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3 sm:px-3.5 min-h-[36px] py-1.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 gap-y-1 text-xs font-sans">
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-0.5 min-w-0 flex-1 overflow-hidden">
                       <GitMerge className="w-3.5 h-3.5 shrink-0" style={{ color: rColor }} />
                       <span className="font-mono font-bold text-slate-200 tabular-nums shrink-0">
                         {item.dateLabel}
                       </span>
+                      {gutter.styleLabel && (
+                        <span
+                          className={`sm:hidden font-mono text-[10px] shrink-0 ${
+                            gutter.styleTone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/80'
+                          }`}
+                        >
+                          {gutter.styleLabel}
+                        </span>
+                      )}
                       {r.center && (
                         <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-xs text-slate-300 shrink-0">
                           <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: rColor }} />
@@ -1759,12 +2039,12 @@ export function GitTimeline({
                         </span>
                       )}
                       <span className="text-slate-400 shrink-0 hidden sm:inline">Завершение правления:</span>
-                      <span className="font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
+                      <span className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 sm:truncate min-w-0">
                         {r.shortRuler}{' '}
                         <span className="font-mono text-slate-300 tabular-nums">({r.reignPeriod})</span>
                       </span>
                     </div>
-                    <span className="text-xs font-sans text-slate-400 shrink-0 tabular-nums">
+                    <span className="text-xs font-sans text-slate-400 shrink-0 tabular-nums ml-auto sm:ml-0">
                       ~<span className="font-mono">{Math.max(1, r.endYear - r.startYear)}</span> л. у власти
                     </span>
                   </div>
@@ -1845,19 +2125,38 @@ export function GitTimeline({
             }
 
             const openCardTooltip = (el: HTMLElement) => {
+              cancelScheduledTooltip();
+              const hasExtraDetails = Boolean(
+                ev.details && ev.details !== ev.subtitle && !ev.outcome && ev.prerequisitesList.length === 0,
+              );
+              const hasSupplementalContent =
+                ev.prerequisitesList.length > 0 || Boolean(ev.outcome) || hasExtraDetails;
+
+              if (!isCompact && !hasSupplementalContent) {
+                setHoveredCardTooltip(null);
+                return;
+              }
+
               const rect = el.getBoundingClientRect();
-              setHoveredCardTooltip({
-                ev,
-                branchLabel: origBranchObj.label,
-                branchColor: origBranchObj.color,
-                dateLabel: dateSummary,
-                rect: {
-                  top: rect.top,
-                  bottom: rect.bottom,
-                  left: rect.left,
-                  width: rect.width,
-                },
-              });
+              const delayMs = isCompact ? 120 : 350;
+              const mode: 'full' | 'supplemental' = isCompact ? 'full' : 'supplemental';
+
+              tooltipOpenTimerRef.current = window.setTimeout(() => {
+                tooltipOpenTimerRef.current = null;
+                setHoveredCardTooltip({
+                  ev,
+                  branchLabel: origBranchObj.label,
+                  branchColor: origBranchObj.color,
+                  dateLabel: dateSummary,
+                  mode,
+                  rect: {
+                    top: rect.top,
+                    bottom: rect.bottom,
+                    left: rect.left,
+                    width: rect.width,
+                  },
+                });
+              }, delayMs);
             };
 
             const isConnectedToBus =
@@ -1871,20 +2170,20 @@ export function GitTimeline({
                 id={`row-${ev.id}`}
                 data-ruler-context={ev.overlappingRulers[0]?.id ?? ''}
                 onClick={() => {
-                  setHoveredCardTooltip(null);
+                  closeCardTooltip();
                   onOpenCardModal(ev.id);
                 }}
                 onMouseEnter={() => activateHoverEvent(ev.id)}
                 onMouseLeave={() => {
                   scheduleClearHoverEvent();
-                  setHoveredCardTooltip(null);
+                  closeCardTooltip();
                 }}
                 className="commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group"
               >
                 <div
                   title={gutter.title}
                   className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/35 px-2 sm:px-2.5 ${
-                    isCompact ? 'py-1 flex flex-col items-end justify-center' : 'pt-[25px] pb-2 flex flex-col items-end justify-start'
+                    isCompact ? 'py-1 flex-col items-end justify-center' : 'pt-[25px] pb-2 flex-col items-end justify-start'
                   } font-mono text-[11px] leading-tight font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
                     isSelfHovered || isFocusedTarget
                       ? 'text-white'
@@ -1905,7 +2204,18 @@ export function GitTimeline({
                   )}
                 </div>
 
-                <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
+                {renderMobileSpineCell(idx, {
+                  kind: 'event_commit',
+                  color: branchObj.color,
+                  isAtomic,
+                  isBioNode,
+                  isCompact,
+                  isSelfHovered,
+                  isConnectedToBus,
+                  startedBeforeWindow: item.startedBeforeWindow,
+                })}
+
+                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                   <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                     {renderRailsForRow(idx, item.sortKey)}
 
@@ -2052,10 +2362,10 @@ export function GitTimeline({
                 </div>
 
                 {isCompact ? (
-                  <div className="flex-1 min-w-0 overflow-hidden py-1 pr-3 sm:pr-6">
+                  <div className="flex-1 min-w-0 overflow-hidden py-1 pr-2.5 sm:pr-6">
                     <div
                       onMouseEnter={(e) => openCardTooltip(e.currentTarget)}
-                      onMouseLeave={() => setHoveredCardTooltip(null)}
+                      onMouseLeave={closeCardTooltip}
                       style={
                         nodeStatus.kind === 'process'
                           ? { borderLeftWidth: '3px', borderLeftColor: branchObj.color }
@@ -2067,55 +2377,69 @@ export function GitTimeline({
                               }
                             : undefined
                       }
-                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3 min-h-[38px] py-1.5 flex items-center justify-between gap-2.5 transition-all ${cardHighlightClass}`}
+                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-2.5 sm:px-3 min-h-[38px] py-1.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2.5 transition-all ${cardHighlightClass}`}
                     >
-                      <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                        <span className="font-mono text-xs font-extrabold text-slate-200 group-hover:text-white tabular-nums shrink-0">
-                          {isBioNode
-                            ? bioPeriodBadge
-                            : axisResolution === 'year'
-                              ? ev.period
-                              : item.dateLabel}
-                        </span>
-                        {axisResolution !== 'year' &&
-                          !isBioNode &&
-                          !item.startedBeforeWindow &&
-                          (() => {
-                            const marker = getCalendarStyleAxisMarker(ev.startPrecision);
-                            return marker ? (
-                              <span
-                                className={`hidden sm:inline font-mono text-[10px] shrink-0 ${
-                                  marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
-                                }`}
-                                title={gutter.title}
-                              >
-                                {marker.label}
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0 flex-1 overflow-hidden">
+                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 shrink-0">
+                          <span className="font-mono text-xs font-extrabold text-slate-200 group-hover:text-white tabular-nums shrink-0">
+                            {isBioNode
+                              ? bioPeriodBadge
+                              : axisResolution === 'year'
+                                ? ev.period
+                                : item.dateLabel}
+                          </span>
+                          {axisResolution !== 'year' &&
+                            !isBioNode &&
+                            !item.startedBeforeWindow &&
+                            (() => {
+                              const marker = getCalendarStyleAxisMarker(ev.startPrecision);
+                              return marker ? (
+                                <span
+                                  className={`font-mono text-[10px] shrink-0 ${
+                                    marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
+                                  }`}
+                                  title={gutter.title}
+                                >
+                                  {marker.label}
+                                </span>
+                              ) : null;
+                            })()}
+                          <span
+                            className="inline-flex items-center gap-1 font-sans text-xs text-slate-400 shrink-0 tabular-nums"
+                            title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
+                          >
+                            <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
+                            <span className="font-mono text-[11px]">{nodeStatus.compactDurationLabel}</span>
+                            {nodeStatus.kind !== 'milestone' && (
+                              <span className="hidden sm:inline-block w-6 h-1 rounded-full bg-slate-800 overflow-hidden relative align-middle">
+                                <span
+                                  className="block h-full rounded-full opacity-80"
+                                  style={{
+                                    marginLeft: `${nodeStatus.trackStartPct}%`,
+                                    width: `${nodeStatus.trackWidthPct}%`,
+                                    backgroundColor: branchObj.color,
+                                  }}
+                                />
                               </span>
-                            ) : null;
-                          })()}
-                        <span
-                          className="hidden sm:inline-flex items-center gap-1 font-sans text-xs text-slate-400 shrink-0 tabular-nums"
-                          title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
-                        >
-                          <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
-                          <span className="font-mono text-[11px]">{nodeStatus.compactDurationLabel}</span>
-                          {nodeStatus.kind !== 'milestone' && (
-                            <span className="w-6 h-1 rounded-full bg-slate-800 overflow-hidden relative inline-block align-middle">
-                              <span
-                                className="block h-full rounded-full opacity-80"
-                                style={{
-                                  marginLeft: `${nodeStatus.trackStartPct}%`,
-                                  width: `${nodeStatus.trackWidthPct}%`,
-                                  backgroundColor: branchObj.color,
-                                }}
-                              />
+                            )}
+                          </span>
+                          <span className="sm:hidden inline-flex items-center gap-1 text-xs font-sans text-slate-300 min-w-0">
+                            <span aria-hidden="true" className="text-slate-400">
+                              ·
                             </span>
-                          )}
-                        </span>
-                        <span aria-hidden="true" className="text-slate-400 shrink-0">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ backgroundColor: origBranchObj.color }}
+                            />
+                            <span className="truncate max-w-[140px]">
+                              {origBranchObj.short || origBranchObj.label}
+                            </span>
+                          </span>
+                        </div>
+                        <span aria-hidden="true" className="hidden sm:inline text-slate-400 shrink-0">
                           ·
                         </span>
-                        <span className="text-xs sm:text-sm font-bold text-white group-hover:text-amber-200 truncate min-w-0">
+                        <span className="text-[13px] sm:text-sm font-bold text-white group-hover:text-amber-200 leading-snug line-clamp-2 sm:truncate min-w-0">
                           {ev.title}
                         </span>
                         <span className="hidden md:inline-flex items-center gap-1.5 text-xs font-sans text-slate-300 shrink-0 max-w-[175px]">
@@ -2145,7 +2469,18 @@ export function GitTimeline({
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2 shrink-0 text-xs font-sans">
+                      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-end gap-2 shrink-0 text-xs font-sans pt-0.5 sm:pt-0">
+                        <div className="sm:hidden flex items-center gap-2 text-xs font-sans text-slate-400 min-w-0">
+                          {ev.explicitLinks.length > 0 && (
+                            <span className="inline-flex items-center gap-1 font-mono text-emerald-300 tabular-nums">
+                              <Link2 className="w-3 h-3" /> {ev.explicitLinks.length}
+                            </span>
+                          )}
+                          {ev.ruler && (
+                            <span className="truncate max-w-[130px] text-slate-300">{ev.ruler}</span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 ml-auto sm:ml-0">
                         {hasEndRowInStream && (
                           <button
                             type="button"
@@ -2153,7 +2488,7 @@ export function GitTimeline({
                               e.stopPropagation();
                               triggerScrollToDomRow(`row-end-${ev.id}`, ev.id);
                             }}
-                            className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 transition-colors cursor-pointer font-mono text-xs tabular-nums"
+                            className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 transition-colors cursor-pointer font-mono text-xs tabular-nums"
                             title={`Быстрый переход к строке завершения (${effEndYear} г.)`}
                           >
                             <ArrowDown className="w-3 h-3 text-amber-400" />
@@ -2167,7 +2502,7 @@ export function GitTimeline({
                               e.stopPropagation();
                               onRevealBranches(hiddenBranchSummaries.map((b) => b.branchId));
                             }}
-                            className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 font-sans text-xs transition-colors cursor-pointer whitespace-nowrap tabular-nums"
+                            className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 font-sans text-xs transition-colors cursor-pointer whitespace-nowrap tabular-nums"
                             title={`Скрытых связей: ${hiddenLinksTotal} (${hiddenBranchSummaries.map((b) => b.label).join(', ')}). Нажмите, чтобы раскрыть ветки.`}
                           >
                             <Eye className="w-3 h-3 text-amber-400" />
@@ -2188,7 +2523,7 @@ export function GitTimeline({
                             e.stopPropagation();
                             onToggleFocusEvent(ev.id);
                           }}
-                          className={`px-2 py-0.5 rounded border font-sans text-xs transition-colors cursor-pointer whitespace-nowrap ${
+                          className={`px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-lg border font-sans text-xs transition-colors cursor-pointer whitespace-nowrap ${
                             isFocusedTarget
                               ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
                               : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
@@ -2197,17 +2532,18 @@ export function GitTimeline({
                         >
                           {isFocusedTarget ? 'В фокусе' : 'Фокус'}
                         </button>
-                        <span className="text-amber-400 font-sans text-xs font-semibold hidden sm:inline whitespace-nowrap">
+                        <span className="text-amber-400 font-sans text-xs font-semibold whitespace-nowrap">
                           Паспорт →
                         </span>
+                        </div>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
+                  <div className="flex-1 min-w-0 overflow-hidden py-2 pr-2.5 sm:pr-6">
                     <div
                       onMouseEnter={(e) => openCardTooltip(e.currentTarget)}
-                      onMouseLeave={() => setHoveredCardTooltip(null)}
+                      onMouseLeave={closeCardTooltip}
                       style={
                         nodeStatus.kind === 'process'
                           ? { borderLeftWidth: '3px', borderLeftColor: branchObj.color }
@@ -2219,37 +2555,51 @@ export function GitTimeline({
                               }
                             : undefined
                       }
-                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-xl border px-3.5 py-2.5 transition-all flex flex-col justify-between gap-2 ${cardHighlightClass}`}
+                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-xl border px-3 sm:px-3.5 py-2.5 transition-all flex flex-col justify-between gap-2 ${cardHighlightClass}`}
                     >
-                      <div className="flex items-center justify-between gap-2.5 min-w-0 min-h-[20px]">
-                        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                          <span className="font-mono text-xs font-extrabold text-slate-200 group-hover:text-white tabular-nums shrink-0">
-                            {isBioNode
-                              ? bioPeriodBadge
-                              : axisResolution === 'year'
-                                ? ev.period
-                                : item.dateLabel}
-                          </span>
-                          {axisResolution !== 'year' &&
-                            !isBioNode &&
-                            !item.startedBeforeWindow &&
-                            (() => {
-                              const marker = getCalendarStyleAxisMarker(ev.startPrecision);
-                              return marker ? (
-                                <span
-                                  className={`font-mono text-[10px] shrink-0 whitespace-nowrap ${
-                                    marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
-                                  }`}
-                                  title={gutter.title}
-                                >
-                                  {marker.label}
-                                </span>
-                              ) : null;
-                            })()}
-                          <span aria-hidden="true" className="text-slate-400 shrink-0">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2.5 min-w-0 min-h-[20px]">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0 flex-1 overflow-hidden">
+                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 shrink-0">
+                            <span className="font-mono text-xs font-extrabold text-slate-200 group-hover:text-white tabular-nums shrink-0">
+                              {isBioNode
+                                ? bioPeriodBadge
+                                : axisResolution === 'year'
+                                  ? ev.period
+                                  : item.dateLabel}
+                            </span>
+                            {axisResolution !== 'year' &&
+                              !isBioNode &&
+                              !item.startedBeforeWindow &&
+                              (() => {
+                                const marker = getCalendarStyleAxisMarker(ev.startPrecision);
+                                return marker ? (
+                                  <span
+                                    className={`font-mono text-[10px] shrink-0 whitespace-nowrap ${
+                                      marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
+                                    }`}
+                                    title={gutter.title}
+                                  >
+                                    {marker.label}
+                                  </span>
+                                ) : null;
+                              })()}
+                            <span className="sm:hidden inline-flex items-center gap-1.5 text-xs font-sans text-slate-300 min-w-0">
+                              <span aria-hidden="true" className="text-slate-400">
+                                ·
+                              </span>
+                              <span
+                                className="w-1.5 h-1.5 rounded-full shrink-0"
+                                style={{ backgroundColor: origBranchObj.color }}
+                              />
+                              <span className="truncate max-w-[155px]">
+                                {origBranchObj.short || origBranchObj.label}
+                              </span>
+                            </span>
+                          </div>
+                          <span aria-hidden="true" className="hidden sm:inline text-slate-400 shrink-0">
                             ·
                           </span>
-                          <h4 className="text-sm sm:text-[15px] font-bold text-white group-hover:text-amber-200 transition-colors truncate min-w-0">
+                          <h4 className="text-[15px] leading-snug font-bold text-white group-hover:text-amber-200 transition-colors line-clamp-2 sm:truncate min-w-0">
                             {ev.title}
                           </h4>
                           {!isAtomic && !isBioNode && item.startedBeforeWindow && (
@@ -2373,8 +2723,8 @@ export function GitTimeline({
                         </div>
                       )}
 
-                      <div className="pt-1.5 border-t border-slate-800/60 flex items-center justify-between gap-2 text-xs font-sans text-slate-400 min-w-0 min-h-[26px]">
-                        <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden whitespace-nowrap">
+                      <div className="pt-1.5 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs font-sans text-slate-400 min-w-0 min-h-[26px]">
+                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 min-w-0 flex-1">
                           <span
                             className="sm:hidden inline-flex items-center gap-1 text-xs text-slate-300 shrink-0 tabular-nums"
                             title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
@@ -2425,7 +2775,7 @@ export function GitTimeline({
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2 shrink-0 font-sans text-xs whitespace-nowrap">
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0 font-sans text-xs whitespace-nowrap ml-auto sm:ml-0">
                           {hasEndRowInStream && (
                             <button
                               type="button"
@@ -2433,7 +2783,7 @@ export function GitTimeline({
                                 e.stopPropagation();
                                 triggerScrollToDomRow(`row-end-${ev.id}`, ev.id);
                               }}
-                              className="px-2 py-0.5 rounded border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer tabular-nums"
+                              className="px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer tabular-nums"
                               title={`Прокрутить ленту к точке завершения (${effEndYear} г.)`}
                             >
                               <ArrowDown className="w-3 h-3 text-amber-400" />
@@ -2448,7 +2798,7 @@ export function GitTimeline({
                               e.stopPropagation();
                               onToggleFocusEvent(ev.id);
                             }}
-                            className={`px-2 py-0.5 rounded border inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                            className={`px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-lg border inline-flex items-center gap-1 transition-colors cursor-pointer ${
                               isFocusedTarget
                                 ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
                                 : 'bg-slate-950/70 border-slate-700/80 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
@@ -2459,9 +2809,9 @@ export function GitTimeline({
                             <span>{isFocusedTarget ? 'В фокусе' : 'Фокус'}</span>
                           </button>
 
-                          <span className="text-amber-400 font-semibold group-hover:underline inline-flex items-center gap-1">
+                          <span className="px-1.5 py-1 sm:p-0 text-amber-400 font-semibold group-hover:underline inline-flex items-center gap-1">
                             <GitCommitHorizontal className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Паспорт →</span>
+                            <span>Паспорт →</span>
                           </span>
                         </div>
                       </div>
@@ -2507,7 +2857,7 @@ export function GitTimeline({
             >
               <div
                 title={gutter.title}
-                className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/25 px-2 sm:px-2.5 py-2 flex flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
+                className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/25 px-2 sm:px-2.5 py-2 flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
                   isEndSelfHovered
                     ? 'text-slate-100'
                     : gutter.isDuplicate
@@ -2532,7 +2882,9 @@ export function GitTimeline({
                 )}
               </div>
 
-              <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
+              {renderMobileSpineCell(idx, { kind: 'event_end', color: branchObj.color })}
+
+              <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
                 <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
                   {renderRailsForRow(idx, item.sortKey)}
                   <line
@@ -2573,15 +2925,15 @@ export function GitTimeline({
                 </svg>
               </div>
 
-              <div className="flex-1 min-w-0 overflow-hidden py-2 pr-3 sm:pr-6">
+              <div className="flex-1 min-w-0 overflow-hidden py-2 pr-2.5 sm:pr-6">
                 <div
-                  className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3.5 min-h-[36px] py-1.5 flex items-center justify-between gap-2 text-xs transition-all ${
+                  className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3 sm:px-3.5 min-h-[36px] py-1.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 gap-y-1.5 text-xs transition-all ${
                     isEndJumpHighlighted
                       ? 'jump-target-highlighted'
                       : 'bg-slate-900/40 border-slate-800/70 group-hover:border-slate-700'
                   }`}
                 >
-                  <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
+                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-0.5 min-w-0 flex-1 overflow-hidden">
                     <Flag className="w-3.5 h-3.5 shrink-0" style={{ color: branchObj.color }} />
                     <span className="font-mono font-bold text-slate-200 tabular-nums shrink-0">
                       {item.dateLabel}
@@ -2606,11 +2958,11 @@ export function GitTimeline({
                           ? 'Окончание кампании:'
                           : 'Завершение процесса:'}
                     </span>
-                    <span className="font-semibold text-slate-200 group-hover:text-white truncate min-w-0">
+                    <span className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 sm:truncate min-w-0">
                       {formatEventTitleWithPeriod(ev)}
                     </span>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0 font-sans text-xs tabular-nums whitespace-nowrap">
+                  <div className="flex items-center gap-2 shrink-0 font-sans text-xs tabular-nums whitespace-nowrap ml-auto sm:ml-0">
                     <span className="text-slate-400 hidden sm:inline">
                       {ev.overlappingRulers.length > 1
                         ? `Правлений: ${ev.overlappingRulers.length}`
@@ -2625,7 +2977,7 @@ export function GitTimeline({
                           e.stopPropagation();
                           triggerScrollToDomRow(`row-${ev.id}`, ev.id);
                         }}
-                        className="px-2 py-0.5 rounded border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        className="px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
                         title={`Вернуться к началу процесса (${effStartYearForEnd} г.)`}
                       >
                         <ArrowUp className="w-3 h-3 text-amber-400" />
@@ -3039,125 +3391,167 @@ export function GitTimeline({
               Math.min(
                 hoveredCardTooltip.rect.left,
                 (typeof window !== 'undefined' ? window.innerWidth : 1280) -
-                  Math.min(440, (typeof window !== 'undefined' ? window.innerWidth : 1280) - 24) -
+                  Math.min(
+                    hoveredCardTooltip.mode === 'supplemental' ? 400 : 440,
+                    (typeof window !== 'undefined' ? window.innerWidth : 1280) - 24,
+                  ) -
                   12,
               ),
             ),
-            width: Math.min(440, (typeof window !== 'undefined' ? window.innerWidth : 1280) - 24),
+            width: Math.min(
+              hoveredCardTooltip.mode === 'supplemental' ? 400 : 440,
+              (typeof window !== 'undefined' ? window.innerWidth : 1280) - 24,
+            ),
             ...(typeof window !== 'undefined' &&
-            hoveredCardTooltip.rect.bottom + 240 > window.innerHeight &&
-            hoveredCardTooltip.rect.top > 240
+            hoveredCardTooltip.rect.bottom +
+              (hoveredCardTooltip.mode === 'supplemental' ? 170 : 240) >
+              window.innerHeight &&
+            hoveredCardTooltip.rect.top > (hoveredCardTooltip.mode === 'supplemental' ? 170 : 240)
               ? { bottom: window.innerHeight - hoveredCardTooltip.rect.top + 8 }
               : { top: hoveredCardTooltip.rect.bottom + 8 }),
           }}
-          className="fixed z-50 pointer-events-none rounded-xl border border-slate-700/95 bg-[#080e1d]/98 backdrop-blur-md shadow-2xl p-3.5 text-left"
+          className="fixed z-50 pointer-events-none rounded-xl border border-slate-700/95 bg-[#080e1d]/98 backdrop-blur-md shadow-2xl p-3 text-left"
         >
-          <div className="flex items-center justify-between gap-2 text-xs font-sans">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{ backgroundColor: hoveredCardTooltip.branchColor }}
-              />
-              <span className="font-semibold text-slate-300 truncate">{hoveredCardTooltip.branchLabel}</span>
-            </div>
-            <span className="font-mono font-extrabold text-slate-200 tabular-nums shrink-0">
-              {hoveredCardTooltip.dateLabel}
-            </span>
-          </div>
-
-          <div className="mt-1.5 text-sm font-bold text-white leading-snug">
-            {hoveredCardTooltip.ev.title}
-          </div>
-
-          {(() => {
-            const tEv = hoveredCardTooltip.ev;
-            const tBio = isBiographyNode(tEv, branches);
-            const tEffStart = getEventEffectiveStartYear(tEv, branches);
-            const tEffEnd = getEventEffectiveEndYear(tEv, branches);
-            const tStatus = computeNodeVisualStatusMeta(
-              tEv,
-              tBio,
-              tEv.isAtomic,
-              tEffStart,
-              tEffEnd,
-            );
-            return (
-              <div className="mt-1 flex items-center gap-2 text-xs font-sans text-slate-300 tabular-nums">
-                <span style={{ color: hoveredCardTooltip.branchColor }}>{tStatus.symbol}</span>
-                <span className="font-semibold text-slate-200">{tStatus.kindLabel}:</span>
-                <span>{tStatus.durationLabel}</span>
-                {tStatus.kind !== 'milestone' && (
-                  <span className="w-12 h-1.5 rounded-full bg-slate-800 border border-slate-700 overflow-hidden inline-block">
-                    <span
-                      className="block h-full rounded-full"
-                      style={{
-                        marginLeft: `${tStatus.trackStartPct}%`,
-                        width: `${tStatus.trackWidthPct}%`,
-                        backgroundColor: hoveredCardTooltip.branchColor,
-                      }}
-                    />
-                  </span>
-                )}
-              </div>
-            );
-          })()}
-
-          {hoveredCardTooltip.ev.startPrecision.precision !== 'year' &&
-            (() => {
-              const cal = formatCalendarDetailBadge(hoveredCardTooltip.ev.startPrecision);
-              return (
-                <div className="mt-1 text-xs font-sans tabular-nums text-slate-300 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
-                  <span className={`font-mono ${cal.tone === 'gregorian' ? 'text-sky-300' : 'text-amber-300'}`}>
-                    {cal.primaryText}
-                  </span>
-                  <span className="text-slate-400">· {cal.styleLabel}</span>
-                  {cal.counterpartText && (
-                    <span className="font-mono text-slate-300">/ {cal.counterpartText}</span>
-                  )}
-                  {cal.offsetNote && <span className="text-slate-400">({cal.offsetNote})</span>}
+          {hoveredCardTooltip.mode === 'full' ? (
+            <>
+              <div className="flex items-center justify-between gap-2 text-xs font-sans">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: hoveredCardTooltip.branchColor }}
+                  />
+                  <span className="font-semibold text-slate-300 truncate">{hoveredCardTooltip.branchLabel}</span>
                 </div>
-              );
-            })()}
+                <span className="font-mono font-extrabold text-slate-200 tabular-nums shrink-0">
+                  {hoveredCardTooltip.dateLabel}
+                </span>
+              </div>
 
-          <p className="mt-1 text-xs text-slate-200 leading-relaxed">
-            {hoveredCardTooltip.ev.subtitle}
-          </p>
+              <div className="mt-1.5 text-sm font-bold text-white leading-snug">
+                {hoveredCardTooltip.ev.title}
+              </div>
 
-          {hoveredCardTooltip.ev.prerequisitesList.length > 0 && (
-            <div className="mt-2 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1.5 text-xs font-sans text-indigo-100 leading-snug line-clamp-2">
-              <span className="font-semibold text-indigo-300">Предпосылки: </span>
-              {hoveredCardTooltip.ev.prerequisitesList[0]}
-            </div>
-          )}
+              {(() => {
+                const tEv = hoveredCardTooltip.ev;
+                const tBio = isBiographyNode(tEv, branches);
+                const tEffStart = getEventEffectiveStartYear(tEv, branches);
+                const tEffEnd = getEventEffectiveEndYear(tEv, branches);
+                const tStatus = computeNodeVisualStatusMeta(
+                  tEv,
+                  tBio,
+                  tEv.isAtomic,
+                  tEffStart,
+                  tEffEnd,
+                );
+                return (
+                  <div className="mt-1 flex items-center gap-2 text-xs font-sans text-slate-300 tabular-nums">
+                    <span style={{ color: hoveredCardTooltip.branchColor }}>{tStatus.symbol}</span>
+                    <span className="font-semibold text-slate-200">{tStatus.kindLabel}:</span>
+                    <span>{tStatus.durationLabel}</span>
+                    {tStatus.kind !== 'milestone' && (
+                      <span className="w-12 h-1.5 rounded-full bg-slate-800 border border-slate-700 overflow-hidden inline-block">
+                        <span
+                          className="block h-full rounded-full"
+                          style={{
+                            marginLeft: `${tStatus.trackStartPct}%`,
+                            width: `${tStatus.trackWidthPct}%`,
+                            backgroundColor: hoveredCardTooltip.branchColor,
+                          }}
+                        />
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
 
-          {hoveredCardTooltip.ev.outcome && (
-            <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-1.5 text-xs font-sans text-amber-100 leading-snug line-clamp-2">
-              <span className="font-semibold text-amber-300">Итог: </span>
-              {hoveredCardTooltip.ev.outcome}
-            </div>
-          )}
+              {hoveredCardTooltip.ev.startPrecision.precision !== 'year' &&
+                (() => {
+                  const cal = formatCalendarDetailBadge(hoveredCardTooltip.ev.startPrecision);
+                  return (
+                    <div className="mt-1 text-xs font-sans tabular-nums text-slate-300 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                      <span className={`font-mono ${cal.tone === 'gregorian' ? 'text-sky-300' : 'text-amber-300'}`}>
+                        {cal.primaryText}
+                      </span>
+                      <span className="text-slate-400">· {cal.styleLabel}</span>
+                      {cal.counterpartText && (
+                        <span className="font-mono text-slate-300">/ {cal.counterpartText}</span>
+                      )}
+                      {cal.offsetNote && <span className="text-slate-400">({cal.offsetNote})</span>}
+                    </div>
+                  );
+                })()}
 
-          {hoveredCardTooltip.ev.details &&
-            hoveredCardTooltip.ev.details !== hoveredCardTooltip.ev.subtitle &&
-            !hoveredCardTooltip.ev.outcome &&
-            hoveredCardTooltip.ev.prerequisitesList.length === 0 && (
-              <p className="mt-1.5 text-xs font-sans text-slate-400 leading-relaxed line-clamp-3">
-                {hoveredCardTooltip.ev.details}
+              <p className="mt-1 text-xs text-slate-200 leading-relaxed">
+                {hoveredCardTooltip.ev.subtitle}
               </p>
-            )}
 
-          <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs font-sans text-slate-400">
-            <span className="truncate">
-              {hoveredCardTooltip.ev.ruler
-                ? `Правитель: ${hoveredCardTooltip.ev.ruler}`
-                : hoveredCardTooltip.branchLabel}
-            </span>
-            <span className="text-amber-300 shrink-0 tabular-nums">
-              {hoveredCardTooltip.ev.explicitLinks.length > 0
-                ? `Связей: ${hoveredCardTooltip.ev.explicitLinks.length} · Клик — паспорт`
-                : 'Клик — паспорт события'}
-            </span>
-          </div>
+              {hoveredCardTooltip.ev.prerequisitesList.length > 0 && (
+                <div className="mt-2 rounded-lg bg-indigo-500/10 border border-indigo-500/25 px-2.5 py-1.5 text-xs font-sans text-indigo-100 leading-snug line-clamp-2">
+                  <span className="font-semibold text-indigo-300">Предпосылки: </span>
+                  {hoveredCardTooltip.ev.prerequisitesList[0]}
+                </div>
+              )}
+
+              {hoveredCardTooltip.ev.outcome && (
+                <div className="mt-1.5 rounded-lg bg-amber-500/10 border border-amber-500/25 px-2.5 py-1.5 text-xs font-sans text-amber-100 leading-snug line-clamp-2">
+                  <span className="font-semibold text-amber-300">Итог: </span>
+                  {hoveredCardTooltip.ev.outcome}
+                </div>
+              )}
+
+              {hoveredCardTooltip.ev.details &&
+                hoveredCardTooltip.ev.details !== hoveredCardTooltip.ev.subtitle &&
+                !hoveredCardTooltip.ev.outcome &&
+                hoveredCardTooltip.ev.prerequisitesList.length === 0 && (
+                  <p className="mt-1.5 text-xs font-sans text-slate-400 leading-relaxed line-clamp-3">
+                    {hoveredCardTooltip.ev.details}
+                  </p>
+                )}
+
+              <div className="mt-2.5 pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs font-sans text-slate-400">
+                <span className="truncate">
+                  {hoveredCardTooltip.ev.ruler
+                    ? `Правитель: ${hoveredCardTooltip.ev.ruler}`
+                    : hoveredCardTooltip.branchLabel}
+                </span>
+                <span className="text-amber-300 shrink-0 tabular-nums">
+                  {hoveredCardTooltip.ev.explicitLinks.length > 0
+                    ? `Связей: ${hoveredCardTooltip.ev.explicitLinks.length} · Клик — паспорт`
+                    : 'Клик — паспорт события'}
+                </span>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              {hoveredCardTooltip.ev.prerequisitesList.length > 0 && (
+                <div className="rounded-lg bg-indigo-500/10 px-2.5 py-1.5 text-xs font-sans text-indigo-100 leading-snug line-clamp-3">
+                  <span className="font-semibold text-indigo-300">Предпосылки: </span>
+                  {hoveredCardTooltip.ev.prerequisitesList[0]}
+                </div>
+              )}
+
+              {hoveredCardTooltip.ev.outcome && (
+                <div className="rounded-lg bg-amber-500/10 px-2.5 py-1.5 text-xs font-sans text-amber-100 leading-snug line-clamp-3">
+                  <span className="font-semibold text-amber-300">Итог: </span>
+                  {hoveredCardTooltip.ev.outcome}
+                </div>
+              )}
+
+              {hoveredCardTooltip.ev.details &&
+                hoveredCardTooltip.ev.details !== hoveredCardTooltip.ev.subtitle &&
+                !hoveredCardTooltip.ev.outcome &&
+                hoveredCardTooltip.ev.prerequisitesList.length === 0 && (
+                  <p className="text-xs font-sans text-slate-300 leading-relaxed line-clamp-3 px-0.5">
+                    {hoveredCardTooltip.ev.details}
+                  </p>
+                )}
+
+              <div className="pt-1 flex items-center justify-between gap-2 text-xs font-sans text-slate-400">
+                <span>Скрытый контекст карточки</span>
+                <span className="text-amber-300 font-semibold shrink-0">Клик — паспорт события</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

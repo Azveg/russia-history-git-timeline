@@ -304,7 +304,7 @@ export function FilterPanel({
               value={yearFrom}
               aria-label="Год начала диапазона"
               onChange={(e) => onChangeYearFrom(Number(e.target.value))}
-              className="w-14 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
+              className="w-14 bg-slate-900 border border-slate-800 rounded-lg px-1.5 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
             />
             <span className="text-slate-500">—</span>
             <input
@@ -314,7 +314,7 @@ export function FilterPanel({
               value={yearTo}
               aria-label="Год окончания диапазона"
               onChange={(e) => onChangeYearTo(Number(e.target.value))}
-              className="w-14 bg-slate-900 border border-slate-800 rounded px-1.5 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
+              className="w-14 bg-slate-900 border border-slate-800 rounded-lg px-1.5 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
             />
           </div>
 
@@ -351,7 +351,7 @@ export function FilterPanel({
                   ? onQuickStartHotNode(primaryHotPreset)
                   : onSelectYearRange(primaryHotPreset.from, primaryHotPreset.to)
               }
-              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-sans font-bold shadow-[0_0_20px_-4px_rgba(245,158,11,0.5)] transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+              className="inline-flex items-center justify-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-sans font-bold shadow-[0_0_20px_-4px_rgba(245,158,11,0.5)] transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               title={`Переключить окно на поворотный узел: ${primaryHotPreset.label} с ключевыми связями`}
             >
               <Compass className="w-3.5 h-3.5 shrink-0" />
@@ -428,10 +428,10 @@ export function FilterPanel({
                   });
                 }}
                 title={preset.label}
-                className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`px-2 py-1 rounded-lg text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                   isActive
-                    ? 'bg-slate-800 border-amber-400/50 text-amber-200 font-semibold'
-                    : 'bg-transparent border-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
+                    ? 'bg-slate-800/90 text-amber-200 font-semibold'
+                    : 'bg-transparent text-slate-400 hover:bg-slate-800/60 hover:text-slate-100'
                 }`}
               >
                 {preset.compactLabel}
@@ -445,7 +445,7 @@ export function FilterPanel({
             type="button"
             onClick={() => slicesRailRef.current?.scrollBy({ left: -240, behavior: 'smooth' })}
             aria-label="Прокрутить срезы эпох влево"
-            className="p-1 rounded-md bg-transparent text-slate-500 hover:text-white hover:bg-slate-800/70 transition-colors cursor-pointer"
+            className="p-1 rounded-lg bg-transparent text-slate-500 hover:text-white hover:bg-slate-800/70 transition-colors cursor-pointer"
           >
             <ChevronLeft className="w-3.5 h-3.5" />
           </button>
@@ -453,7 +453,7 @@ export function FilterPanel({
             type="button"
             onClick={() => slicesRailRef.current?.scrollBy({ left: 240, behavior: 'smooth' })}
             aria-label="Прокрутить срезы эпох вправо"
-            className="p-1 rounded-md bg-transparent text-slate-500 hover:text-white hover:bg-slate-800/70 transition-colors cursor-pointer"
+            className="p-1 rounded-lg bg-transparent text-slate-500 hover:text-white hover:bg-slate-800/70 transition-colors cursor-pointer"
           >
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
@@ -468,7 +468,7 @@ export function FilterPanel({
             <button
               type="button"
               onClick={onToggleAdvanced}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-950/80 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[10px] font-mono transition-colors cursor-pointer whitespace-nowrap"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-950/80 hover:bg-slate-800 border border-slate-700 text-slate-300 hover:text-white text-[10px] font-mono transition-colors cursor-pointer whitespace-nowrap"
             >
               <ChevronUp className="w-3 h-3" />
               <span>Свернуть</span>
@@ -481,7 +481,7 @@ export function FilterPanel({
               <button
                 type="button"
                 onClick={onToggleOnlySynced}
-                className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                className={`inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                   onlySynced || syncLinkTypeFilter !== 'all'
                     ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200 font-bold'
                     : 'bg-slate-950/85 border-slate-800 text-slate-300 hover:border-slate-700 hover:text-white'
@@ -496,7 +496,7 @@ export function FilterPanel({
                 aria-label="Тип узловых связей"
                 value={syncLinkTypeFilter}
                 onChange={(e) => onChangeSyncLinkTypeFilter(e.target.value as SyncLinkTypeFilter)}
-                className={`rounded-xl border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-emerald-400 ${
+                className={`rounded-lg border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-emerald-400 ${
                   syncLinkTypeFilter !== 'all'
                     ? 'bg-emerald-500/15 border-emerald-400/70 text-emerald-100 font-semibold'
                     : 'bg-slate-950/85 border-slate-800 text-slate-300 hover:border-slate-700'
@@ -525,7 +525,7 @@ export function FilterPanel({
                 aria-label="Фильтр по сюжету синхронизации"
                 value={selectedSyncTag ?? ''}
                 onChange={(e) => onSelectSyncTag(e.target.value ? e.target.value : null)}
-                className={`w-full sm:w-[250px] rounded-xl border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-sky-400 ${
+                className={`w-full sm:w-[250px] rounded-lg border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-sky-400 ${
                   selectedSyncTag
                     ? 'bg-sky-500/15 border-sky-400/70 text-sky-100 font-semibold'
                     : 'bg-slate-950/85 border-slate-800 text-slate-300'
@@ -557,7 +557,7 @@ export function FilterPanel({
                 aria-label="Первая ветвь пары"
                 value={draftBranchA}
                 onChange={(e) => handleBranchAChange(e.target.value)}
-                className={`rounded-xl border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-emerald-400 max-w-[170px] ${
+                className={`rounded-lg border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-emerald-400 max-w-[170px] ${
                   branchPairFilter
                     ? 'bg-emerald-500/15 border-emerald-400/70 text-emerald-100 font-semibold'
                     : 'bg-slate-950/85 border-slate-800 text-slate-300'
@@ -582,7 +582,7 @@ export function FilterPanel({
                 aria-label="Вторая ветвь пары"
                 value={draftBranchB}
                 onChange={(e) => handleBranchBChange(e.target.value)}
-                className={`rounded-xl border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-emerald-400 max-w-[170px] ${
+                className={`rounded-lg border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-emerald-400 max-w-[170px] ${
                   branchPairFilter
                     ? 'bg-emerald-500/15 border-emerald-400/70 text-emerald-100 font-semibold'
                     : 'bg-slate-950/85 border-slate-800 text-slate-300'
@@ -622,7 +622,7 @@ export function FilterPanel({
             <button
               type="button"
               onClick={onToggleAuditUnlinkedMode}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ml-auto ${
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ml-auto ${
                 auditUnlinkedMode
                   ? 'bg-amber-500/20 border-amber-400 text-amber-200 font-bold'
                   : 'bg-slate-950/85 border-slate-800 text-slate-300 hover:border-amber-500/45 hover:text-amber-200'

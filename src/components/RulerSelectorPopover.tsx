@@ -109,23 +109,21 @@ export function RulerSelectorPopover({
           isOpen
             ? 'bg-slate-800/95 border-amber-400/60 text-white'
             : activeWindowRuler
-              ? 'bg-amber-500/12 border-amber-500/40 text-amber-200 hover:bg-amber-500/20'
+              ? 'bg-transparent border-transparent text-amber-200 hover:bg-slate-800/70 hover:text-white'
               : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
         }`}
-        title="Быстрый переход к правителю на ленте, фильтрация лет правления и открытие досье"
+        title={
+          activeWindowRuler
+            ? `Активный правитель: ${activeWindowRuler.shortRuler} (${activeWindowRuler.reignPeriod}). Нажмите для выбора правителя`
+            : 'Быстрый переход к правителю на ленте, фильтрация лет правления и открытие досье'
+        }
       >
         <Crown className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
         <span>Правители</span>
 
-        {activeWindowRuler ? (
-          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] max-w-[68px] lg:max-w-[90px] xl:max-w-[130px] truncate">
-            {activeWindowRuler.shortRuler}
-          </span>
-        ) : (
-          <span className="hidden lg:inline-block tabular-nums text-[10px] text-slate-400 font-normal">
-            {rulers.length}
-          </span>
-        )}
+        <span className="hidden lg:inline-block tabular-nums text-[10px] text-slate-400 font-normal">
+          {rulers.length}
+        </span>
 
         <ChevronDown
           className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${

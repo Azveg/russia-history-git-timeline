@@ -361,17 +361,25 @@ export function CardDetailModal({
               </button>
             )}
 
-            <span
-              className="px-2.5 py-1 rounded-md font-bold text-slate-950 shrink-0"
-              style={{ backgroundColor: branchObj.color }}
-            >
-              {parentBranchObj ? `${parentBranchObj.short} · ${branchObj.label}` : branchObj.label}
+            <span className="inline-flex items-center gap-2 font-sans text-xs sm:text-sm font-semibold text-slate-100 shrink-0">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: branchObj.color }}
+              />
+              <span>
+                {parentBranchObj ? `${parentBranchObj.short} · ${branchObj.label}` : branchObj.label}
+              </span>
             </span>
 
             {card.eventType && (
-              <span className="px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-300">
-                {EVENT_TYPE_LABELS[card.eventType] ?? card.eventType}
-              </span>
+              <>
+                <span aria-hidden="true" className="text-slate-500">
+                  ·
+                </span>
+                <span className="font-sans text-xs text-slate-300">
+                  {EVENT_TYPE_LABELS[card.eventType] ?? card.eventType}
+                </span>
+              </>
             )}
           </div>
 
@@ -458,15 +466,24 @@ export function CardDetailModal({
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
           {/* Заголовок и краткая суть */}
           <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/35 font-mono text-sm font-black text-amber-300 tabular-nums">
-                <Calendar className="w-3.5 h-3.5" />
-                {isBio ? `Годы жизни: ${card.period}` : card.period}
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+              <span className="inline-flex items-center gap-1.5 font-mono text-sm font-extrabold text-amber-300 tabular-nums">
+                <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>{isBio ? `Годы жизни: ${card.period}` : card.period}</span>
               </span>
               {isBio && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md bg-fuchsia-500/15 border border-fuchsia-500/35 font-mono text-xs font-bold text-fuchsia-200 tabular-nums">
-                  Творческая активность: {card.activeFrom}–{card.activeTo} гг.
-                </span>
+                <>
+                  <span aria-hidden="true" className="text-slate-500">
+                    ·
+                  </span>
+                  <span className="font-sans text-xs font-semibold text-fuchsia-300 tabular-nums">
+                    Творческая активность:{' '}
+                    <span className="font-mono">
+                      {card.activeFrom}–{card.activeTo}
+                    </span>{' '}
+                    гг.
+                  </span>
+                </>
               )}
               {(card.startPrecision.precision !== 'year' || card.endPrecision.precision !== 'year') &&
                 (() => {

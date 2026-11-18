@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  CalendarRange,
   Check,
   ChevronDown,
   ChevronLeft,
@@ -14,9 +15,10 @@ import {
   Rows4,
   SlidersHorizontal,
   Undo2,
+  X,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
-import { computeBranchPresetMap } from '../engine/timelineEngine';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { computeBranchPresetMap, resolveMacroEras } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
   BranchPresetId,
@@ -26,7 +28,7 @@ import type {
   RulerPeriod,
 } from '../types/timeline';
 import { BranchSelectorPopover } from './BranchSelectorPopover';
-import { EraSelectorPopover } from './EraSelectorPopover';
+import { EPOCH_SLICE_PRESETS, EraSelectorPopover } from './EraSelectorPopover';
 import { RulerSelectorPopover } from './RulerSelectorPopover';
 
 interface TopControlBarProps {
@@ -66,6 +68,7 @@ interface TopControlBarProps {
   onToggleShowEndNodes: () => void;
   onOpenCompareModal?: () => void;
   onOpenWindowModal?: (from: number, to: number) => void;
+  onResetTimeFilter?: () => void;
   isFiltersCollapsed: boolean;
   activeAdvancedCount?: number;
   onToggleFilters: () => void;
@@ -135,6 +138,7 @@ export function TopControlBar({
   onToggleShowEndNodes,
   onOpenCompareModal,
   onOpenWindowModal,
+  onResetTimeFilter,
   isFiltersCollapsed,
   activeAdvancedCount = 0,
   onToggleFilters,
@@ -223,6 +227,78 @@ export function TopControlBar({
         : !showEndNodes
           ? 'Без вех'
           : null;
+
+  const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
+
+  const timeBreadcrumb = useMemo(() => {
+    const hasExplicitRuler = Boolean(selectedRulerId && selectedRulerId !== 'ALL');
+    const explicitRuler = hasExplicitRuler
+      ? (rulers.find((r) => r.id === selectedRulerId) ?? null)
+      : null;
+
+    const hasExplicitEra = Boolean(selectedEraId && selectedEraId !== 'ALL');
+    const explicitEra = hasExplicitEra
+      ? (resolvedEras.find((era) => era.id === selectedEraId) ?? null)
+      : null;
+
+    const isNarrowedWindow = yearFrom > minYear || yearTo < maxYear;
+    const matchedRulerByBounds =
+      !explicitRuler && !explicitEra && isNarrowedWindow
+        ? (rulers.find((r) => r.startYear === yearFrom && r.endYear === yearTo) ?? null)
+        : null;
+    const matchedEraByBounds =
+      !explicitRuler && !explicitEra && !matchedRulerByBounds && isNarrowedWindow
+        ? (resolvedEras.find(
+            (era) =>
+              Math.max(minYear, era.startYear) === yearFrom &&
+              Math.min(maxYear, era.endYear) === yearTo,
+          ) ?? null)
+        : null;
+    const matchedPresetByBounds =
+      !explicitRuler && !explicitEra && !matchedRulerByBounds && !matchedEraByBounds && isNarrowedWindow
+        ? (EPOCH_SLICE_PRESETS.find((p) => p.from === yearFrom && p.to === yearTo) ?? null)
+        : null;
+
+    const isFiltered = Boolean(explicitRuler || explicitEra || isNarrowedWindow);
+
+    let label = 'Все века';
+    let detailTitle = `Открыть досье всего периода (${yearFrom}–${yearTo} гг.)`;
+
+    if (explicitRuler) {
+      label = explicitRuler.shortRuler;
+      detailTitle = `Активный фильтр правителя: ${explicitRuler.ruler} (${yearFrom}–${yearTo}). Клик — досье окна`;
+    } else if (explicitEra) {
+      label = explicitEra.displayShortTitle;
+      detailTitle = `Активный макро-период: ${explicitEra.title} (${yearFrom}–${yearTo}). Клик — досье окна`;
+    } else if (matchedRulerByBounds) {
+      label = matchedRulerByBounds.shortRuler;
+      detailTitle = `Окно правления: ${matchedRulerByBounds.ruler} (${yearFrom}–${yearTo}). Клик — досье окна`;
+    } else if (matchedEraByBounds) {
+      label = matchedEraByBounds.displayShortTitle;
+      detailTitle = `Окно макро-периода: ${matchedEraByBounds.title} (${yearFrom}–${yearTo}). Клик — досье окна`;
+    } else if (matchedPresetByBounds) {
+      label = matchedPresetByBounds.compactLabel.replace(/\s*·\s*\d+–\d+$/, '');
+      detailTitle = `Срез: ${matchedPresetByBounds.label}. Клик — досье окна`;
+    } else if (isNarrowedWindow) {
+      label = 'Окно';
+      detailTitle = `Выбранный интервал: ${yearFrom}–${yearTo} гг. Клик — досье окна`;
+    }
+
+    return {
+      label,
+      rangeText: `${yearFrom}–${yearTo}`,
+      isFiltered,
+      detailTitle,
+    };
+  }, [selectedRulerId, selectedEraId, rulers, resolvedEras, yearFrom, yearTo, minYear, maxYear]);
+
+  const handleResetTimeBreadcrumb = () => {
+    if (onResetTimeFilter) {
+      onResetTimeFilter();
+    } else {
+      onSelectEra('ALL');
+    }
+  };
 
   return (
     <div
@@ -410,6 +486,58 @@ export function TopControlBar({
               <Plus className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden lg:inline text-[10px] font-semibold">×2</span>
             </button>
+          </div>
+
+          {/* Единая хлебная крошка активного временного фильтра (открытие досье окна + сброс × в один клик) */}
+          <div
+            className={`hidden sm:inline-flex items-center rounded-lg border text-xs transition-colors shrink-0 ${
+              timeBreadcrumb.isFiltered
+                ? 'bg-amber-500/12 border-amber-500/35 text-amber-100'
+                : 'bg-slate-900/65 border-slate-800/80 text-slate-300'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => onOpenWindowModal?.(yearFrom, yearTo)}
+              disabled={!onOpenWindowModal}
+              title={timeBreadcrumb.detailTitle}
+              className={`px-2 py-1 inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${
+                onOpenWindowModal
+                  ? 'hover:text-white cursor-pointer'
+                  : 'cursor-default'
+              }`}
+            >
+              <CalendarRange
+                className={`w-3.5 h-3.5 shrink-0 ${
+                  timeBreadcrumb.isFiltered ? 'text-amber-300' : 'text-slate-400'
+                }`}
+              />
+              <span className="hidden md:inline font-sans font-semibold max-w-[116px] lg:max-w-[140px] xl:max-w-[168px] truncate">
+                {timeBreadcrumb.label}
+              </span>
+              <span aria-hidden="true" className="hidden md:inline text-slate-500">
+                ·
+              </span>
+              <span
+                className={`font-mono font-semibold tabular-nums ${
+                  timeBreadcrumb.isFiltered ? 'text-amber-300' : 'text-slate-300'
+                }`}
+              >
+                {timeBreadcrumb.rangeText}
+              </span>
+            </button>
+
+            {timeBreadcrumb.isFiltered && (
+              <button
+                type="button"
+                onClick={handleResetTimeBreadcrumb}
+                aria-label="Сбросить временной фильтр ко всем векам"
+                title={`Сбросить фильтр и вернуть все века (${minYear}–${maxYear})`}
+                className="pr-1.5 pl-1 py-1 border-l border-amber-500/25 text-amber-300/85 hover:text-white hover:bg-amber-500/20 rounded-r-lg transition-colors cursor-pointer shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
 
           <span className="hidden sm:block w-px h-4 bg-slate-800/90 shrink-0" aria-hidden="true" />

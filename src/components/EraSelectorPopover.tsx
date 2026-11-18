@@ -180,24 +180,22 @@ export function EraSelectorPopover({
           isOpen
             ? 'bg-slate-800/95 border-amber-400/60 text-white'
             : activeWindowEra
-              ? 'bg-amber-500/12 border-amber-500/40 text-amber-200 hover:bg-amber-500/20'
+              ? 'bg-transparent border-transparent text-amber-200 hover:bg-slate-800/70 hover:text-white'
               : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
         }`}
-        title="Выбор макро-периода истории, фокусировка окна времени и открытие досье эпохи"
+        title={
+          activeWindowEra
+            ? `Активный период: ${activeWindowEra.displayShortTitle} (${activeWindowEra.period}). Нажмите для выбора эпохи`
+            : 'Выбор макро-периода истории, фокусировка окна времени и открытие досье эпохи'
+        }
       >
         <ScrollText className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
         <span className="xl:hidden">Эпохи</span>
         <span className="hidden xl:inline">Макро-периоды</span>
 
-        {activeWindowEra ? (
-          <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] max-w-[68px] lg:max-w-[96px] xl:max-w-[130px] truncate">
-            {activeWindowEra.displayShortTitle}
-          </span>
-        ) : (
-          <span className="hidden lg:inline-block tabular-nums text-[10px] text-slate-400 font-normal">
-            {resolvedEras.length}
-          </span>
-        )}
+        <span className="hidden lg:inline-block tabular-nums text-[10px] text-slate-400 font-normal">
+          {resolvedEras.length}
+        </span>
 
         <ChevronDown
           className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${

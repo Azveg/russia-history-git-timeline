@@ -1591,6 +1591,7 @@ export default function App() {
         }
         onOpenCompareModal={handleOpenCompareFromHeader}
         onOpenWindowModal={handleOpenWindowModal}
+        onResetTimeFilter={() => handleSelectEra('ALL')}
         isFiltersCollapsed={isFiltersCollapsed}
         activeAdvancedCount={activeAdvancedCount}
         onToggleFilters={handleToggleFilters}
