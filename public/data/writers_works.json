@@ -3535,6 +3535,7 @@
       "endYear": 1918,
       "startDate": "1918-01",
       "endDate": "1918-03",
+      "calendarStyle": "julian",
       "isAtomic": true,
       "period": "1918 (январь)",
       "title": "А. А. Блок — поэма «Двенадцать»",

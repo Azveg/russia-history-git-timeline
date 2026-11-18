@@ -1,11 +1,23 @@
 export type AxisResolution = 'year' | 'month' | 'day';
 
-export interface PreciseDateParts {
+export type CalendarStyle = 'julian' | 'gregorian' | 'both';
+
+export interface DateCalendarParts {
   year: number;
   month?: number;
   day?: number;
   precision: AxisResolution;
   sortKey: number;
+}
+
+export interface PreciseDateParts extends DateCalendarParts {
+  calendarStyle: CalendarStyle;
+  original: DateCalendarParts;
+  unified: DateCalendarParts;
+  julianParts?: DateCalendarParts;
+  gregorianParts?: DateCalendarParts;
+  offsetDays: number;
+  hasStyleSplit: boolean;
 }
 
 export type BranchCategoryKey = 'rulers' | 'military' | 'economy' | 'world' | 'other';
@@ -66,6 +78,7 @@ export interface RulerPeriod {
   endYear: number;
   startDate?: string;
   endDate?: string;
+  calendarStyle?: CalendarStyle;
   reignTitle: string;
   reignThesis: string;
 }
@@ -110,6 +123,7 @@ export interface TimelineNode {
   activeTo?: number;
   startDate?: string;
   endDate?: string;
+  calendarStyle?: CalendarStyle;
   isAtomic?: boolean;
   period: string;
   title: string;

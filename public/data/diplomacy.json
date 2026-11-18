@@ -354,6 +354,9 @@
     },
     {
       "id": "1721-nystad-treaty",
+      "startDate": "1721-08-30",
+      "endDate": "1721-08-30",
+      "calendarStyle": "julian",
       "startYear": 1721,
       "endYear": 1721,
       "isAtomic": true,
@@ -405,6 +408,9 @@
     },
     {
       "id": "1774-kuchuk-kainarji",
+      "startDate": "1774-07-10",
+      "endDate": "1783-07-24",
+      "calendarStyle": "julian",
       "startYear": 1774,
       "endYear": 1783,
       "period": "1774–1783",
@@ -517,6 +523,9 @@
     },
     {
       "id": "1807-tilsit-treaty",
+      "startDate": "1807-06-25",
+      "endDate": "1812-05-16",
+      "calendarStyle": "julian",
       "startYear": 1807,
       "endYear": 1812,
       "period": "1807–1812",
@@ -578,6 +587,9 @@
     },
     {
       "id": "1856-paris-berlin",
+      "startDate": "1856-03-30",
+      "endDate": "1871-03-13",
+      "calendarStyle": "both",
       "startYear": 1856,
       "endYear": 1871,
       "period": "1856–1871",
@@ -688,6 +700,9 @@
     },
     {
       "id": "1878-san-stefano-berlin",
+      "startDate": "1878-02-19",
+      "endDate": "1878-07-01",
+      "calendarStyle": "julian",
       "startYear": 1878,
       "endYear": 1878,
       "isAtomic": true,
@@ -745,6 +760,9 @@
     },
     {
       "id": "1905-portsmouth-treaty",
+      "startDate": "1905-09-05",
+      "endDate": "1907-08-31",
+      "calendarStyle": "both",
       "startYear": 1905,
       "endYear": 1907,
       "period": "1905–1907",
@@ -800,6 +818,9 @@
     },
     {
       "id": "1918-brest-molotov",
+      "startDate": "1918-03-03",
+      "endDate": "1922-04-16",
+      "calendarStyle": "gregorian",
       "startYear": 1918,
       "endYear": 1922,
       "period": "1918–1922",

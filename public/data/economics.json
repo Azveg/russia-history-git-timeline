@@ -848,6 +848,9 @@
     },
     {
       "id": "1861-reform-emancipation",
+      "startDate": "1861-02-19",
+      "endDate": "1874-01-01",
+      "calendarStyle": "julian",
       "startYear": 1861,
       "endYear": 1874,
       "period": "1861–1874",
@@ -964,6 +967,9 @@
     },
     {
       "id": "1906-reform-stolypin",
+      "startDate": "1905-10-17",
+      "endDate": "1911-09-05",
+      "calendarStyle": "julian",
       "startYear": 1905,
       "endYear": 1911,
       "period": "1905–1911",
@@ -1018,6 +1024,9 @@
     },
     {
       "id": "1918-reform-war-communism",
+      "startDate": "1917-10-26",
+      "endDate": "1920-12",
+      "calendarStyle": "julian",
       "startYear": 1917,
       "endYear": 1920,
       "period": "1917–1920",

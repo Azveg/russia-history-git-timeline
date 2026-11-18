@@ -19,9 +19,24 @@ const VALID_LINK_TYPES = new Set([
   'causes',
   'consequence',
 ]);
+const VALID_CALENDAR_STYLES = new Set(['julian', 'gregorian', 'both']);
 const DATE_REGEX = /^\d{3,4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{3,8}$/;
 const TAG_FORMAT_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+function isDateInDualCalendarWindow(rawDate) {
+  if (typeof rawDate !== 'string') return false;
+  const m = rawDate.trim().match(/^(\d{3,4})-(\d{1,2})(?:-(\d{1,2}))?$/);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = m[3] ? Number(m[3]) : undefined;
+  const afterIntro =
+    year > 1582 || (year === 1582 && (month > 10 || (month === 10 && (day ?? 15) >= 5)));
+  const beforeReform =
+    year < 1918 || (year === 1918 && (month < 2 || (month === 2 && (day ?? 1) < 14)));
+  return afterIntro && beforeReform;
+}
 
 const errors = [];
 const warnings = [];
@@ -242,6 +257,15 @@ function main() {
           }
         }
 
+        if (r.calendarStyle !== undefined && (typeof r.calendarStyle !== 'string' || !VALID_CALENDAR_STYLES.has(r.calendarStyle))) {
+          addError(relFromPublic, `Правитель "${rId}": недопустимый calendarStyle ("${r.calendarStyle}"). Ожидается julian, gregorian или both.`);
+        } else if (
+          r.calendarStyle === undefined &&
+          (isDateInDualCalendarWindow(r.startDate) || isDateInDualCalendarWindow(r.endDate))
+        ) {
+          addWarning(relFromPublic, `Правитель "${rId}": точная дата в окне 1582–1918 гг. не размечена полем calendarStyle.`);
+        }
+
         if (r.center !== undefined && (typeof r.center !== 'string' || !r.center.trim())) {
           addError(relFromPublic, `Правитель "${rId}": поле "center" должно быть непустой строкой.`);
         }
@@ -293,6 +317,15 @@ function main() {
               addError(relFromPublic, `Узел "${nId}": неверный формат ${df} ("${node[df]}"). Используйте YYYY, YYYY-MM или YYYY-MM-DD.`);
             }
           }
+        }
+
+        if (node.calendarStyle !== undefined && (typeof node.calendarStyle !== 'string' || !VALID_CALENDAR_STYLES.has(node.calendarStyle))) {
+          addError(relFromPublic, `Узел "${nId}": недопустимый calendarStyle ("${node.calendarStyle}"). Ожидается julian, gregorian или both.`);
+        } else if (
+          node.calendarStyle === undefined &&
+          (isDateInDualCalendarWindow(node.startDate) || isDateInDualCalendarWindow(node.endDate))
+        ) {
+          addWarning(relFromPublic, `Узел "${nId}": точная дата в окне 1582–1918 гг. не размечена полем calendarStyle.`);
         }
 
         if (node.prerequisites !== undefined) {

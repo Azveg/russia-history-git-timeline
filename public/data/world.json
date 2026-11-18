@@ -428,6 +428,9 @@
     },
     {
       "id": "1776-world-usa-france",
+      "startDate": "1775-04-19",
+      "endDate": "1794-07-27",
+      "calendarStyle": "gregorian",
       "startYear": 1775,
       "endYear": 1794,
       "period": "1775–1794",
@@ -477,6 +480,9 @@
     },
     {
       "id": "1815-world-vienna",
+      "startDate": "1814-09-18",
+      "endDate": "1815-06-09",
+      "calendarStyle": "gregorian",
       "startYear": 1814,
       "endYear": 1815,
       "period": "1814–1815",
@@ -527,6 +533,9 @@
     },
     {
       "id": "1848-world-spring",
+      "startDate": "1848-02-24",
+      "endDate": "1849-08-13",
+      "calendarStyle": "gregorian",
       "startYear": 1848,
       "endYear": 1849,
       "period": "1848–1849",
@@ -571,6 +580,9 @@
     },
     {
       "id": "1871-world-germany",
+      "startDate": "1870-07-19",
+      "endDate": "1871-05-10",
+      "calendarStyle": "gregorian",
       "startYear": 1870,
       "endYear": 1871,
       "period": "1870–1871",
@@ -615,6 +627,9 @@
     },
     {
       "id": "1907-world-entente",
+      "startDate": "1891-08-27",
+      "endDate": "1907-08-31",
+      "calendarStyle": "gregorian",
       "startYear": 1891,
       "endYear": 1907,
       "period": "1891–1907",

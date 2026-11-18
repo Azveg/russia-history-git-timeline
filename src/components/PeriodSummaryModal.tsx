@@ -16,7 +16,12 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { getLeafBranches, getRulerPeriodSummaryData } from '../engine/timelineEngine';
+import {
+  formatCalendarDetailBadge,
+  getLeafBranches,
+  getRulerPeriodSummaryData,
+  parsePreciseDate,
+} from '../engine/timelineEngine';
 import type {
   BranchDefinition,
   EnrichedEvent,
@@ -248,6 +253,48 @@ export function PeriodSummaryModal({
             >
               {ruler.reignTitle} ({ruler.reignPeriod})
             </h3>
+            {(ruler.startDate || ruler.endDate) &&
+              (() => {
+                const startParts = parsePreciseDate(ruler.startDate, ruler.startYear, false, {
+                  calendarStyle: ruler.calendarStyle,
+                  task: 'MAIN_RULERS',
+                });
+                const endParts = parsePreciseDate(ruler.endDate, ruler.endYear, true, {
+                  calendarStyle: ruler.calendarStyle,
+                  task: 'MAIN_RULERS',
+                });
+                if (startParts.precision === 'year' && endParts.precision === 'year') return null;
+                const sCal = startParts.precision !== 'year' ? formatCalendarDetailBadge(startParts) : null;
+                const eCal = endParts.precision !== 'year' ? formatCalendarDetailBadge(endParts) : null;
+                return (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono tabular-nums text-slate-300">
+                    {sCal && (
+                      <span>
+                        <span className="text-slate-500">Начало: </span>
+                        <span className={sCal.tone === 'gregorian' ? 'text-sky-300' : 'text-amber-300'}>
+                          {sCal.primaryText}
+                        </span>
+                        <span className="text-slate-400"> ({sCal.styleLabel})</span>
+                        {sCal.counterpartText && (
+                          <span className="text-slate-400"> · {sCal.counterpartText}</span>
+                        )}
+                      </span>
+                    )}
+                    {eCal && (
+                      <span>
+                        <span className="text-slate-500">Окончание: </span>
+                        <span className={eCal.tone === 'gregorian' ? 'text-sky-300' : 'text-amber-300'}>
+                          {eCal.primaryText}
+                        </span>
+                        <span className="text-slate-400"> ({eCal.styleLabel})</span>
+                        {eCal.counterpartText && (
+                          <span className="text-slate-400"> · {eCal.counterpartText}</span>
+                        )}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
             <p className="text-sm sm:text-base text-slate-200 mt-1.5 leading-relaxed">
               {ruler.reignThesis}
             </p>

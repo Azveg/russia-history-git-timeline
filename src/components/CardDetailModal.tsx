@@ -24,6 +24,7 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import {
   findMacroEraForYear,
+  formatCalendarDetailBadge,
   isBiographyNode,
   isLiteraryWorkNode,
   isScienceDiscoveryNode,
@@ -467,11 +468,25 @@ export function CardDetailModal({
                   Творческая активность: {card.activeFrom}–{card.activeTo} гг.
                 </span>
               )}
-              {card.datePrecision === 'day' || card.datePrecision === 'month' ? (
-                <span className="text-xs font-mono text-slate-400 tabular-nums">
-                  точная дата: {card.startDate ?? card.period}
-                </span>
-              ) : null}
+              {(card.startPrecision.precision !== 'year' || card.endPrecision.precision !== 'year') &&
+                (() => {
+                  const startCal = formatCalendarDetailBadge(card.startPrecision);
+                  return (
+                    <span className="text-xs font-mono text-slate-300 tabular-nums flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                      <span className="text-slate-500">точная дата:</span>
+                      <span className={startCal.tone === 'gregorian' ? 'text-sky-300 font-semibold' : 'text-amber-300 font-semibold'}>
+                        {startCal.primaryText}
+                      </span>
+                      <span className="text-slate-400">({startCal.styleLabel})</span>
+                      {startCal.counterpartText && (
+                        <span className="text-slate-300">· {startCal.counterpartText}</span>
+                      )}
+                      {startCal.offsetNote && (
+                        <span className="text-slate-500">· {startCal.offsetNote}</span>
+                      )}
+                    </span>
+                  );
+                })()}
             </div>
 
             <h3
@@ -519,6 +534,47 @@ export function CardDetailModal({
                     ? `Активен: ${card.activeFrom}–${card.activeTo} гг. (${Math.max(1, card.activeTo - card.activeFrom)} лет)`
                     : durationText}
                 </div>
+                {(card.startPrecision.precision !== 'year' || card.endPrecision.precision !== 'year') &&
+                  (() => {
+                    const sCal =
+                      card.startPrecision.precision !== 'year'
+                        ? formatCalendarDetailBadge(card.startPrecision)
+                        : null;
+                    const eCal =
+                      card.endPrecision.precision !== 'year' &&
+                      card.endPrecision.original.sortKey !== card.startPrecision.original.sortKey
+                        ? formatCalendarDetailBadge(card.endPrecision)
+                        : null;
+                    if (!sCal && !eCal) return null;
+                    return (
+                      <div className="mt-1.5 pt-1.5 border-t border-slate-800/70 space-y-0.5 text-[10px] font-mono tabular-nums text-slate-300">
+                        {sCal && (
+                          <div>
+                            <span className="text-slate-500">{isBio ? 'Рожд.: ' : 'Начало: '}</span>
+                            <span className={sCal.tone === 'gregorian' ? 'text-sky-300' : 'text-amber-300'}>
+                              {sCal.primaryText}
+                            </span>
+                            <span className="text-slate-400"> · {sCal.styleLabel}</span>
+                            {sCal.counterpartText && (
+                              <span className="text-slate-400"> ({sCal.counterpartText})</span>
+                            )}
+                          </div>
+                        )}
+                        {eCal && (
+                          <div>
+                            <span className="text-slate-500">{isBio ? 'Конч.: ' : 'Конец: '}</span>
+                            <span className={eCal.tone === 'gregorian' ? 'text-sky-300' : 'text-amber-300'}>
+                              {eCal.primaryText}
+                            </span>
+                            <span className="text-slate-400"> · {eCal.styleLabel}</span>
+                            {eCal.counterpartText && (
+                              <span className="text-slate-400"> ({eCal.counterpartText})</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
               </div>
 
               <div className="rounded-lg bg-slate-950/75 border border-slate-800/80 p-2.5">

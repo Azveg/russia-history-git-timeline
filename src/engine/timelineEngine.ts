@@ -7,10 +7,12 @@ import type {
   BranchLaneLayout,
   BranchPresetId,
   BranchSubLaneLayout,
+  CalendarStyle,
   ComparisonPatternMatch,
   ComparisonSideSummary,
   ComparisonTarget,
   CrossLink,
+  DateCalendarParts,
   DensityBin,
   DynamicWindowHotspot,
   EnrichedEvent,
@@ -251,6 +253,135 @@ const MONTHS_SHORT_RU = [
   'дек',
 ];
 
+const MONTHS_GENITIVE_RU = [
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+];
+
+const MONTHS_NOMINATIVE_RU = [
+  'январь',
+  'февраль',
+  'март',
+  'апрель',
+  'май',
+  'июнь',
+  'июль',
+  'август',
+  'сентябрь',
+  'октябрь',
+  'ноябрь',
+  'декабрь',
+];
+
+function gregorianToJdn(y: number, m: number, d: number): number {
+  const a = Math.floor((14 - m) / 12);
+  const yAdj = y + 4800 - a;
+  const mAdj = m + 12 * a - 3;
+  return (
+    d +
+    Math.floor((153 * mAdj + 2) / 5) +
+    365 * yAdj +
+    Math.floor(yAdj / 4) -
+    Math.floor(yAdj / 100) +
+    Math.floor(yAdj / 400) -
+    32045
+  );
+}
+
+function julianToJdn(y: number, m: number, d: number): number {
+  const a = Math.floor((14 - m) / 12);
+  const yAdj = y + 4800 - a;
+  const mAdj = m + 12 * a - 3;
+  return d + Math.floor((153 * mAdj + 2) / 5) + 365 * yAdj + Math.floor(yAdj / 4) - 32083;
+}
+
+function jdnToGregorian(jdn: number): { year: number; month: number; day: number } {
+  const a = jdn + 32044;
+  const b = Math.floor((4 * a + 3) / 146097);
+  const c = a - Math.floor((146097 * b) / 4);
+  const d = Math.floor((4 * c + 3) / 1461);
+  const e = c - Math.floor((1461 * d) / 4);
+  const m = Math.floor((5 * e + 2) / 153);
+  const day = e - Math.floor((153 * m + 2) / 5) + 1;
+  const month = m + 3 - 12 * Math.floor(m / 10);
+  const year = 100 * b + d - 4800 + Math.floor(m / 10);
+  return { year, month, day };
+}
+
+function jdnToJulian(jdn: number): { year: number; month: number; day: number } {
+  const c = jdn + 32082;
+  const d = Math.floor((4 * c + 3) / 1461);
+  const e = c - Math.floor((1461 * d) / 4);
+  const m = Math.floor((5 * e + 2) / 153);
+  const day = e - Math.floor((153 * m + 2) / 5) + 1;
+  const month = m + 3 - 12 * Math.floor(m / 10);
+  const year = d - 4800 + Math.floor(m / 10);
+  return { year, month, day };
+}
+
+function isBeforeGregorianIntro(
+  year: number,
+  month: number | undefined,
+  day: number | undefined,
+  explicitStyle?: CalendarStyle,
+): boolean {
+  if (year < 1582) return true;
+  if (year > 1582) return false;
+  const m = month ?? 1;
+  if (m < 10) return true;
+  if (m > 10) return false;
+  if (day === undefined) return false;
+  return day < (explicitStyle === 'julian' ? 5 : 15);
+}
+
+function isModernGregorianEra(
+  year: number,
+  month: number | undefined,
+  day: number | undefined,
+  explicitStyle?: CalendarStyle,
+): boolean {
+  if (year > 1918) return true;
+  if (year < 1918) return false;
+  const m = month ?? 1;
+  if (m > 2) return true;
+  if (m < 2) return false;
+  if (day !== undefined) {
+    return explicitStyle === 'julian' ? day > 1 : day >= 14;
+  }
+  return explicitStyle === 'gregorian' || explicitStyle === undefined;
+}
+
+export function resolveEffectiveCalendarStyle(
+  year: number,
+  month: number | undefined,
+  day: number | undefined,
+  explicitStyle?: CalendarStyle,
+  taskHint?: string,
+): CalendarStyle {
+  if (isBeforeGregorianIntro(year, month, day, explicitStyle)) {
+    return 'julian';
+  }
+  if (isModernGregorianEra(year, month, day, explicitStyle)) {
+    return 'gregorian';
+  }
+  if (explicitStyle === 'julian' || explicitStyle === 'gregorian' || explicitStyle === 'both') {
+    return explicitStyle;
+  }
+  if (taskHint === 'WORLD_CONTEXT') return 'gregorian';
+  if (taskHint === 'DIPLOMACY_TREATIES') return 'both';
+  return 'julian';
+}
+
 const CUSTOM_EVENT_YEARS: Record<string, [number, number]> = {
   '1746-chukchi': [1746, 1776],
   '1776-world-usa-france': [1776, 1789],
@@ -277,30 +408,157 @@ export function parseEventYears(periodStr: string, eventId?: string): { startYea
   return { startYear, endYear: Math.max(startYear, endYear) };
 }
 
-export function parsePreciseDate(rawDate: string | undefined, fallbackYear: number, isEnd = false): PreciseDateParts {
+export function parsePreciseDate(
+  rawDate: string | undefined,
+  fallbackYear: number,
+  isEnd = false,
+  options?: { calendarStyle?: CalendarStyle; task?: string },
+): PreciseDateParts {
+  let year = fallbackYear;
+  let month: number | undefined;
+  let day: number | undefined;
+  let precision: AxisResolution = 'year';
+
   if (rawDate) {
     const match = rawDate.trim().match(/^(\d{3,4})(?:-(\d{1,2}))?(?:-(\d{1,2}))?$/);
     if (match) {
-      const year = Number(match[1]);
-      const month = match[2] ? Math.max(1, Math.min(12, Number(match[2]))) : undefined;
-      const day = match[3] ? Math.max(1, Math.min(31, Number(match[3]))) : undefined;
-      const precision: AxisResolution = day !== undefined ? 'day' : month !== undefined ? 'month' : 'year';
-      const sortMonth = month ?? (isEnd ? 12 : 1);
-      const sortDay = day ?? (isEnd ? 28 : 1);
-      return {
-        year,
-        month,
-        day,
-        precision,
-        sortKey: year * 10000 + sortMonth * 100 + sortDay,
-      };
+      year = Number(match[1]);
+      month = match[2] ? Math.max(1, Math.min(12, Number(match[2]))) : undefined;
+      day = match[3] ? Math.max(1, Math.min(31, Number(match[3]))) : undefined;
+      precision = day !== undefined ? 'day' : month !== undefined ? 'month' : 'year';
     }
   }
 
+  const origSortMonth = month ?? (isEnd ? 12 : 1);
+  const origSortDay = day ?? (isEnd ? 28 : 1);
+  const original: DateCalendarParts = {
+    year,
+    month,
+    day,
+    precision,
+    sortKey: year * 10000 + origSortMonth * 100 + origSortDay,
+  };
+
+  if (precision === 'year') {
+    const resolvedStyle = resolveEffectiveCalendarStyle(
+      year,
+      undefined,
+      undefined,
+      options?.calendarStyle,
+      options?.task,
+    );
+    return {
+      ...original,
+      calendarStyle: resolvedStyle,
+      original,
+      unified: original,
+      offsetDays: 0,
+      hasStyleSplit: false,
+    };
+  }
+
+  const resolvedStyle = resolveEffectiveCalendarStyle(
+    year,
+    month,
+    day,
+    options?.calendarStyle,
+    options?.task,
+  );
+
+  if (isModernGregorianEra(year, month, day, options?.calendarStyle)) {
+    return {
+      ...original,
+      calendarStyle: 'gregorian',
+      original,
+      unified: original,
+      gregorianParts: original,
+      offsetDays: 0,
+      hasStyleSplit: false,
+    };
+  }
+
+  if (isBeforeGregorianIntro(year, month, day, options?.calendarStyle)) {
+    return {
+      ...original,
+      calendarStyle: 'julian',
+      original,
+      unified: original,
+      julianParts: original,
+      offsetDays: 0,
+      hasStyleSplit: true,
+    };
+  }
+
+  // Историческое окно двойных календарей: 15 октября 1582 — 13 февраля 1918
+  if (precision === 'day' && month !== undefined && day !== undefined) {
+    if (resolvedStyle === 'julian') {
+      const jdn = julianToJdn(year, month, day);
+      const g = jdnToGregorian(jdn);
+      const offsetDays = julianToJdn(year, month, day) - gregorianToJdn(year, month, day);
+      const gregorianParts: DateCalendarParts = {
+        year: g.year,
+        month: g.month,
+        day: g.day,
+        precision: 'day',
+        sortKey: g.year * 10000 + g.month * 100 + g.day,
+      };
+      return {
+        ...gregorianParts,
+        calendarStyle: 'julian',
+        original,
+        unified: gregorianParts,
+        julianParts: original,
+        gregorianParts,
+        offsetDays,
+        hasStyleSplit: true,
+      };
+    }
+
+    // 'gregorian' или 'both': дата уже записана в единой григорианской координате (н. ст.)
+    const jdn = gregorianToJdn(year, month, day);
+    const j = jdnToJulian(jdn);
+    const offsetDays = julianToJdn(j.year, j.month, j.day) - gregorianToJdn(j.year, j.month, j.day);
+    const julianParts: DateCalendarParts = {
+      year: j.year,
+      month: j.month,
+      day: j.day,
+      precision: 'day',
+      sortKey: j.year * 10000 + j.month * 100 + j.day,
+    };
+    return {
+      ...original,
+      calendarStyle: resolvedStyle,
+      original,
+      unified: original,
+      julianParts,
+      gregorianParts: original,
+      offsetDays,
+      hasStyleSplit: true,
+    };
+  }
+
+  // Месячная точность (YYYY-MM) в интервале 1582–1918: не выдумываем число месяца,
+  // но сдвигаем sortKey для 'julian' (середина месяца +10..+13 дн.) и сохраняем метаданные стиля.
+  const refMonth = month ?? 1;
+  const offsetDays = julianToJdn(year, refMonth, 15) - gregorianToJdn(year, refMonth, 15);
+  const unifiedSortDay =
+    resolvedStyle === 'julian' && !isEnd ? Math.min(28, 1 + Math.max(0, offsetDays)) : origSortDay;
+  const unified: DateCalendarParts = {
+    year,
+    month,
+    precision: 'month',
+    sortKey: year * 10000 + refMonth * 100 + unifiedSortDay,
+  };
+
   return {
-    year: fallbackYear,
-    precision: 'year',
-    sortKey: fallbackYear * 10000 + (isEnd ? 1228 : 101),
+    ...unified,
+    calendarStyle: resolvedStyle,
+    original,
+    unified,
+    julianParts: resolvedStyle === 'julian' || resolvedStyle === 'both' ? original : undefined,
+    gregorianParts: resolvedStyle === 'gregorian' || resolvedStyle === 'both' ? original : undefined,
+    offsetDays,
+    hasStyleSplit: true,
   };
 }
 
@@ -390,7 +648,7 @@ export function doesIntervalBelongToEra(
   return false;
 }
 
-export function formatDateForResolution(parts: PreciseDateParts, resolution: AxisResolution): string {
+function formatSimplePartsShort(parts: DateCalendarParts, resolution: AxisResolution): string {
   if (resolution === 'day' && parts.day !== undefined && parts.month !== undefined) {
     return `${parts.day} ${MONTHS_SHORT_RU[parts.month - 1]} ${parts.year}`;
   }
@@ -400,20 +658,233 @@ export function formatDateForResolution(parts: PreciseDateParts, resolution: Axi
   return `${parts.year} г.`;
 }
 
+function formatDualCompactParts(j: DateCalendarParts, g: DateCalendarParts): string {
+  if (j.day !== undefined && g.day !== undefined && j.month !== undefined && g.month !== undefined) {
+    if (j.year === g.year && j.month === g.month) {
+      return `${j.day} (${g.day}) ${MONTHS_SHORT_RU[j.month - 1]} ${j.year}`;
+    }
+    if (j.year === g.year) {
+      return `${j.day} ${MONTHS_SHORT_RU[j.month - 1]} (${g.day} ${MONTHS_SHORT_RU[g.month - 1]}) ${j.year}`;
+    }
+    return `${j.day} ${MONTHS_SHORT_RU[j.month - 1]} ${j.year} (${g.day} ${MONTHS_SHORT_RU[g.month - 1]} ${g.year})`;
+  }
+  return formatSimplePartsShort(g, 'day');
+}
+
+function formatDualFullParts(j: DateCalendarParts, g: DateCalendarParts): string {
+  if (j.day !== undefined && g.day !== undefined && j.month !== undefined && g.month !== undefined) {
+    if (j.year === g.year && j.month === g.month) {
+      return `${j.day} (${g.day}) ${MONTHS_GENITIVE_RU[j.month - 1]} ${j.year}`;
+    }
+    if (j.year === g.year) {
+      return `${j.day} ${MONTHS_GENITIVE_RU[j.month - 1]} (${g.day} ${MONTHS_GENITIVE_RU[g.month - 1]}) ${j.year}`;
+    }
+    return `${j.day} ${MONTHS_GENITIVE_RU[j.month - 1]} ${j.year} (${g.day} ${MONTHS_GENITIVE_RU[g.month - 1]} ${g.year})`;
+  }
+  return formatSimplePartsShort(g, 'day');
+}
+
+export function getCalendarStyleAxisMarker(parts: PreciseDateParts): {
+  label: string;
+  tone: 'julian' | 'gregorian' | 'both';
+} | null {
+  if (!parts.hasStyleSplit) return null;
+  if (parts.calendarStyle === 'gregorian') {
+    return { label: 'н. ст.', tone: 'gregorian' };
+  }
+  if (parts.calendarStyle === 'both') {
+    return { label: 'ст./н. ст.', tone: 'both' };
+  }
+  return {
+    label: parts.offsetDays > 0 ? 'ст. ст. → н. ст.' : 'ст. ст.',
+    tone: 'julian',
+  };
+}
+
+export function formatCalendarDetailBadge(parts: PreciseDateParts): {
+  primaryText: string;
+  styleLabel: string;
+  counterpartText?: string;
+  offsetNote?: string;
+  tone: 'julian' | 'gregorian' | 'both';
+} {
+  const { precision, calendarStyle, original, julianParts, gregorianParts, offsetDays, hasStyleSplit } = parts;
+
+  if (precision === 'day' && original.day !== undefined && original.month !== undefined) {
+    const origFull = `${original.day} ${MONTHS_GENITIVE_RU[original.month - 1]} ${original.year}`;
+
+    if (!hasStyleSplit) {
+      return {
+        primaryText: origFull,
+        styleLabel: 'н. ст.',
+        tone: 'gregorian',
+      };
+    }
+
+    if (julianParts && !gregorianParts) {
+      return {
+        primaryText: origFull,
+        styleLabel: 'ст. ст. (юлианский календарь)',
+        tone: 'julian',
+      };
+    }
+
+    if (julianParts && gregorianParts && julianParts.day !== undefined && gregorianParts.day !== undefined) {
+      const jFull = `${julianParts.day} ${MONTHS_GENITIVE_RU[(julianParts.month ?? 1) - 1]} ${julianParts.year}`;
+      const gFull = `${gregorianParts.day} ${MONTHS_GENITIVE_RU[(gregorianParts.month ?? 1) - 1]} ${gregorianParts.year}`;
+      if (calendarStyle === 'gregorian') {
+        return {
+          primaryText: gFull,
+          styleLabel: 'новый стиль (григор.)',
+          counterpartText: `${jFull} (ст. ст.)`,
+          offsetNote: offsetDays > 0 ? `разница ${offsetDays} дн.` : undefined,
+          tone: 'gregorian',
+        };
+      }
+      if (calendarStyle === 'both') {
+        return {
+          primaryText: formatDualFullParts(julianParts, gregorianParts),
+          styleLabel: 'ст. ст. (н. ст.)',
+          offsetNote: offsetDays > 0 ? `сдвиг ${offsetDays} дн.` : undefined,
+          tone: 'both',
+        };
+      }
+      return {
+        primaryText: jFull,
+        styleLabel: 'старый стиль (юлиан.)',
+        counterpartText: `${gFull} (н. ст.)`,
+        offsetNote: offsetDays > 0 ? `+${offsetDays} дн. на единой шкале` : undefined,
+        tone: 'julian',
+      };
+    }
+  }
+
+  if (precision === 'month' && original.month !== undefined) {
+    const mName = MONTHS_NOMINATIVE_RU[original.month - 1];
+    const origMonthFull = `${mName} ${original.year}`;
+    if (!hasStyleSplit) {
+      return {
+        primaryText: origMonthFull,
+        styleLabel: 'н. ст.',
+        tone: 'gregorian',
+      };
+    }
+    if (calendarStyle === 'gregorian') {
+      return {
+        primaryText: origMonthFull,
+        styleLabel: 'новый стиль (григор.)',
+        offsetNote: offsetDays > 0 ? `ст. ст. на ${offsetDays} дн. раньше` : undefined,
+        tone: 'gregorian',
+      };
+    }
+    if (calendarStyle === 'both') {
+      return {
+        primaryText: origMonthFull,
+        styleLabel: 'ст. ст. / н. ст.',
+        offsetNote: offsetDays > 0 ? `разница ${offsetDays} дн.` : undefined,
+        tone: 'both',
+      };
+    }
+    return {
+      primaryText: origMonthFull,
+      styleLabel: 'старый стиль (юлиан.)',
+      offsetNote: offsetDays > 0 ? `+${offsetDays} дн. к новому стилю` : undefined,
+      tone: 'julian',
+    };
+  }
+
+  return {
+    primaryText: `${original.year} г.`,
+    styleLabel: calendarStyle === 'julian' ? 'ст. ст.' : 'н. ст.',
+    tone: calendarStyle,
+  };
+}
+
+export function formatDateForResolution(parts: PreciseDateParts, resolution: AxisResolution): string {
+  if (resolution === 'year') {
+    return `${parts.unified.year} г.`;
+  }
+  if (!parts.hasStyleSplit) {
+    return formatSimplePartsShort(parts.unified, resolution);
+  }
+  if (
+    resolution === 'day' &&
+    parts.precision === 'day' &&
+    (parts.calendarStyle === 'julian' || parts.calendarStyle === 'both') &&
+    parts.julianParts &&
+    parts.gregorianParts
+  ) {
+    return formatDualCompactParts(parts.julianParts, parts.gregorianParts);
+  }
+  if (parts.calendarStyle === 'julian' && parts.julianParts) {
+    return formatSimplePartsShort(parts.julianParts, resolution);
+  }
+  return formatSimplePartsShort(parts.unified, resolution);
+}
+
 function formatCompactAxisDate(parts: PreciseDateParts, resolution: AxisResolution): string {
-  if (resolution === 'day' && parts.day !== undefined && parts.month !== undefined) {
-    return `${parts.day} ${MONTHS_SHORT_RU[parts.month - 1]} ${parts.year}`;
+  if (resolution === 'day' && parts.unified.day !== undefined && parts.unified.month !== undefined) {
+    return `${parts.unified.day} ${MONTHS_SHORT_RU[parts.unified.month - 1]} ${parts.unified.year}`;
   }
-  if ((resolution === 'day' || resolution === 'month') && parts.month !== undefined) {
-    return `${MONTHS_SHORT_RU[parts.month - 1]} ${parts.year}`;
+  if ((resolution === 'day' || resolution === 'month') && parts.unified.month !== undefined) {
+    return `${MONTHS_SHORT_RU[parts.unified.month - 1]} ${parts.unified.year}`;
   }
-  return `${parts.year}`;
+  return `${parts.unified.year}`;
+}
+
+function buildGutterStyleInfo(
+  parts: PreciseDateParts,
+  resolution: AxisResolution,
+): { styleLabel?: string; styleTone?: 'julian' | 'gregorian' | 'both'; detailText: string } {
+  const detail = formatCalendarDetailBadge(parts);
+  const detailText = detail.counterpartText
+    ? `${detail.primaryText} (${detail.styleLabel}) = ${detail.counterpartText}`
+    : detail.offsetNote
+      ? `${detail.primaryText} (${detail.styleLabel}, ${detail.offsetNote})`
+      : `${detail.primaryText}`;
+
+  if (resolution === 'year' || !parts.hasStyleSplit) {
+    return { detailText };
+  }
+
+  if (parts.calendarStyle === 'gregorian') {
+    return {
+      styleLabel: 'н. ст.',
+      styleTone: 'gregorian',
+      detailText,
+    };
+  }
+
+  if (
+    resolution === 'day' &&
+    parts.precision === 'day' &&
+    parts.julianParts?.day !== undefined &&
+    parts.julianParts?.month !== undefined &&
+    parts.gregorianParts
+  ) {
+    return {
+      styleLabel: `ст. ${parts.julianParts.day} ${MONTHS_SHORT_RU[parts.julianParts.month - 1]}`,
+      styleTone: parts.calendarStyle === 'both' ? 'both' : 'julian',
+      detailText,
+    };
+  }
+
+  return {
+    styleLabel: parts.calendarStyle === 'both' ? 'ст./н. ст.' : 'ст. ст.',
+    styleTone: parts.calendarStyle === 'both' ? 'both' : 'julian',
+    detailText,
+  };
 }
 
 export function formatAxisGutterDate(
   row: StreamRow,
   resolution: AxisResolution,
-): { label: string; title: string } {
+): {
+  label: string;
+  styleLabel?: string;
+  styleTone?: 'julian' | 'gregorian' | 'both';
+  title: string;
+} {
   if (row.rowType === 'ERA_START') {
     const resolved = resolveMacroEra(row.era);
     return {
@@ -426,7 +897,12 @@ export function formatAxisGutterDate(
     const mIdx = Math.max(0, Math.min(11, (row.month ?? 1) - 1));
     return {
       label: `${MONTHS_SHORT_RU[mIdx]} ${row.year}`,
-      title: `Опорная отметка оси времени: ${row.label}`,
+      styleLabel: row.year <= 1918 ? 'н. ст.' : undefined,
+      styleTone: row.year <= 1918 ? 'gregorian' : undefined,
+      title:
+        row.year <= 1918
+          ? `Опорная отметка единой шкалы (н. ст.): ${row.label}`
+          : `Опорная отметка оси времени: ${row.label}`,
     };
   }
 
@@ -437,18 +913,30 @@ export function formatAxisGutterDate(
         title: `Правление ${row.rulerObj.shortRuler} началось в ${row.rulerObj.startYear} г. (до начала окна)`,
       };
     }
-    const parts = parsePreciseDate(row.rulerObj.startDate, row.rulerObj.startYear, false);
+    const parts = parsePreciseDate(row.rulerObj.startDate, row.rulerObj.startYear, false, {
+      calendarStyle: row.rulerObj.calendarStyle,
+      task: 'MAIN_RULERS',
+    });
+    const styleInfo = buildGutterStyleInfo(parts, resolution);
     return {
       label: formatCompactAxisDate(parts, resolution),
-      title: `Начало правления (${row.rulerObj.shortRuler}): ${formatDateForResolution(parts, resolution)}`,
+      styleLabel: styleInfo.styleLabel,
+      styleTone: styleInfo.styleTone,
+      title: `Начало правления (${row.rulerObj.shortRuler}): ${styleInfo.detailText}`,
     };
   }
 
   if (row.rowType === 'RULER_END') {
-    const parts = parsePreciseDate(row.rulerObj.endDate, row.rulerObj.endYear, true);
+    const parts = parsePreciseDate(row.rulerObj.endDate, row.rulerObj.endYear, true, {
+      calendarStyle: row.rulerObj.calendarStyle,
+      task: 'MAIN_RULERS',
+    });
+    const styleInfo = buildGutterStyleInfo(parts, resolution);
     return {
       label: formatCompactAxisDate(parts, resolution),
-      title: `Завершение правления (${row.rulerObj.shortRuler}): ${formatDateForResolution(parts, resolution)}`,
+      styleLabel: styleInfo.styleLabel,
+      styleTone: styleInfo.styleTone,
+      title: `Завершение правления (${row.rulerObj.shortRuler}): ${styleInfo.detailText}`,
     };
   }
 
@@ -473,29 +961,35 @@ export function formatAxisGutterDate(
       };
     }
     const parts = row.eventObj.startPrecision;
+    const styleInfo = buildGutterStyleInfo(parts, resolution);
     const approxNote =
       parts.precision === 'year' && resolution !== 'year' ? ' (в источнике указан только год)' : '';
     return {
       label: formatCompactAxisDate(parts, resolution),
-      title: `${row.isAtomicInView ? 'Событие' : 'Начало процесса'}: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
+      styleLabel: styleInfo.styleLabel,
+      styleTone: styleInfo.styleTone,
+      title: `${row.isAtomicInView ? 'Событие' : 'Начало процесса'}: ${styleInfo.detailText}${approxNote} — ${row.eventObj.title}`,
     };
   }
 
   // EVENT_END
   const parts = row.eventObj.endPrecision;
+  const styleInfo = buildGutterStyleInfo(parts, resolution);
   const approxNote =
     parts.precision === 'year' && resolution !== 'year' ? ' (в источнике указан только год)' : '';
   const isBioEnd = isBiographyNode(row.eventObj);
   const isWar = row.eventObj.task.startsWith('WAR_');
   return {
     label: formatCompactAxisDate(parts, resolution),
+    styleLabel: styleInfo.styleLabel,
+    styleTone: styleInfo.styleTone,
     title: `${
       isBioEnd
         ? 'Завершение жизненного и творческого пути'
         : isWar
           ? 'Окончание кампании'
           : 'Завершение процесса'
-    }: ${formatDateForResolution(parts, resolution)}${approxNote} — ${row.eventObj.title}`,
+    }: ${styleInfo.detailText}${approxNote} — ${row.eventObj.title}`,
   };
 }
 
@@ -753,6 +1247,10 @@ function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode
         : undefined,
     startDate: typeof raw.startDate === 'string' ? raw.startDate.trim() : undefined,
     endDate: typeof raw.endDate === 'string' ? raw.endDate.trim() : undefined,
+    calendarStyle:
+      raw.calendarStyle === 'julian' || raw.calendarStyle === 'gregorian' || raw.calendarStyle === 'both'
+        ? raw.calendarStyle
+        : undefined,
     isAtomic: raw.isAtomic === true ? true : undefined,
     period,
     title,
@@ -809,6 +1307,10 @@ function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
     endYear: Math.max(startYear, endYear),
     startDate: typeof raw.startDate === 'string' ? raw.startDate.trim() : undefined,
     endDate: typeof raw.endDate === 'string' ? raw.endDate.trim() : undefined,
+    calendarStyle:
+      raw.calendarStyle === 'julian' || raw.calendarStyle === 'gregorian' || raw.calendarStyle === 'both'
+        ? raw.calendarStyle
+        : undefined,
     reignTitle: typeof raw.reignTitle === 'string' ? raw.reignTitle : ruler,
     reignThesis: typeof raw.reignThesis === 'string' ? raw.reignThesis : '',
   };
@@ -1130,8 +1632,14 @@ export function getEnrichedEvents(
 
       const startYear = parsed.startYear;
       const endYear = Math.max(startYear, parsed.endYear);
-      const startPrecision = parsePreciseDate(ev.startDate, startYear, false);
-      const endPrecision = parsePreciseDate(ev.endDate, endYear, true);
+      const startPrecision = parsePreciseDate(ev.startDate, startYear, false, {
+        calendarStyle: ev.calendarStyle,
+        task: ev.task,
+      });
+      const endPrecision = parsePreciseDate(ev.endDate, endYear, true, {
+        calendarStyle: ev.calendarStyle,
+        task: ev.task,
+      });
       const duration = endYear - startYear;
       const isAtomic = ev.isAtomic === true || (startYear === endYear && startPrecision.sortKey === endPrecision.sortKey);
 
@@ -2403,8 +2911,14 @@ export function buildUnifiedTimelineStream(
     const rulerColor =
       rulerStreamLayout.colorByRulerId.get(rulerObj.id) ??
       RULER_ALT_COLORS[rIdx % RULER_ALT_COLORS.length];
-    const startParts = parsePreciseDate(rulerObj.startDate, rulerObj.startYear, false);
-    const endParts = parsePreciseDate(rulerObj.endDate, rulerObj.endYear, true);
+    const startParts = parsePreciseDate(rulerObj.startDate, rulerObj.startYear, false, {
+      calendarStyle: rulerObj.calendarStyle,
+      task: 'MAIN_RULERS',
+    });
+    const endParts = parsePreciseDate(rulerObj.endDate, rulerObj.endYear, true, {
+      calendarStyle: rulerObj.calendarStyle,
+      task: 'MAIN_RULERS',
+    });
 
     const startedBeforeWindow = !focusTarget && rulerObj.startYear < effectiveYearFrom;
     const displayYear = startedBeforeWindow ? effectiveYearFrom : rulerObj.startYear;
@@ -2876,8 +3390,14 @@ export function computeRulerSubLaneLayout(
     .map((r, idx) => ({
       ruler: r,
       idx,
-      startKey: parsePreciseDate(r.startDate, r.startYear, false).sortKey,
-      endKey: parsePreciseDate(r.endDate, r.endYear, true).sortKey,
+      startKey: parsePreciseDate(r.startDate, r.startYear, false, {
+        calendarStyle: r.calendarStyle,
+        task: 'MAIN_RULERS',
+      }).sortKey,
+      endKey: parsePreciseDate(r.endDate, r.endYear, true, {
+        calendarStyle: r.calendarStyle,
+        task: 'MAIN_RULERS',
+      }).sortKey,
     }))
     .sort((a, b) => {
       if (a.startKey !== b.startKey) return a.startKey - b.startKey;

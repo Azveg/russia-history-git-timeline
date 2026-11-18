@@ -24,7 +24,9 @@ import {
   computeRulerSubLaneLayout,
   findMacroEraForYear,
   formatAxisGutterDate,
+  formatCalendarDetailBadge,
   formatEventTitleWithPeriod,
+  getCalendarStyleAxisMarker,
   getDirectChildBranches,
   getEventEffectiveEndYear,
   getEventEffectiveStartYear,
@@ -372,8 +374,14 @@ export function GitTimeline({
   const rulerSortBounds = useMemo(() => {
     const map = new Map<string, { startKey: number; endKey: number }>();
     matchingRulers.forEach((r) => {
-      const startParts = parsePreciseDate(r.startDate, r.startYear, false);
-      const endParts = parsePreciseDate(r.endDate, r.endYear, true);
+      const startParts = parsePreciseDate(r.startDate, r.startYear, false, {
+        calendarStyle: r.calendarStyle,
+        task: 'MAIN_RULERS',
+      });
+      const endParts = parsePreciseDate(r.endDate, r.endYear, true, {
+        calendarStyle: r.calendarStyle,
+        task: 'MAIN_RULERS',
+      });
       map.set(r.id, { startKey: startParts.sortKey, endKey: endParts.sortKey });
     });
     return map;
@@ -444,9 +452,9 @@ export function GitTimeline({
 
   const gutterWidthClass =
     axisResolution === 'day'
-      ? 'w-[92px] sm:w-[104px]'
+      ? 'w-[100px] sm:w-[116px]'
       : axisResolution === 'month'
-        ? 'w-[74px] sm:w-[86px]'
+        ? 'w-[80px] sm:w-[96px]'
         : 'w-[56px] sm:w-[68px]';
 
   const gutterMeta = useMemo(() => {
@@ -826,6 +834,19 @@ export function GitTimeline({
             <span className="hidden md:inline text-slate-300">
               Масштаб оси: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
             </span>
+            {axisResolution !== 'year' && yearFrom <= 1918 && (
+              <>
+                <span aria-hidden="true" className="hidden lg:inline text-slate-600">
+                  ·
+                </span>
+                <span
+                  className="hidden lg:inline text-amber-300/90 tabular-nums"
+                  title="До 14 февраля 1918 года события старого (юлианского) стиля сдвинуты на единую григорианскую шкалу (+10…+13 дн.) для точного сопоставления с Европой"
+                >
+                  единая шкала: н. ст.
+                </span>
+              </>
+            )}
             <span aria-hidden="true" className="hidden md:inline text-slate-600">
               ·
             </span>
@@ -1250,11 +1271,14 @@ export function GitTimeline({
               >
                 <div
                   title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/40 px-2 sm:px-2.5 py-1 flex items-center justify-end font-mono text-[10px] tabular-nums whitespace-nowrap select-none ${
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/40 px-2 sm:px-2.5 py-1 flex flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none ${
                     gutter.isDuplicate ? 'text-slate-600' : 'text-slate-400'
                   }`}
                 >
-                  {gutter.label}
+                  <span>{gutter.label}</span>
+                  {gutter.styleLabel && (
+                    <span className="text-[9px] text-sky-400/75 font-normal">{gutter.styleLabel}</span>
+                  )}
                 </div>
 
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
@@ -1312,13 +1336,22 @@ export function GitTimeline({
               >
                 <div
                   title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/40 px-2 sm:px-2.5 pt-[24px] pb-2 flex items-start justify-end font-mono text-[11px] font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/40 px-2 sm:px-2.5 pt-[24px] pb-2 flex flex-col items-end justify-start font-mono text-[11px] leading-tight font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
                     gutter.isDuplicate
                       ? 'text-amber-300/45 group-hover:text-amber-200'
                       : 'text-amber-200 group-hover:text-amber-100'
                   }`}
                 >
-                  {gutter.label}
+                  <span>{gutter.label}</span>
+                  {gutter.styleLabel && (
+                    <span
+                      className={`text-[9px] font-normal mt-0.5 ${
+                        gutter.styleTone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/75'
+                      }`}
+                    >
+                      {gutter.styleLabel}
+                    </span>
+                  )}
                 </div>
 
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
@@ -1381,6 +1414,25 @@ export function GitTimeline({
                         <Crown className="w-3.5 h-3.5" />
                         {item.dateLabel}
                       </span>
+                      {axisResolution !== 'year' &&
+                        !item.startedBeforeWindow &&
+                        (() => {
+                          const marker = getCalendarStyleAxisMarker(
+                            parsePreciseDate(r.startDate, r.startYear, false, {
+                              calendarStyle: r.calendarStyle,
+                              task: 'MAIN_RULERS',
+                            }),
+                          );
+                          return marker ? (
+                            <span
+                              className={`text-[10px] font-mono shrink-0 ${
+                                marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
+                              }`}
+                            >
+                              {marker.label}
+                            </span>
+                          ) : null;
+                        })()}
                       {r.center && (
                         <span
                           className="px-1.5 py-0.5 rounded bg-slate-950/90 border border-slate-700/80 text-[10px] font-mono font-semibold shrink-0"
@@ -1461,16 +1513,27 @@ export function GitTimeline({
               >
                 <div
                   title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/30 px-2 sm:px-2.5 py-2 flex items-center justify-end gap-1 font-mono text-[10px] tabular-nums whitespace-nowrap select-none transition-colors ${
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/30 px-2 sm:px-2.5 py-2 flex flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
                     gutter.isDuplicate
                       ? 'text-slate-600 group-hover:text-slate-300'
                       : 'text-slate-400 group-hover:text-slate-200'
                   }`}
                 >
-                  <span aria-hidden="true" className="text-[9px] text-slate-600 group-hover:text-slate-400">
-                    ↵
+                  <span className="inline-flex items-center gap-1">
+                    <span aria-hidden="true" className="text-[9px] text-slate-600 group-hover:text-slate-400">
+                      ↵
+                    </span>
+                    <span>{gutter.label}</span>
                   </span>
-                  <span>{gutter.label}</span>
+                  {gutter.styleLabel && (
+                    <span
+                      className={`text-[9px] font-normal ${
+                        gutter.styleTone === 'gregorian' ? 'text-sky-300/75' : 'text-amber-300/75'
+                      }`}
+                    >
+                      {gutter.styleLabel}
+                    </span>
+                  )}
                 </div>
 
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
@@ -1643,8 +1706,8 @@ export function GitTimeline({
                 <div
                   title={gutter.title}
                   className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/35 px-2 sm:px-2.5 ${
-                    isCompact ? 'py-1 flex items-center' : 'pt-[25px] pb-2 flex items-start'
-                  } justify-end font-mono text-[11px] font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
+                    isCompact ? 'py-1 flex flex-col items-end justify-center' : 'pt-[25px] pb-2 flex flex-col items-end justify-start'
+                  } font-mono text-[11px] leading-tight font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
                     isSelfHovered || isFocusedTarget
                       ? 'text-white'
                       : gutter.isDuplicate
@@ -1652,7 +1715,16 @@ export function GitTimeline({
                         : 'text-slate-200 group-hover:text-white'
                   }`}
                 >
-                  {gutter.label}
+                  <span>{gutter.label}</span>
+                  {gutter.styleLabel && (
+                    <span
+                      className={`text-[9px] font-normal ${
+                        gutter.styleTone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/80'
+                      }`}
+                    >
+                      {gutter.styleLabel}
+                    </span>
+                  )}
                 </div>
 
                 <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
@@ -1819,6 +1891,22 @@ export function GitTimeline({
                               ? ev.period
                               : item.dateLabel}
                         </span>
+                        {axisResolution !== 'year' &&
+                          !isBioNode &&
+                          !item.startedBeforeWindow &&
+                          (() => {
+                            const marker = getCalendarStyleAxisMarker(ev.startPrecision);
+                            return marker ? (
+                              <span
+                                className={`hidden sm:inline font-mono text-[10px] shrink-0 ${
+                                  marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
+                                }`}
+                                title={gutter.title}
+                              >
+                                {marker.label}
+                              </span>
+                            ) : null;
+                          })()}
                         <span aria-hidden="true" className="text-slate-600 shrink-0">
                           ·
                         </span>
@@ -1907,6 +1995,22 @@ export function GitTimeline({
                                 ? ev.period
                                 : item.dateLabel}
                           </span>
+                          {axisResolution !== 'year' &&
+                            !isBioNode &&
+                            !item.startedBeforeWindow &&
+                            (() => {
+                              const marker = getCalendarStyleAxisMarker(ev.startPrecision);
+                              return marker ? (
+                                <span
+                                  className={`font-mono text-[10px] shrink-0 whitespace-nowrap ${
+                                    marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
+                                  }`}
+                                  title={gutter.title}
+                                >
+                                  {marker.label}
+                                </span>
+                              ) : null;
+                            })()}
                           <span aria-hidden="true" className="text-slate-600 shrink-0">
                             ·
                           </span>
@@ -2104,7 +2208,7 @@ export function GitTimeline({
             >
               <div
                 title={gutter.title}
-                className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/25 px-2 sm:px-2.5 py-2 flex items-center justify-end gap-1 font-mono text-[10px] tabular-nums whitespace-nowrap select-none transition-colors ${
+                className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/25 px-2 sm:px-2.5 py-2 flex flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
                   isEndSelfHovered
                     ? 'text-slate-100'
                     : gutter.isDuplicate
@@ -2112,10 +2216,21 @@ export function GitTimeline({
                       : 'text-slate-400 group-hover:text-slate-200'
                 }`}
               >
-                <span aria-hidden="true" className="text-[9px] text-slate-600 group-hover:text-slate-400">
-                  ↵
+                <span className="inline-flex items-center gap-1">
+                  <span aria-hidden="true" className="text-[9px] text-slate-600 group-hover:text-slate-400">
+                    ↵
+                  </span>
+                  <span>{gutter.label}</span>
                 </span>
-                <span>{gutter.label}</span>
+                {gutter.styleLabel && (
+                  <span
+                    className={`text-[9px] font-normal ${
+                      gutter.styleTone === 'gregorian' ? 'text-sky-300/75' : 'text-amber-300/75'
+                    }`}
+                  >
+                    {gutter.styleLabel}
+                  </span>
+                )}
               </div>
 
               <div className="shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
@@ -2166,6 +2281,19 @@ export function GitTimeline({
                     <span className="font-mono font-bold tabular-nums shrink-0" style={{ color: branchObj.color }}>
                       {item.dateLabel}
                     </span>
+                    {axisResolution !== 'year' &&
+                      (() => {
+                        const marker = getCalendarStyleAxisMarker(ev.endPrecision);
+                        return marker ? (
+                          <span
+                            className={`font-mono text-[10px] shrink-0 whitespace-nowrap ${
+                              marker.tone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/80'
+                            }`}
+                          >
+                            {marker.label}
+                          </span>
+                        ) : null;
+                      })()}
                     <span className="text-slate-400 font-mono shrink-0 hidden sm:inline">
                       {isBiographyNode(ev, branches)
                         ? 'Завершение жизненного и творческого пути:'
@@ -2232,6 +2360,23 @@ export function GitTimeline({
           <div className="mt-1.5 text-sm font-bold text-white leading-snug">
             {hoveredCardTooltip.ev.title}
           </div>
+
+          {hoveredCardTooltip.ev.startPrecision.precision !== 'year' &&
+            (() => {
+              const cal = formatCalendarDetailBadge(hoveredCardTooltip.ev.startPrecision);
+              return (
+                <div className="mt-1 text-[11px] font-mono tabular-nums text-slate-300 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span className={cal.tone === 'gregorian' ? 'text-sky-300' : 'text-amber-300'}>
+                    {cal.primaryText}
+                  </span>
+                  <span className="text-slate-400">· {cal.styleLabel}</span>
+                  {cal.counterpartText && (
+                    <span className="text-slate-300">/ {cal.counterpartText}</span>
+                  )}
+                  {cal.offsetNote && <span className="text-slate-500">({cal.offsetNote})</span>}
+                </div>
+              );
+            })()}
 
           <p className="mt-1 text-xs text-slate-200 leading-relaxed">
             {hoveredCardTooltip.ev.subtitle}
