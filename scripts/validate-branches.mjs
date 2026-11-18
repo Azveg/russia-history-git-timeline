@@ -21,7 +21,8 @@ const VALID_LINK_TYPES = new Set([
 ]);
 const VALID_CALENDAR_STYLES = new Set(['julian', 'gregorian', 'both']);
 const DATE_REGEX = /^\d{3,4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
-const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{3,8}$/;
+const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
+const SAFE_BADGE_CLASS_REGEX = /^[a-zA-Z0-9_\-\s/:.%]+$/;
 const TAG_FORMAT_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function isDateInDualCalendarWindow(rawDate) {
@@ -197,7 +198,14 @@ function main() {
       }
 
       if (typeof br.color === 'string' && br.color.trim() && !HEX_COLOR_REGEX.test(br.color.trim())) {
-        addWarning(relFromPublic, `Ветка "${id}": цвет "${br.color}" лучше задавать в HEX-формате (#RRGGBB).`);
+        addError(relFromPublic, `Ветка "${id}": недопустимый цвет "${br.color}" — требуется строгий 6-значный HEX-формат (#RRGGBB).`);
+      }
+
+      if (
+        br.badgeClass !== undefined &&
+        (typeof br.badgeClass !== 'string' || !br.badgeClass.trim() || !SAFE_BADGE_CLASS_REGEX.test(br.badgeClass.trim()))
+      ) {
+        addError(relFromPublic, `Ветка "${id}": поле "badgeClass" содержит недопустимые символы.`);
       }
 
       if (br.category !== undefined && !VALID_CATEGORIES.has(br.category)) {

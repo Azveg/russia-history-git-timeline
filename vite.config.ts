@@ -206,7 +206,7 @@ export default defineConfig(() => {
             if (id.includes('node_modules/lucide-react/')) {
               return 'icons-vendor';
             }
-            if (id.includes('/src/engine/timelineEngine')) {
+            if (id.includes('/src/engine/')) {
               return 'timeline-engine';
             }
             return undefined;

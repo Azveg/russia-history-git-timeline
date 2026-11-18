@@ -66,6 +66,15 @@ import type {
   YearRangeStep,
 } from './types/timeline';
 
+type ActiveModalState =
+  | { type: 'NONE' }
+  | { type: 'CARD'; cardId: string }
+  | { type: 'REIGN'; rulerId: string }
+  | { type: 'ERA'; eraId: string }
+  | { type: 'PERSON'; personKey: string }
+  | { type: 'WINDOW'; from: number; to: number }
+  | { type: 'COMPARE'; pair: { left: ComparisonTarget; right: ComparisonTarget } };
+
 export default function App() {
   const [manifest, setManifest] = useState<SyncManifest | null>(null);
   const [filesMap, setFilesMap] = useState<Record<string, TimelineDataFile>>({});
@@ -101,15 +110,7 @@ export default function App() {
   const [forceShowHiddenLinks, setForceShowHiddenLinks] = useState(false);
   const [dismissedHiddenLinks, setDismissedHiddenLinks] = useState(false);
 
-  const [activeCardId, setActiveCardId] = useState<string | null>(null);
-  const [activePeriodId, setActivePeriodId] = useState<string | null>(null);
-  const [activeEraModalId, setActiveEraModalId] = useState<string | null>(null);
-  const [activePersonKey, setActivePersonKey] = useState<string | null>(null);
-  const [activeWindowRange, setActiveWindowRange] = useState<{ from: number; to: number } | null>(null);
-  const [activeComparePair, setActiveComparePair] = useState<{
-    left: ComparisonTarget;
-    right: ComparisonTarget;
-  } | null>(null);
+  const [activeModal, setActiveModal] = useState<ActiveModalState>({ type: 'NONE' });
   const [modalHistory, setModalHistory] = useState<ModalHistoryItem[]>([]);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -150,26 +151,14 @@ export default function App() {
   }, [highlightedJumpId]);
 
   const handleCloseAllModals = useCallback(() => {
-    setActiveCardId(null);
-    setActivePeriodId(null);
-    setActiveEraModalId(null);
-    setActivePersonKey(null);
-    setActiveWindowRange(null);
-    setActiveComparePair(null);
+    setActiveModal({ type: 'NONE' });
     setModalHistory([]);
   }, []);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === 'Escape') {
-        if (
-          activeCardId ||
-          activePeriodId ||
-          activeEraModalId ||
-          activePersonKey ||
-          activeWindowRange ||
-          activeComparePair
-        ) {
+        if (activeModal.type !== 'NONE') {
           handleCloseAllModals();
         } else if (focusedEventId) {
           setFocusedEventId(null);
@@ -178,16 +167,7 @@ export default function App() {
     }
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    activeCardId,
-    activePeriodId,
-    activeEraModalId,
-    activePersonKey,
-    activeWindowRange,
-    activeComparePair,
-    focusedEventId,
-    handleCloseAllModals,
-  ]);
+  }, [activeModal.type, focusedEventId, handleCloseAllModals]);
 
   const branches = useMemo(() => {
     if (!manifest) return [];
@@ -269,14 +249,14 @@ export default function App() {
     if (focusedEventId && !enrichedEvents.some((e) => e.id === focusedEventId)) {
       setFocusedEventId(null);
     }
-    if (activeCardId && !enrichedEvents.some((e) => e.id === activeCardId)) {
-      setActiveCardId(null);
+    if (activeModal.type === 'CARD' && !enrichedEvents.some((e) => e.id === activeModal.cardId)) {
+      setActiveModal({ type: 'NONE' });
     }
-    if (activePeriodId && !rulers.some((r) => r.id === activePeriodId)) {
-      setActivePeriodId(null);
+    if (activeModal.type === 'REIGN' && !rulers.some((r) => r.id === activeModal.rulerId)) {
+      setActiveModal({ type: 'NONE' });
     }
-    if (activePersonKey && !personDossiers.has(activePersonKey)) {
-      setActivePersonKey(null);
+    if (activeModal.type === 'PERSON' && !personDossiers.has(activeModal.personKey)) {
+      setActiveModal({ type: 'NONE' });
     }
     if (selectedPersonKey && !personDossiers.has(selectedPersonKey)) {
       setSelectedPersonKey(null);
@@ -288,9 +268,7 @@ export default function App() {
     personDossiers,
     selectedReign,
     focusedEventId,
-    activeCardId,
-    activePeriodId,
-    activePersonKey,
+    activeModal,
     selectedPersonKey,
   ]);
 
@@ -443,25 +421,50 @@ export default function App() {
     [manifest],
   );
 
-  // Текущие объекты модальных окон
+  // Текущие объекты модальных окон, вычисленные из единого ActiveModalState
   const activeCardObj = useMemo(
-    () => (activeCardId ? enrichedEvents.find((e) => e.id === activeCardId) ?? null : null),
-    [activeCardId, enrichedEvents],
+    () =>
+      activeModal.type === 'CARD'
+        ? (enrichedEvents.find((e) => e.id === activeModal.cardId) ?? null)
+        : null,
+    [activeModal, enrichedEvents],
   );
 
   const activeRulerObj = useMemo(
-    () => (activePeriodId ? rulers.find((r) => r.id === activePeriodId) ?? null : null),
-    [activePeriodId, rulers],
+    () =>
+      activeModal.type === 'REIGN'
+        ? (rulers.find((r) => r.id === activeModal.rulerId) ?? null)
+        : null,
+    [activeModal, rulers],
   );
 
   const activeEraObj = useMemo(
-    () => (activeEraModalId ? manifest?.macroEras.find((e) => e.id === activeEraModalId) ?? null : null),
-    [activeEraModalId, manifest],
+    () =>
+      activeModal.type === 'ERA'
+        ? (manifest?.macroEras.find((e) => e.id === activeModal.eraId) ?? null)
+        : null,
+    [activeModal, manifest],
   );
 
   const activePersonObj = useMemo(
-    () => (activePersonKey ? personDossiers.get(activePersonKey) ?? null : null),
-    [activePersonKey, personDossiers],
+    () =>
+      activeModal.type === 'PERSON'
+        ? (personDossiers.get(activeModal.personKey) ?? null)
+        : null,
+    [activeModal, personDossiers],
+  );
+
+  const activeWindowRange = useMemo(
+    () =>
+      activeModal.type === 'WINDOW'
+        ? { from: activeModal.from, to: activeModal.to }
+        : null,
+    [activeModal],
+  );
+
+  const activeComparePair = useMemo(
+    () => (activeModal.type === 'COMPARE' ? activeModal.pair : null),
+    [activeModal],
   );
 
   // Стек навигации между модальными окнами («← Назад»)
@@ -509,103 +512,40 @@ export default function App() {
     }
   }, [activeCardObj, activeRulerObj, activeEraObj, activePersonObj, activeWindowRange, activeComparePair]);
 
-  const handleOpenCardModal = useCallback(
-    (cardId: string) => {
-      if (cardId === activeCardId) return;
-      if (
-        activeCardId ||
-        activePeriodId ||
-        activeEraModalId ||
-        activePersonKey ||
-        activeWindowRange ||
-        activeComparePair
-      ) {
+  const transitionToModal = useCallback(
+    (nextModal: Exclude<ActiveModalState, { type: 'NONE' }>) => {
+      if (activeModal.type !== 'NONE') {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
       }
-      setActivePeriodId(null);
-      setActiveEraModalId(null);
-      setActivePersonKey(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(null);
-      setActiveCardId(cardId);
+      setActiveModal(nextModal);
     },
-    [
-      activeCardId,
-      activePeriodId,
-      activeEraModalId,
-      activePersonKey,
-      activeWindowRange,
-      activeComparePair,
-      pushCurrentModalToHistory,
-    ],
+    [activeModal.type, pushCurrentModalToHistory],
+  );
+
+  const handleOpenCardModal = useCallback(
+    (cardId: string) => {
+      if (activeModal.type === 'CARD' && activeModal.cardId === cardId) return;
+      transitionToModal({ type: 'CARD', cardId });
+    },
+    [activeModal, transitionToModal],
   );
 
   const handleOpenPeriodModal = useCallback(
     (rulerId: string) => {
-      if (rulerId === activePeriodId) return;
-      if (
-        activeCardId ||
-        activePeriodId ||
-        activeEraModalId ||
-        activePersonKey ||
-        activeWindowRange ||
-        activeComparePair
-      ) {
-        pushCurrentModalToHistory();
-      } else {
-        setModalHistory([]);
-      }
-      setActiveCardId(null);
-      setActiveEraModalId(null);
-      setActivePersonKey(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(null);
-      setActivePeriodId(rulerId);
+      if (activeModal.type === 'REIGN' && activeModal.rulerId === rulerId) return;
+      transitionToModal({ type: 'REIGN', rulerId });
     },
-    [
-      activeCardId,
-      activePeriodId,
-      activeEraModalId,
-      activePersonKey,
-      activeWindowRange,
-      activeComparePair,
-      pushCurrentModalToHistory,
-    ],
+    [activeModal, transitionToModal],
   );
 
   const handleOpenEraModal = useCallback(
     (eraId: string) => {
-      if (eraId === activeEraModalId) return;
-      if (
-        activeCardId ||
-        activePeriodId ||
-        activeEraModalId ||
-        activePersonKey ||
-        activeWindowRange ||
-        activeComparePair
-      ) {
-        pushCurrentModalToHistory();
-      } else {
-        setModalHistory([]);
-      }
-      setActiveCardId(null);
-      setActivePeriodId(null);
-      setActivePersonKey(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(null);
-      setActiveEraModalId(eraId);
+      if (activeModal.type === 'ERA' && activeModal.eraId === eraId) return;
+      transitionToModal({ type: 'ERA', eraId });
     },
-    [
-      activeCardId,
-      activePeriodId,
-      activeEraModalId,
-      activePersonKey,
-      activeWindowRange,
-      activeComparePair,
-      pushCurrentModalToHistory,
-    ],
+    [activeModal, transitionToModal],
   );
 
   const handleOpenPersonModal = useCallback(
@@ -613,106 +553,29 @@ export default function App() {
       const resolvedKey =
         resolvePersonKey(personKeyOrName, personDossiers, personRawToKey) || personKeyOrName;
       if (!personDossiers.has(resolvedKey)) return;
-      if (resolvedKey === activePersonKey) return;
-      if (
-        activeCardId ||
-        activePeriodId ||
-        activeEraModalId ||
-        activePersonKey ||
-        activeWindowRange ||
-        activeComparePair
-      ) {
-        pushCurrentModalToHistory();
-      } else {
-        setModalHistory([]);
-      }
-      setActiveCardId(null);
-      setActivePeriodId(null);
-      setActiveEraModalId(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(null);
-      setActivePersonKey(resolvedKey);
+      if (activeModal.type === 'PERSON' && activeModal.personKey === resolvedKey) return;
+      transitionToModal({ type: 'PERSON', personKey: resolvedKey });
     },
-    [
-      personDossiers,
-      personRawToKey,
-      activeCardId,
-      activePeriodId,
-      activeEraModalId,
-      activePersonKey,
-      activeWindowRange,
-      activeComparePair,
-      pushCurrentModalToHistory,
-    ],
+    [personDossiers, personRawToKey, activeModal, transitionToModal],
   );
 
   const handleOpenWindowModal = useCallback(
     (fromVal: number, toVal: number) => {
       const from = Math.min(fromVal, toVal);
       const to = Math.max(fromVal, toVal);
-      if (activeWindowRange && activeWindowRange.from === from && activeWindowRange.to === to) {
+      if (activeModal.type === 'WINDOW' && activeModal.from === from && activeModal.to === to) {
         return;
       }
-      if (
-        activeCardId ||
-        activePeriodId ||
-        activeEraModalId ||
-        activePersonKey ||
-        activeWindowRange ||
-        activeComparePair
-      ) {
-        pushCurrentModalToHistory();
-      } else {
-        setModalHistory([]);
-      }
-      setActiveCardId(null);
-      setActivePeriodId(null);
-      setActiveEraModalId(null);
-      setActivePersonKey(null);
-      setActiveComparePair(null);
-      setActiveWindowRange({ from, to });
+      transitionToModal({ type: 'WINDOW', from, to });
     },
-    [
-      activeCardId,
-      activePeriodId,
-      activeEraModalId,
-      activePersonKey,
-      activeWindowRange,
-      activeComparePair,
-      pushCurrentModalToHistory,
-    ],
+    [activeModal, transitionToModal],
   );
 
   const handleOpenCompareModal = useCallback(
     (pair: { left: ComparisonTarget; right: ComparisonTarget }) => {
-      if (
-        activeCardId ||
-        activePeriodId ||
-        activeEraModalId ||
-        activePersonKey ||
-        activeWindowRange ||
-        activeComparePair
-      ) {
-        pushCurrentModalToHistory();
-      } else {
-        setModalHistory([]);
-      }
-      setActiveCardId(null);
-      setActivePeriodId(null);
-      setActiveEraModalId(null);
-      setActivePersonKey(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(pair);
+      transitionToModal({ type: 'COMPARE', pair });
     },
-    [
-      activeCardId,
-      activePeriodId,
-      activeEraModalId,
-      activePersonKey,
-      activeWindowRange,
-      activeComparePair,
-      pushCurrentModalToHistory,
-    ],
+    [transitionToModal],
   );
 
   const handleOpenCompareFromHeader = useCallback(() => {
@@ -849,47 +712,21 @@ export default function App() {
     const last = modalHistory[modalHistory.length - 1];
     setModalHistory((prev) => prev.slice(0, -1));
     if (last.type === 'card') {
-      setActivePeriodId(null);
-      setActiveEraModalId(null);
-      setActivePersonKey(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(null);
-      setActiveCardId(last.id);
+      setActiveModal({ type: 'CARD', cardId: last.id });
     } else if (last.type === 'ruler') {
-      setActiveCardId(null);
-      setActiveEraModalId(null);
-      setActivePersonKey(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(null);
-      setActivePeriodId(last.id);
+      setActiveModal({ type: 'REIGN', rulerId: last.id });
     } else if (last.type === 'era') {
-      setActiveCardId(null);
-      setActivePeriodId(null);
-      setActivePersonKey(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(null);
-      setActiveEraModalId(last.id);
+      setActiveModal({ type: 'ERA', eraId: last.id });
     } else if (last.type === 'person') {
-      setActiveCardId(null);
-      setActivePeriodId(null);
-      setActiveEraModalId(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(null);
-      setActivePersonKey(last.id);
+      setActiveModal({ type: 'PERSON', personKey: last.id });
     } else if (last.type === 'window' && last.windowRange) {
-      setActiveCardId(null);
-      setActivePeriodId(null);
-      setActiveEraModalId(null);
-      setActivePersonKey(null);
-      setActiveComparePair(null);
-      setActiveWindowRange(last.windowRange);
+      setActiveModal({
+        type: 'WINDOW',
+        from: last.windowRange.from,
+        to: last.windowRange.to,
+      });
     } else if (last.type === 'compare' && last.comparePair) {
-      setActiveCardId(null);
-      setActivePeriodId(null);
-      setActiveEraModalId(null);
-      setActivePersonKey(null);
-      setActiveWindowRange(null);
-      setActiveComparePair(last.comparePair);
+      setActiveModal({ type: 'COMPARE', pair: last.comparePair });
     }
   }, [modalHistory]);
 
@@ -1919,7 +1756,7 @@ export default function App() {
             currentWindow={{ from: effectiveYearFrom, to: effectiveYearTo }}
             minYear={timelineBounds.minYear}
             maxYear={timelineBounds.maxYear}
-            onUpdatePair={setActiveComparePair}
+            onUpdatePair={(nextPair) => setActiveModal({ type: 'COMPARE', pair: nextPair })}
             onClose={handleCloseAllModals}
             onNavigateBack={handleModalNavigateBack}
             onSelectCard={handleOpenCardModal}
