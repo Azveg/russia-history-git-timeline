@@ -6,6 +6,8 @@ export interface TimelineUrlModalState {
   activeCardId: string | null;
   activeRulerModalId: string | null;
   activePersonModalKey: string | null;
+  activeEraModalId: string | null;
+  activeWindowModalRange: { from: number; to: number } | null;
 }
 
 export interface UseTimelineUrlSyncOptions extends TimelineUrlModalState {
@@ -22,12 +24,26 @@ export interface UseTimelineUrlSyncOptions extends TimelineUrlModalState {
     cardId: string | null;
     rulerId: string | null;
     personKey: string | null;
+    eraId: string | null;
+    windowRange: { from: number; to: number } | null;
   }) => void;
 }
 
 export function parseInitialYearBound(params: URLSearchParams, key: 'from' | 'to', fallback: number): number {
   const raw = Number(params.get(key));
   return Number.isFinite(raw) && raw >= 862 && raw <= 2000 ? raw : fallback;
+}
+
+export function parseWindowRangeParam(raw: string | null): { from: number; to: number } | null {
+  if (!raw) return null;
+  const match = raw.trim().match(/^(\d{3,4})[-–](\d{3,4})$/);
+  if (!match) return null;
+  const from = Number(match[1]);
+  const to = Number(match[2]);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from < 862 || to > 2000 || from > to) {
+    return null;
+  }
+  return { from, to };
 }
 
 export function useTimelineUrlSync({
@@ -37,6 +53,8 @@ export function useTimelineUrlSync({
   activeCardId,
   activeRulerModalId,
   activePersonModalKey,
+  activeEraModalId,
+  activeWindowModalRange,
   activeBranches,
   branches,
   setYearFrom,
@@ -64,6 +82,15 @@ export function useTimelineUrlSync({
 
     if (activePersonModalKey) params.set('person', activePersonModalKey);
     else params.delete('person');
+
+    if (activeEraModalId) params.set('era', activeEraModalId);
+    else params.delete('era');
+
+    if (activeWindowModalRange) {
+      params.set('window', `${activeWindowModalRange.from}-${activeWindowModalRange.to}`);
+    } else {
+      params.delete('window');
+    }
 
     if (branches.length > 0 && Object.keys(activeBranches).length > 0) {
       const overviewMap = computeBranchPresetMap(branches, 'overview');
@@ -94,6 +121,8 @@ export function useTimelineUrlSync({
     activeCardId,
     activeRulerModalId,
     activePersonModalKey,
+    activeEraModalId,
+    activeWindowModalRange,
     activeBranches,
     branches,
   ]);
@@ -109,6 +138,8 @@ export function useTimelineUrlSync({
         cardId: params.get('card'),
         rulerId: params.get('ruler'),
         personKey: params.get('person'),
+        eraId: params.get('era'),
+        windowRange: parseWindowRangeParam(params.get('window')),
       });
 
       if (branches.length > 0) {

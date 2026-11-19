@@ -94,8 +94,11 @@ function isModernGregorianEra(rawDate, style) {
   const m = p.month ?? 1;
   if (m > 2) return true;
   if (m < 2) return false;
+  if (style === 'julian') {
+    return false;
+  }
   if (p.day !== undefined) {
-    return style === 'julian' ? p.day > 1 : p.day >= 14;
+    return p.day >= 14;
   }
   return style === 'gregorian' || style === undefined;
 }
@@ -251,6 +254,47 @@ function validateRecordSources(relFromPublic, entityLabel, record) {
   });
 }
 
+const TRUNCATED_PREREQ_REGEX =
+  /(?:^|[\s(«])(?:им|ст|н|кн|обл|губ|р|о|оз|дер|св|ул|пр|см|ок|тыс|млн|[А-ЯЁ])\.?$/;
+const VALID_ERA_YEAR_ENDING_REGEX = /(?:\d{3,4}\s+г\.|\d{3,4}[–-]\d{3,4}\s+гг\.|[IVX]+\s+в\.|[IVX]+[–-][IVX]+\s+вв\.)$/;
+
+const CORE_SOURCE_REQUIRED_FILES = new Set([
+  'data/rulers.json',
+  'data/wars.json',
+  'data/economics.json',
+  'data/diplomacy.json',
+  'data/world.json',
+]);
+
+function validatePrerequisitesIntegrity(relFromPublic, entityLabel, prerequisites) {
+  const items = Array.isArray(prerequisites)
+    ? prerequisites
+    : typeof prerequisites === 'string'
+      ? [prerequisites]
+      : [];
+  items.forEach((raw, idx) => {
+    if (typeof raw !== 'string') return;
+    const trimmed = raw.trim();
+    if (!trimmed) return;
+    const openParens = (trimmed.match(/\(/g) || []).length;
+    const closeParens = (trimmed.match(/\)/g) || []).length;
+    if (openParens > closeParens) {
+      addWarning(
+        relFromPublic,
+        `${entityLabel}: prerequisites[${idx}] содержит незакрытую скобку («…${trimmed.slice(-28)}»).`,
+      );
+      return;
+    }
+    if (VALID_ERA_YEAR_ENDING_REGEX.test(trimmed)) return;
+    if (TRUNCATED_PREREQ_REGEX.test(trimmed)) {
+      addWarning(
+        relFromPublic,
+        `${entityLabel}: prerequisites[${idx}] выглядит оборванным на сокращении или инициале («…${trimmed.slice(-28)}»).`,
+      );
+    }
+  });
+}
+
 const errors = [];
 const warnings = [];
 const styleNotes = [];
@@ -391,6 +435,17 @@ function main() {
   const collectedLinks = [];
   const collectedNodes = [];
   const syncTagsSet = new Set();
+  const sourcesStats = { total: 0, withSources: 0, byFile: new Map() };
+
+  const trackSourceCoverage = (relFromPublic, record) => {
+    sourcesStats.total += 1;
+    const hasSources = Array.isArray(record.sources) && record.sources.length > 0;
+    if (hasSources) sourcesStats.withSources += 1;
+    const entry = sourcesStats.byFile.get(relFromPublic) || { total: 0, withSources: 0 };
+    entry.total += 1;
+    if (hasSources) entry.withSources += 1;
+    sourcesStats.byFile.set(relFromPublic, entry);
+  };
 
   for (const { fullPath, relFromPublic } of moduleFiles) {
     let parsed;
@@ -535,6 +590,7 @@ function main() {
 
         validateRecordCalendarConsistency(relFromPublic, `Правитель "${rId}"`, r, r.startYear, r.endYear);
         validateRecordSources(relFromPublic, `Правитель "${rId}"`, r);
+        trackSourceCoverage(relFromPublic, r);
         auditRecordAcademicStyle(relFromPublic, `Правитель "${rId}"`, r, true);
 
         if (r.center !== undefined && (typeof r.center !== 'string' || !r.center.trim())) {
@@ -592,6 +648,7 @@ function main() {
 
         validateRecordCalendarConsistency(relFromPublic, `Узел "${nId}"`, node, startYear, endYear);
         validateRecordSources(relFromPublic, `Узел "${nId}"`, node);
+        trackSourceCoverage(relFromPublic, node);
         auditRecordAcademicStyle(relFromPublic, `Узел "${nId}"`, node, false);
 
         if (node.prerequisites !== undefined) {
@@ -604,6 +661,8 @@ function main() {
               relFromPublic,
               `Узел "${nId}": поле "prerequisites" должно быть непустой строкой или массивом непустых строк.`,
             );
+          } else {
+            validatePrerequisitesIntegrity(relFromPublic, `Узел "${nId}"`, node.prerequisites);
           }
         }
 
@@ -884,11 +943,31 @@ function main() {
     }
   }
 
+  // Проверка покрытия библиографическим аппаратом (sources)
+  for (const coreFile of CORE_SOURCE_REQUIRED_FILES) {
+    const st = sourcesStats.byFile.get(coreFile);
+    if (st && st.withSources < st.total) {
+      addWarning(
+        coreFile,
+        `Неполное библиографическое покрытие (sources): ${st.withSources}/${st.total} (для опорных веток требуется 100%).`,
+      );
+    }
+  }
+  const totalSourcesPct =
+    sourcesStats.total > 0 ? Math.round((sourcesStats.withSources / sourcesStats.total) * 1000) / 10 : 100;
+  if (totalSourcesPct < 85) {
+    addWarning(
+      'public/data',
+      `Общее покрытие записей источниками (sources) составляет ${totalSourcesPct}% (${sourcesStats.withSources}/${sourcesStats.total}), ниже целевого порога 85%.`,
+    );
+  }
+
   console.log('=== Проверка модульных JSON-веток таймлайна ===');
   console.log(`Файлов проверено: ${moduleFiles.length}`);
   console.log(`Веток объявлено:  ${allBranchesById.size}`);
   console.log(`Событий (nodes):  ${allNodesById.size}`);
   console.log(`Правителей:       ${allRulersById.size}`);
+  console.log(`Библиография:     ${sourcesStats.withSources}/${sourcesStats.total} (${totalSourcesPct}%)`);
   console.log(`Активных тегов:   ${syncTagsSet.size > 0 ? Array.from(syncTagsSet).sort().join(', ') : 'нет'}`);
   console.log(`Ошибок: ${errors.length} | Предупреждений: ${warnings.length} | Стилистических замечаний (мягкий аудит): ${styleNotes.length}`);
 

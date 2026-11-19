@@ -89,12 +89,7 @@ export function AcademicCitationPanel({
     }
   };
 
-  const paramDisplay =
-    target.kind === 'card'
-      ? `?card=${target.id}`
-      : target.kind === 'ruler'
-        ? `?ruler=${target.id}`
-        : `?person=${target.id}`;
+  const paramDisplay = `?${target.kind}=${target.id}`;
 
   return (
     <section

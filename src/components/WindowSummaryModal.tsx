@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { AcademicCitationPanel, CiteTriggerButton } from './AcademicCitationBar';
 import { DossierModalHeader } from './DossierModalHeader';
 import {
   formatEventTitleWithPeriod,
@@ -82,6 +83,7 @@ export function WindowSummaryModal({
   const [selectedBranchPairKey, setSelectedBranchPairKey] = useState<string | null>(null);
   const [showAllCrossLinks, setShowAllCrossLinks] = useState(false);
   const [eventsSortMode, setEventsSortMode] = useState<EventsSortMode>('chronological');
+  const [showCitationPanel, setShowCitationPanel] = useState(false);
 
   useEffect(() => {
     setRoleFilter('all');
@@ -90,6 +92,7 @@ export function WindowSummaryModal({
     setSelectedBranchPairKey(null);
     setShowAllCrossLinks(false);
     setEventsSortMode('chronological');
+    setShowCitationPanel(false);
   }, [windowRange?.from, windowRange?.to]);
 
   const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
@@ -235,32 +238,34 @@ export function WindowSummaryModal({
             </>
           }
           actions={
-            onCompareWithWindow || (hiddenActiveBranches.length > 0 && onRevealBranches) ? (
-              <>
-                {onCompareWithWindow && (
-                  <button
-                    type="button"
-                    onClick={() => onCompareWithWindow(yearFrom, yearTo)}
-                    className="h-8 px-3 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
-                    title="Сравнить выбранный интервал лет с другим периодом или правлением"
-                  >
-                    <GitCompareArrows className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                    <span>Сравнить с…</span>
-                  </button>
-                )}
-                {hiddenActiveBranches.length > 0 && onRevealBranches && (
-                  <button
-                    type="button"
-                    onClick={() => onRevealBranches(hiddenActiveBranches.map((b) => b.id))}
-                    className="h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors duration-150 cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
-                    title="Включить на основной ленте все ветки, в которых есть события этого окна"
-                  >
-                    <Eye className="w-3.5 h-3.5 shrink-0" />
-                    <span>Показать скрытые ветки ({hiddenActiveBranches.length})</span>
-                  </button>
-                )}
-              </>
-            ) : undefined
+            <>
+              <CiteTriggerButton
+                isOpen={showCitationPanel}
+                onToggle={() => setShowCitationPanel((prev) => !prev)}
+              />
+              {onCompareWithWindow && (
+                <button
+                  type="button"
+                  onClick={() => onCompareWithWindow(yearFrom, yearTo)}
+                  className="h-8 px-3 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
+                  title="Сравнить выбранный интервал лет с другим периодом или правлением"
+                >
+                  <GitCompareArrows className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>Сравнить с…</span>
+                </button>
+              )}
+              {hiddenActiveBranches.length > 0 && onRevealBranches && (
+                <button
+                  type="button"
+                  onClick={() => onRevealBranches(hiddenActiveBranches.map((b) => b.id))}
+                  className="h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors duration-150 cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                  title="Включить на основной ленте все ветки, в которых есть события этого окна"
+                >
+                  <Eye className="w-3.5 h-3.5 shrink-0" />
+                  <span>Показать скрытые ветки ({hiddenActiveBranches.length})</span>
+                </button>
+              )}
+            </>
           }
         />
 
@@ -274,6 +279,19 @@ export function WindowSummaryModal({
             >
               Сводный срез периода {yearFrom}–{yearTo} гг.
             </h3>
+
+            {showCitationPanel && (
+              <AcademicCitationPanel
+                target={{
+                  kind: 'window',
+                  id: `${yearFrom}-${yearTo}`,
+                  title: `Сводный срез периода ${yearFrom}–${yearTo} гг.`,
+                  period: `${yearFrom}–${yearTo}`,
+                  sectionLabel: 'Досье произвольного окна',
+                }}
+                onClose={() => setShowCitationPanel(false)}
+              />
+            )}
 
             {overlappingEras.length > 0 && (
               <div className="flex flex-wrap items-center gap-2 text-xs font-mono text-slate-300">

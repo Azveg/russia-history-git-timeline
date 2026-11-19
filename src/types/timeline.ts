@@ -353,6 +353,20 @@ export type StreamRow =
 
 export type CardDensity = 'detailed' | 'compact';
 
+export type TimeScaleMode = 'compact' | 'proportional';
+
+export type MacroRegionId =
+  | 'all'
+  | 'rus_center'
+  | 'rus_north_west'
+  | 'rus_south_caucasus'
+  | 'rus_volga_ural'
+  | 'rus_siberia_fareast'
+  | 'europe'
+  | 'asia_east'
+  | 'middle_east_africa'
+  | 'americas_global';
+
 export type FocusScope = 'sync_only' | 'sync_and_concurrent';
 
 export type FocusDepth = 1 | 2 | 3;
@@ -395,6 +409,7 @@ export interface FilterState {
   selectedPersonKey?: string | null;
   selectedPersonEventIds?: Set<string> | null;
   selectedSyncTag?: string | null;
+  selectedMacroRegion?: MacroRegionId;
   branchPairFilter?: BranchPairFilter | null;
   auditUnlinkedMode?: boolean;
   onlyWithSyncLinks: boolean;

@@ -44,6 +44,7 @@ import {
   isEventBranchActive,
 } from './layout/subLaneLayout';
 import { doesRawMatchPersonKey, extractPreliminaryPersonKey } from './nlp/personExtractor';
+import { doesEventMatchMacroRegion } from './regionFilter';
 import {
   collectBranchesFromDataFile,
   isBranchFile,
@@ -59,6 +60,7 @@ export * from './nlp/personExtractor';
 export * from './repository/timelineRepository';
 export * from './layout/subLaneLayout';
 export * from './analytics/periodAnalytics';
+export * from './regionFilter';
 
 export function getEnrichedEvents(
   manifest: SyncManifest,
@@ -838,6 +840,10 @@ export function buildUnifiedTimelineStream(
           ...(ev.referenceTags || []),
         ].map((t) => t.trim().toLowerCase());
         if (!nodeTags.includes(selectedTagNorm)) return false;
+      }
+
+      if (filters.selectedMacroRegion && filters.selectedMacroRegion !== 'all') {
+        if (!doesEventMatchMacroRegion(ev, filters.selectedMacroRegion)) return false;
       }
 
       if (requireLinkMatch) {

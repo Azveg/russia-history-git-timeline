@@ -15,8 +15,9 @@ import {
   Sparkles,
   Users,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { AcademicCitationPanel, CiteTriggerButton } from './AcademicCitationBar';
 import { DossierModalHeader } from './DossierModalHeader';
 import {
   formatEventTitleWithPeriod,
@@ -67,6 +68,11 @@ export function EraSummaryModal({
   onCompareWithEra,
 }: EraSummaryModalProps) {
   const [roleFilter, setRoleFilter] = useState<EraFiguresRoleFilter>('all');
+  const [showCitationPanel, setShowCitationPanel] = useState(false);
+
+  useEffect(() => {
+    setShowCitationPanel(false);
+  }, [era?.id]);
 
   const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
 
@@ -157,6 +163,10 @@ export function EraSummaryModal({
           }
           actions={
             <>
+              <CiteTriggerButton
+                isOpen={showCitationPanel}
+                onToggle={() => setShowCitationPanel((prev) => !prev)}
+              />
               {onCompareWithEra && (
                 <button
                   type="button"
@@ -213,6 +223,19 @@ export function EraSummaryModal({
               </div>
             )}
           </div>
+
+          {showCitationPanel && (
+            <AcademicCitationPanel
+              target={{
+                kind: 'era',
+                id: resolvedEra.id,
+                title: resolvedEra.title,
+                period: resolvedEra.period,
+                sectionLabel: 'Досье макро-периода',
+              }}
+              onClose={() => setShowCitationPanel(false)}
+            />
+          )}
 
           {/* 4 сводных индикатора эпохи */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs font-mono">

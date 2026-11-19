@@ -21,6 +21,8 @@ describe('citation — GOST R 7.0.5 & BibTeX academic citation formatting', () =
     );
 
     expect(gost).toContain('Губернская реформа Екатерины II (1775) [Электронный ресурс]');
+    expect(gost).toContain('Версия БД 2.2.0');
+    expect(gost).toContain('Раздел: Экономика и реформы');
     expect(gost).toContain('?card=1775-reform-guberniya');
     expect(gost).toContain('дата обращения: 19.11.2026');
   });
@@ -38,12 +40,15 @@ describe('citation — GOST R 7.0.5 & BibTeX academic citation formatting', () =
 
     expect(bib).toMatch(/^@misc\{atlas_person_pyotr_i,/);
     expect(bib).toContain('Реформы \\& флот: 100\\% модернизация');
-    expect(bib).toContain('note         = {Дата обращения: 2026-11-19}');
+    expect(bib).toContain('note         = {Версия БД 2.2.0; дата обращения: 2026-11-19}');
   });
 
-  it('constructs clean query-parameter deep links without hardcoded .local placeholder', () => {
-    const link = buildCanonicalDeepLink('ruler', 'peter-1');
-    expect(link).toContain('?ruler=peter-1');
-    expect(link).not.toContain('historical-atlas.local');
+  it('constructs clean query-parameter deep links for ruler, era, and window targets', () => {
+    const rulerLink = buildCanonicalDeepLink('ruler', 'peter-1');
+    expect(rulerLink).toContain('?ruler=peter-1');
+    expect(rulerLink).not.toContain('historical-atlas.local');
+
+    expect(buildCanonicalDeepLink('era', 'ERA_5')).toContain('?era=ERA_5');
+    expect(buildCanonicalDeepLink('window', '1700-1725')).toContain('?window=1700-1725');
   });
 });

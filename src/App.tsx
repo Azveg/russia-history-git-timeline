@@ -28,12 +28,17 @@ const WindowSummaryModal = lazyWithRetry(() =>
   import('./components/WindowSummaryModal').then((m) => ({ default: m.WindowSummaryModal })),
 );
 import { useTimelineData } from './hooks/useTimelineData';
-import { parseInitialYearBound, useTimelineUrlSync } from './hooks/useTimelineUrlSync';
+import {
+  parseInitialYearBound,
+  parseWindowRangeParam,
+  useTimelineUrlSync,
+} from './hooks/useTimelineUrlSync';
 import {
   buildPersonDossierIndex,
   buildSyncTagIndex,
   buildUnifiedTimelineStream,
   computeBranchPresetMap,
+  computeMacroRegionCounts,
   computeTimelineYearBounds,
   doesIntervalBelongToEra,
   extractBranchesFromStore,
@@ -62,8 +67,10 @@ import type {
   ComparisonTarget,
   FocusDepth,
   FocusScope,
+  MacroRegionId,
   ModalHistoryItem,
   SyncLinkTypeFilter,
+  TimeScaleMode,
   YearRangeStep,
 } from './types/timeline';
 
@@ -97,14 +104,23 @@ export default function App() {
   const [selectedEra, setSelectedEra] = useState('ALL');
   const [selectedReign, setSelectedReign] = useState('ALL');
   const [searchQuery, setSearchQuery] = useState<string>(() => initialParams.get('search') ?? '');
+  const isAuditDebugEnabled = useMemo(
+    () => initialParams.get('debug') === 'audit',
+    [initialParams],
+  );
+
   const [selectedPersonKey, setSelectedPersonKey] = useState<string | null>(null);
   const [selectedSyncTag, setSelectedSyncTag] = useState<string | null>(null);
+  const [selectedMacroRegion, setSelectedMacroRegion] = useState<MacroRegionId>('all');
   const [branchPairFilter, setBranchPairFilter] = useState<BranchPairFilter | null>(null);
   const [auditUnlinkedMode, setAuditUnlinkedMode] = useState(false);
   const [onlyWithSyncLinks, setOnlyWithSyncLinks] = useState(false);
   const [syncLinkTypeFilter, setSyncLinkTypeFilter] = useState<SyncLinkTypeFilter>('all');
 
   const [cardDensity, setCardDensity] = useState<CardDensity>('detailed');
+  const [timeScaleMode, setTimeScaleMode] = useState<TimeScaleMode>(() =>
+    initialParams.get('scale') === 'proportional' ? 'proportional' : 'compact',
+  );
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null);
   const [focusScope, setFocusScope] = useState<FocusScope>('sync_only');
   const [focusDepth, setFocusDepth] = useState<FocusDepth>(1);
@@ -124,6 +140,12 @@ export default function App() {
     if (initialRulerId) return { type: 'REIGN', rulerId: initialRulerId };
     const initialPersonKey = initialParams.get('person');
     if (initialPersonKey) return { type: 'PERSON', personKey: initialPersonKey };
+    const initialEraId = initialParams.get('era');
+    if (initialEraId) return { type: 'ERA', eraId: initialEraId };
+    const initialWindowRange = parseWindowRangeParam(initialParams.get('window'));
+    if (initialWindowRange) {
+      return { type: 'WINDOW', from: initialWindowRange.from, to: initialWindowRange.to };
+    }
     return { type: 'NONE' };
   });
   const [modalHistory, setModalHistory] = useState<ModalHistoryItem[]>([]);
@@ -232,18 +254,46 @@ export default function App() {
   const activeCardId = activeModal.type === 'CARD' ? activeModal.cardId : null;
   const activeRulerModalId = activeModal.type === 'REIGN' ? activeModal.rulerId : null;
   const activePersonModalKey = activeModal.type === 'PERSON' ? activeModal.personKey : null;
+  const activeEraModalId = activeModal.type === 'ERA' ? activeModal.eraId : null;
+  const activeWindowModalRange = useMemo(
+    () =>
+      activeModal.type === 'WINDOW'
+        ? { from: activeModal.from, to: activeModal.to }
+        : null,
+    [activeModal],
+  );
 
   const handlePopModalFromUrl = useCallback(
-    ({ cardId, rulerId, personKey }: { cardId: string | null; rulerId: string | null; personKey: string | null }) => {
+    ({
+      cardId,
+      rulerId,
+      personKey,
+      eraId,
+      windowRange,
+    }: {
+      cardId: string | null;
+      rulerId: string | null;
+      personKey: string | null;
+      eraId: string | null;
+      windowRange: { from: number; to: number } | null;
+    }) => {
       if (cardId) {
         setActiveModal({ type: 'CARD', cardId });
       } else if (rulerId) {
         setActiveModal({ type: 'REIGN', rulerId });
       } else if (personKey) {
         setActiveModal({ type: 'PERSON', personKey });
+      } else if (eraId) {
+        setActiveModal({ type: 'ERA', eraId });
+      } else if (windowRange) {
+        setActiveModal({ type: 'WINDOW', from: windowRange.from, to: windowRange.to });
       } else {
         setActiveModal((prev) =>
-          prev.type === 'CARD' || prev.type === 'REIGN' || prev.type === 'PERSON'
+          prev.type === 'CARD' ||
+          prev.type === 'REIGN' ||
+          prev.type === 'PERSON' ||
+          prev.type === 'ERA' ||
+          prev.type === 'WINDOW'
             ? { type: 'NONE' }
             : prev,
         );
@@ -259,6 +309,8 @@ export default function App() {
     activeCardId,
     activeRulerModalId,
     activePersonModalKey,
+    activeEraModalId,
+    activeWindowModalRange,
     activeBranches,
     branches,
     setYearFrom,
@@ -316,6 +368,12 @@ export default function App() {
       setActiveModal({ type: 'NONE' });
     }
     if (activeModal.type === 'PERSON' && !personDossiers.has(activeModal.personKey)) {
+      setActiveModal({ type: 'NONE' });
+    }
+    if (
+      activeModal.type === 'ERA' &&
+      !manifest.macroEras.some((e) => e.id === activeModal.eraId)
+    ) {
       setActiveModal({ type: 'NONE' });
     }
     if (selectedPersonKey && !personDossiers.has(selectedPersonKey)) {
@@ -396,8 +454,9 @@ export default function App() {
       selectedPersonKey,
       selectedPersonEventIds: selectedPersonDossier?.eventIds ?? null,
       selectedSyncTag,
+      selectedMacroRegion,
       branchPairFilter,
-      auditUnlinkedMode,
+      auditUnlinkedMode: isAuditDebugEnabled && auditUnlinkedMode,
       onlyWithSyncLinks,
       syncLinkTypeFilter,
       focusedEventId,
@@ -421,7 +480,9 @@ export default function App() {
     selectedPersonKey,
     selectedPersonDossier,
     selectedSyncTag,
+    selectedMacroRegion,
     branchPairFilter,
+    isAuditDebugEnabled,
     auditUnlinkedMode,
     onlyWithSyncLinks,
     syncLinkTypeFilter,
@@ -432,6 +493,16 @@ export default function App() {
     showEndNodes,
     showOverlapMatrix,
   ]);
+
+  const macroRegionCounts = useMemo(() => {
+    const inWindow = enrichedEvents.filter((ev) => {
+      if (!isEventBranchActive(ev, effectiveActiveBranches)) return false;
+      const effStart = getEventEffectiveStartYear(ev, branches);
+      const effEnd = getEventEffectiveEndYear(ev, branches);
+      return intersectsTimeWindow(effStart, effEnd, effectiveYearFrom, effectiveYearTo);
+    });
+    return computeMacroRegionCounts(inWindow);
+  }, [enrichedEvents, effectiveActiveBranches, branches, effectiveYearFrom, effectiveYearTo]);
 
   const windowLinksVisibility = useMemo(
     () => getWindowLinksVisibilitySummary(matchingEvents, effectiveActiveBranches, branches),
@@ -981,6 +1052,7 @@ export default function App() {
     setSearchQuery('');
     setSelectedPersonKey(null);
     setSelectedSyncTag(null);
+    setSelectedMacroRegion('all');
     setBranchPairFilter(null);
     setAuditUnlinkedMode(false);
     setOnlyWithSyncLinks(false);
@@ -1312,6 +1384,7 @@ export default function App() {
     setSearchQuery('');
     setSelectedPersonKey(null);
     setSelectedSyncTag(null);
+    setSelectedMacroRegion('all');
     setBranchPairFilter(null);
     setAuditUnlinkedMode(false);
     setFocusedEventId(null);
@@ -1394,6 +1467,7 @@ export default function App() {
     searchQuery,
     selectedPersonKey,
     selectedSyncTag,
+    selectedMacroRegion,
     branchPairFilter,
     auditUnlinkedMode,
     onlyWithSyncLinks,
@@ -1403,8 +1477,9 @@ export default function App() {
   const activeAdvancedCount =
     (onlyWithSyncLinks || syncLinkTypeFilter !== 'all' ? 1 : 0) +
     (selectedSyncTag ? 1 : 0) +
+    (selectedMacroRegion !== 'all' ? 1 : 0) +
     (branchPairFilter ? 1 : 0) +
-    (auditUnlinkedMode ? 1 : 0);
+    (isAuditDebugEnabled && auditUnlinkedMode ? 1 : 0);
 
   const isWindowNarrowedOrFiltered =
     effectiveYearFrom > timelineBounds.minYear ||
@@ -1495,6 +1570,10 @@ export default function App() {
         onChangeCardDensity={(density) =>
           preserveViewportScrollAnchor(() => setCardDensity(density))
         }
+        timeScaleMode={timeScaleMode}
+        onChangeTimeScaleMode={(mode) =>
+          preserveViewportScrollAnchor(() => setTimeScaleMode(mode))
+        }
         showEndNodes={showEndNodes}
         onToggleShowEndNodes={() =>
           preserveViewportScrollAnchor(() => setShowEndNodes((prev) => !prev))
@@ -1539,9 +1618,14 @@ export default function App() {
           thematicBranches={thematicLeafBranches}
           syncTagOptions={syncTagOptions}
           selectedSyncTag={selectedSyncTag}
+          selectedMacroRegion={selectedMacroRegion}
+          macroRegionCounts={macroRegionCounts}
           branchPairFilter={branchPairFilter}
-          auditUnlinkedMode={auditUnlinkedMode}
-          auditFlaggedCount={auditUnlinkedMode ? matchingEvents.length : auditCandidateMap.size}
+          showAuditTools={isAuditDebugEnabled}
+          auditUnlinkedMode={isAuditDebugEnabled && auditUnlinkedMode}
+          auditFlaggedCount={
+            isAuditDebugEnabled && auditUnlinkedMode ? matchingEvents.length : auditCandidateMap.size
+          }
           personDossiers={personDossiers}
           selectedPersonDossier={selectedPersonDossier}
           isAdvancedExpanded={!isFiltersCollapsed}
@@ -1564,6 +1648,7 @@ export default function App() {
           onToggleOnlySynced={handleToggleOnlySynced}
           onChangeSyncLinkTypeFilter={handleChangeSyncLinkTypeFilter}
           onSelectSyncTag={handleSelectSyncTag}
+          onSelectMacroRegion={setSelectedMacroRegion}
           onChangeBranchPair={handleChangeBranchPair}
           onToggleAuditUnlinkedMode={() => setAuditUnlinkedMode((prev) => !prev)}
           onOpenCompareModal={handleOpenCompareFromHeader}
@@ -1650,6 +1735,7 @@ export default function App() {
             axisResolution={axisResolution}
             hoveredEventId={hoveredEventId}
             cardDensity={cardDensity}
+            timeScaleMode={timeScaleMode}
             focusedEvent={focusedEvent}
             focusScope={focusScope}
             focusDepth={focusDepth}
@@ -1657,7 +1743,7 @@ export default function App() {
             outOfWindowFocusCount={outOfWindowFocusCount}
             focusDistanceMap={focusDistanceMap}
             windowRange={{ from: yearFrom, to: yearTo }}
-            auditUnlinkedMode={auditUnlinkedMode}
+            auditUnlinkedMode={isAuditDebugEnabled && auditUnlinkedMode}
             auditCandidateMap={auditCandidateMap}
             onChangeFocusScope={setFocusScope}
             onChangeFocusDepth={setFocusDepth}

@@ -11,6 +11,7 @@ import {
   Plus,
   Rows3,
   Rows4,
+  Ruler,
   SlidersHorizontal,
   Undo2,
   X,
@@ -24,6 +25,7 @@ import type {
   EnrichedEvent,
   MacroEra,
   RulerPeriod,
+  TimeScaleMode,
 } from '../types/timeline';
 import { BranchSelectorPopover } from './BranchSelectorPopover';
 import { EPOCH_SLICE_PRESETS, EraSelectorPopover } from './EraSelectorPopover';
@@ -62,6 +64,8 @@ interface TopControlBarProps {
   onShiftWindow: (direction: -1 | 1) => void;
   cardDensity: CardDensity;
   onChangeCardDensity: (density: CardDensity) => void;
+  timeScaleMode: TimeScaleMode;
+  onChangeTimeScaleMode: (mode: TimeScaleMode) => void;
   showEndNodes: boolean;
   onToggleShowEndNodes: () => void;
   onOpenWindowModal?: (from: number, to: number) => void;
@@ -131,6 +135,8 @@ export function TopControlBar({
   onShiftWindow,
   cardDensity,
   onChangeCardDensity,
+  timeScaleMode,
+  onChangeTimeScaleMode,
   showEndNodes,
   onToggleShowEndNodes,
   onOpenWindowModal,
@@ -214,15 +220,13 @@ export function TopControlBar({
     };
   }, [isPresetMenuOpen, isViewMenuOpen]);
 
-  const hasCustomViewSettings = cardDensity === 'compact' || !showEndNodes;
-  const viewModeSummary =
-    cardDensity === 'compact' && !showEndNodes
-      ? 'Компактно · Без вех'
-      : cardDensity === 'compact'
-        ? 'Компактно'
-        : !showEndNodes
-          ? 'Без вех'
-          : null;
+  const hasCustomViewSettings =
+    cardDensity === 'compact' || !showEndNodes || timeScaleMode === 'proportional';
+  const viewSummaryParts: string[] = [];
+  if (cardDensity === 'compact') viewSummaryParts.push('Компактно');
+  if (timeScaleMode === 'proportional') viewSummaryParts.push('Пропорц.');
+  if (!showEndNodes) viewSummaryParts.push('Без вех');
+  const viewModeSummary = viewSummaryParts.length > 0 ? viewSummaryParts.join(' · ') : null;
 
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
 
@@ -670,6 +674,44 @@ export function TopControlBar({
                 </div>
 
                 <div className="border-t border-slate-800/80 pt-2">
+                  <div className="px-1.5 pb-1.5 text-[10px] font-mono text-slate-400">
+                    Масштаб оси времени
+                  </div>
+                  <div
+                    className="grid grid-cols-2 gap-1 rounded-xl bg-slate-950 border border-slate-800 p-1 text-[11px] font-mono"
+                    role="group"
+                    aria-label="Режим шкалы времени"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => onChangeTimeScaleMode('compact')}
+                      className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                        timeScaleMode === 'compact'
+                          ? 'bg-amber-500 text-slate-950 font-bold'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                      }`}
+                      title="Плотная событийная лента без пустых вертикальных промежутков"
+                    >
+                      <Rows4 className="w-3.5 h-3.5 shrink-0" />
+                      <span>Событийная</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onChangeTimeScaleMode('proportional')}
+                      className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                        timeScaleMode === 'proportional'
+                          ? 'bg-amber-500 text-slate-950 font-bold'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                      }`}
+                      title="Пропорциональная шкала: визуальные интервалы между строками отражают дистанцию в годах"
+                    >
+                      <Ruler className="w-3.5 h-3.5 shrink-0" />
+                      <span>По годам</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-800/80 pt-2">
                   <button
                     type="button"
                     role="menuitemcheckbox"
@@ -722,7 +764,7 @@ export function TopControlBar({
                   ? 'bg-emerald-500/15 border-emerald-400/55 text-emerald-200 hover:bg-emerald-500/25'
                   : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
             }`}
-            title="Развернуть или свернуть панель «Расширенный анализ» (связи, сюжеты, пара веток, сравнение периодов, досье окна и аудит)"
+            title="Развернуть или свернуть панель «Расширенный анализ» (связи, сюжеты, макрорегионы, пара веток, сравнение периодов и досье окна)"
           >
             <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
             <span className="hidden sm:inline">{isFiltersCollapsed ? '+ Анализ' : '− Анализ'}</span>

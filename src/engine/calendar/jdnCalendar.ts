@@ -127,8 +127,11 @@ function isModernGregorianEra(
   const m = month ?? 1;
   if (m > 2) return true;
   if (m < 2) return false;
+  if (explicitStyle === 'julian') {
+    return false;
+  }
   if (day !== undefined) {
-    return explicitStyle === 'julian' ? day > 1 : day >= 14;
+    return day >= 14;
   }
   return explicitStyle === 'gregorian' || explicitStyle === undefined;
 }
@@ -771,12 +774,16 @@ export function formatAxisGutterDate(
 
   if (row.rowType === 'TIME_TICK') {
     const mIdx = Math.max(0, Math.min(11, (row.month ?? 1) - 1));
+    const monthNum = row.month ?? 1;
+    const isPreGregorian = row.year < 1582 || (row.year === 1582 && monthNum < 10);
+    const isDualCalendarEra = !isPreGregorian && row.year <= 1918;
     return {
       label: `${MONTHS_SHORT_RU[mIdx]} ${row.year}`,
-      styleLabel: row.year <= 1918 ? 'н. ст.' : undefined,
-      styleTone: row.year <= 1918 ? 'gregorian' : undefined,
-      title:
-        row.year <= 1918
+      styleLabel: isPreGregorian ? 'ст. ст.' : isDualCalendarEra ? 'н. ст.' : undefined,
+      styleTone: isPreGregorian ? 'julian' : isDualCalendarEra ? 'gregorian' : undefined,
+      title: isPreGregorian
+        ? `Опорная отметка юлианской оси времени (ст. ст.): ${row.label}`
+        : isDualCalendarEra
           ? `Опорная отметка единой шкалы (н. ст.): ${row.label}`
           : `Опорная отметка оси времени: ${row.label}`,
     };

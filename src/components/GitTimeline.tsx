@@ -18,7 +18,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   computeBranchSubLaneLayout,
   computeRulerSubLaneLayout,
@@ -55,6 +55,7 @@ import type {
   RulerPeriod,
   StreamRow,
   SyncManifest,
+  TimeScaleMode,
 } from '../types/timeline';
 
 interface GitTimelineProps {
@@ -73,6 +74,7 @@ interface GitTimelineProps {
   axisResolution: AxisResolution;
   hoveredEventId: string | null;
   cardDensity: CardDensity;
+  timeScaleMode?: TimeScaleMode;
   focusedEvent: EnrichedEvent | null;
   focusScope: FocusScope;
   focusDepth?: FocusDepth;
@@ -216,6 +218,7 @@ export function GitTimeline({
   axisResolution,
   hoveredEventId,
   cardDensity,
+  timeScaleMode = 'compact',
   focusedEvent,
   focusScope,
   focusDepth = 1,
@@ -1271,14 +1274,27 @@ export function GitTimeline({
             <span className="hidden md:inline text-slate-300">
               Масштаб оси: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
             </span>
-            {axisResolution !== 'year' && yearFrom <= 1918 && (
+            {timeScaleMode === 'proportional' && (
+              <>
+                <span aria-hidden="true" className="hidden lg:inline text-slate-400">
+                  ·
+                </span>
+                <span
+                  className="hidden lg:inline text-amber-300 font-semibold"
+                  title="Включена пропорциональная шкала времени: вертикальные промежутки отражают дистанцию в годах между событиями"
+                >
+                  шкала: по годам
+                </span>
+              </>
+            )}
+            {axisResolution !== 'year' && yearFrom <= 1918 && (yearTo === undefined || yearTo >= 1582) && (
               <>
                 <span aria-hidden="true" className="hidden lg:inline text-slate-400">
                   ·
                 </span>
                 <span
                   className="hidden lg:inline text-amber-300/90 tabular-nums"
-                  title="До 14 февраля 1918 года события старого (юлианского) стиля сдвинуты на единую григорианскую шкалу (+10…+13 дн.) для точного сопоставления с Европой"
+                  title="В 1582–1918 годах события старого (юлианского) стиля сдвинуты на единую григорианскую шкалу (+10…+13 дн.) для точного сопоставления с Европой"
                 >
                   единая шкала: н. ст.
                 </span>
@@ -1629,6 +1645,83 @@ export function GitTimeline({
         )}
 
         {stream.map((item, idx) => {
+          const prevItem = idx > 0 ? stream[idx - 1] : null;
+          const deltaYears =
+            timeScaleMode === 'proportional' && prevItem
+              ? Math.max(0, item.year - prevItem.year)
+              : 0;
+          const spacerHeight =
+            deltaYears >= 2 ? Math.min(168, Math.max(22, Math.round(deltaYears * 4.5))) : 0;
+          const midSortKey = prevItem
+            ? Math.floor((prevItem.sortKey + item.sortKey) / 2)
+            : item.sortKey;
+          const showSpacerBus =
+            activeLinkGeometry !== null &&
+            activeLinkGeometry.hasSpanOnCanvas &&
+            idx - 0.5 >= activeLinkGeometry.minSpanIdx &&
+            idx - 0.5 <= activeLinkGeometry.maxSpanIdx;
+
+          const spacerEl =
+            spacerHeight > 0 && prevItem ? (
+              <div
+                aria-hidden="true"
+                className="relative flex items-stretch bg-slate-950/35 select-none"
+                style={{ height: `${spacerHeight}px` }}
+              >
+                <div
+                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/40 bg-slate-950/30 px-2 sm:px-2.5 items-center justify-end font-mono text-[10px] text-slate-500 tabular-nums whitespace-nowrap`}
+                >
+                  {deltaYears >= 3 ? `+${deltaYears} л.` : ''}
+                </div>
+
+                <div className="sm:hidden w-[36px] shrink-0 relative overflow-hidden">
+                  <svg className="w-full h-full absolute inset-0" width={mobileSpineWidth} height="100%">
+                    <line
+                      x1={mobileSpineX}
+                      y1={0}
+                      x2={mobileSpineX}
+                      y2={420}
+                      stroke="#cbd5e1"
+                      strokeWidth={2.6}
+                      strokeOpacity={0.78}
+                    />
+                    {showSpacerBus && (
+                      <line
+                        x1={mobileConnectorBusX}
+                        y1={0}
+                        x2={mobileConnectorBusX}
+                        y2={420}
+                        stroke="#10b981"
+                        strokeWidth={2}
+                        strokeDasharray="4 3"
+                        strokeOpacity={0.9}
+                      />
+                    )}
+                  </svg>
+                </div>
+
+                <div
+                  className="hidden sm:block shrink-0 relative overflow-hidden"
+                  style={{ width: `${svgWidth}px` }}
+                >
+                  <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
+                    {renderRailsForRow(idx - 0.5, midSortKey)}
+                  </svg>
+                </div>
+
+                <div className="flex-1 min-w-0 flex items-center gap-2 pr-3 sm:pr-6">
+                  <div className="h-px flex-1 border-t border-dashed border-slate-800/80" />
+                  {deltaYears >= 3 && (
+                    <span className="font-mono text-[10px] text-slate-500 tabular-nums whitespace-nowrap">
+                      ↕ {formatDurationYearsRu(deltaYears)} ({prevItem.year}–{item.year})
+                    </span>
+                  )}
+                  <div className="h-px w-8 border-t border-dashed border-slate-800/80" />
+                </div>
+              </div>
+            ) : null;
+
+          const rowEl = (() => {
           const gutter = gutterMeta[idx];
 
           if (item.rowType === 'ERA_START') {
@@ -3031,6 +3124,16 @@ export function GitTimeline({
                 </div>
               </div>
             </div>
+          );
+          })();
+
+          return spacerEl ? (
+            <Fragment key={`prop-wrap-${idx}-${item.rowType}-${item.sortKey}`}>
+              {spacerEl}
+              {rowEl}
+            </Fragment>
+          ) : (
+            rowEl
           );
         })}
       </div>

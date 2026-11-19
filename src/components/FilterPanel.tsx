@@ -10,6 +10,7 @@ import {
   GitCompare,
   GitCompareArrows,
   Link2,
+  MapPin,
   RotateCcw,
   Search,
   Tag,
@@ -17,10 +18,11 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { searchPersonDossiers } from '../engine/timelineEngine';
+import { MACRO_REGION_OPTIONS, searchPersonDossiers } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
   BranchPairFilter,
+  MacroRegionId,
   PersonDossier,
   SyncLinkTypeFilter,
   SyncTagOption,
@@ -39,7 +41,10 @@ interface FilterPanelProps {
   thematicBranches: BranchDefinition[];
   syncTagOptions: SyncTagOption[];
   selectedSyncTag: string | null;
+  selectedMacroRegion: MacroRegionId;
+  macroRegionCounts: Record<MacroRegionId, number>;
   branchPairFilter: BranchPairFilter | null;
+  showAuditTools?: boolean;
   auditUnlinkedMode: boolean;
   auditFlaggedCount: number;
   personDossiers?: Map<string, PersonDossier>;
@@ -54,6 +59,7 @@ interface FilterPanelProps {
   onToggleOnlySynced: () => void;
   onChangeSyncLinkTypeFilter: (nextType: SyncLinkTypeFilter) => void;
   onSelectSyncTag: (tag: string | null) => void;
+  onSelectMacroRegion: (region: MacroRegionId) => void;
   onChangeBranchPair: (pair: BranchPairFilter | null) => void;
   onToggleAuditUnlinkedMode: () => void;
   onOpenCompareModal?: () => void;
@@ -75,7 +81,10 @@ export function FilterPanel({
   thematicBranches,
   syncTagOptions,
   selectedSyncTag,
+  selectedMacroRegion,
+  macroRegionCounts,
   branchPairFilter,
+  showAuditTools = false,
   auditUnlinkedMode,
   auditFlaggedCount,
   personDossiers,
@@ -90,6 +99,7 @@ export function FilterPanel({
   onToggleOnlySynced,
   onChangeSyncLinkTypeFilter,
   onSelectSyncTag,
+  onSelectMacroRegion,
   onChangeBranchPair,
   onToggleAuditUnlinkedMode,
   onOpenCompareModal,
@@ -139,12 +149,21 @@ export function FilterPanel({
     syncLinkTypeFilter === 'all' &&
     !selectedPersonDossier &&
     !selectedSyncTag &&
+    selectedMacroRegion === 'all' &&
     !branchPairFilter &&
     !auditUnlinkedMode;
 
   const selectedSyncTagMeta = useMemo(
     () => (selectedSyncTag ? syncTagOptions.find((t) => t.tag === selectedSyncTag) ?? null : null),
     [selectedSyncTag, syncTagOptions],
+  );
+
+  const selectedMacroRegionMeta = useMemo(
+    () =>
+      selectedMacroRegion !== 'all'
+        ? (MACRO_REGION_OPTIONS.find((r) => r.id === selectedMacroRegion) ?? null)
+        : null,
+    [selectedMacroRegion],
   );
 
   const hotPresets = useMemo(
@@ -455,7 +474,7 @@ export function FilterPanel({
       {isAdvancedExpanded && (
         <div className="pt-2 border-t border-slate-800/80 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
-            <span>Расширенный анализ: связи, сюжеты, пары веток, сравнение периодов и досье окна</span>
+            <span>Расширенный анализ: связи, сюжеты, макрорегионы, пары веток, сравнение периодов и досье окна</span>
             <button
               type="button"
               onClick={onToggleAdvanced}
@@ -534,6 +553,37 @@ export function FilterPanel({
                   type="button"
                   onClick={() => onSelectSyncTag(null)}
                   aria-label="Сбросить фильтр по сюжету"
+                  className="p-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-400 hover:text-white cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Географический макрорегион */}
+            <div className="flex items-center gap-1.5 min-w-[200px] flex-1 sm:flex-initial">
+              <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <select
+                aria-label="Фильтр по макрорегиону"
+                value={selectedMacroRegion}
+                onChange={(e) => onSelectMacroRegion(e.target.value as MacroRegionId)}
+                className={`w-full sm:w-[235px] rounded-lg border px-2.5 py-1.5 text-xs font-mono transition-colors cursor-pointer focus:outline-none focus:border-amber-400 ${
+                  selectedMacroRegion !== 'all'
+                    ? 'bg-amber-500/15 border-amber-400/70 text-amber-100 font-semibold'
+                    : 'bg-slate-950/85 border-slate-800 text-slate-300'
+                }`}
+              >
+                {MACRO_REGION_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id} className="bg-slate-950 text-slate-100">
+                    {opt.label} ({macroRegionCounts[opt.id] ?? 0})
+                  </option>
+                ))}
+              </select>
+              {selectedMacroRegion !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => onSelectMacroRegion('all')}
+                  aria-label="Сбросить фильтр по макрорегиону"
                   className="p-1.5 rounded-lg bg-slate-950 border border-slate-700 text-slate-400 hover:text-white cursor-pointer shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -637,38 +687,40 @@ export function FilterPanel({
               )}
             </div>
 
-            {/* Аудит без связей */}
-            <button
-              type="button"
-              onClick={onToggleAuditUnlinkedMode}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ml-auto ${
-                auditUnlinkedMode
-                  ? 'bg-amber-500/20 border-amber-400 text-amber-200 font-bold'
-                  : 'bg-slate-950/85 border-slate-800 text-slate-300 hover:border-amber-500/45 hover:text-amber-200'
-              }`}
-              title="Показать одновременные события разных веток в текущем окне, между которыми нет проставленных связей"
-            >
-              <GitCompare className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="tabular-nums">
-                {auditUnlinkedMode
-                  ? `Аудит без связей · ${auditFlaggedCount}`
-                  : 'Аудит без связей'}
-              </span>
-            </button>
+            {/* Внутренний режим аудита связей — доступен только при ?debug=audit */}
+            {showAuditTools && (
+              <button
+                type="button"
+                onClick={onToggleAuditUnlinkedMode}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono transition-colors cursor-pointer whitespace-nowrap ml-auto ${
+                  auditUnlinkedMode
+                    ? 'bg-amber-500/20 border-amber-400 text-amber-200 font-bold'
+                    : 'bg-slate-950/85 border-slate-800 text-slate-300 hover:border-amber-500/45 hover:text-amber-200'
+                }`}
+                title="Режим отладки графа: показать одновременные события разных веток в текущем окне без проставленных связей"
+              >
+                <GitCompare className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="tabular-nums">
+                  {auditUnlinkedMode
+                    ? `Аудит без связей · ${auditFlaggedCount}`
+                    : 'Аудит без связей'}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       )}
 
-      {/* Активная сводка режима аудита или выбранного сюжета (видна даже при свёрнутом блоке анализа) */}
-      {(auditUnlinkedMode || selectedSyncTagMeta) && (
+      {/* Активная сводка выбранного региона, сюжета или режима аудита */}
+      {((showAuditTools && auditUnlinkedMode) || selectedSyncTagMeta || selectedMacroRegionMeta) && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs">
           <div className="flex flex-wrap items-center gap-2 text-slate-300 min-w-0">
-            {auditUnlinkedMode && (
+            {showAuditTools && auditUnlinkedMode && (
               <span className="text-amber-200">
                 Режим аудита: показаны узлы с параллелями в других ветках без проставленных связей (кандидатов: <strong className="font-mono tabular-nums">{auditFlaggedCount}</strong>).
               </span>
             )}
-            {auditUnlinkedMode && selectedSyncTagMeta && (
+            {showAuditTools && auditUnlinkedMode && (selectedSyncTagMeta || selectedMacroRegionMeta) && (
               <span aria-hidden="true" className="text-slate-600">·</span>
             )}
             {selectedSyncTagMeta && (
@@ -676,16 +728,38 @@ export function FilterPanel({
                 Сюжет: <strong>{selectedSyncTagMeta.label}</strong> (всего в базе: <span className="font-mono tabular-nums">{selectedSyncTagMeta.eventCount}</span>)
               </span>
             )}
+            {selectedSyncTagMeta && selectedMacroRegionMeta && (
+              <span aria-hidden="true" className="text-slate-600">·</span>
+            )}
+            {selectedMacroRegionMeta && (
+              <span className="inline-flex items-center gap-1.5 text-amber-200">
+                <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>
+                  Макрорегион: <strong>{selectedMacroRegionMeta.label}</strong>
+                </span>
+              </span>
+            )}
           </div>
-          {auditUnlinkedMode && (
-            <button
-              type="button"
-              onClick={onToggleAuditUnlinkedMode}
-              className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono cursor-pointer shrink-0"
-            >
-              Выйти из аудита
-            </button>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {selectedMacroRegionMeta && (
+              <button
+                type="button"
+                onClick={() => onSelectMacroRegion('all')}
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono cursor-pointer shrink-0"
+              >
+                Все регионы
+              </button>
+            )}
+            {showAuditTools && auditUnlinkedMode && (
+              <button
+                type="button"
+                onClick={onToggleAuditUnlinkedMode}
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono cursor-pointer shrink-0"
+              >
+                Выйти из аудита
+              </button>
+            )}
+          </div>
         </div>
       )}
 

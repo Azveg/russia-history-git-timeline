@@ -3,6 +3,7 @@ import {
   detectAxisResolution,
   doesIntervalBelongToEra,
   findMacroEraForYear,
+  formatAxisGutterDate,
   parseEventYears,
   parsePreciseDate,
   resolveMacroEras,
@@ -33,6 +34,15 @@ describe('jdnCalendar — Julian/Gregorian historical date engine', () => {
     expect(parsed.gregorianParts).toMatchObject({ year: 1917, month: 11, day: 7 });
   });
 
+  it('converts explicit Julian dates in February 1918 (+13 days) instead of treating them as modern Gregorian', () => {
+    const parsed = parsePreciseDate('1918-02-02', 1918, false, { calendarStyle: 'julian' });
+    expect(parsed.hasStyleSplit).toBe(true);
+    expect(parsed.offsetDays).toBe(13);
+    expect(parsed.julianParts).toMatchObject({ year: 1918, month: 2, day: 2 });
+    expect(parsed.gregorianParts).toMatchObject({ year: 1918, month: 2, day: 15 });
+    expect(parsed.unified).toMatchObject({ year: 1918, month: 2, day: 15 });
+  });
+
   it('keeps pre-1582 dates purely Julian without proleptic Gregorian conversion', () => {
     const parsed = parsePreciseDate('1380-09-08', 1380, false, { calendarStyle: 'julian' });
     expect(parsed.calendarStyle).toBe('julian');
@@ -40,6 +50,28 @@ describe('jdnCalendar — Julian/Gregorian historical date engine', () => {
     expect(parsed.julianParts).toMatchObject({ year: 1380, month: 9, day: 8 });
     expect(parsed.gregorianParts).toBeUndefined();
     expect(parsed.unified).toMatchObject({ year: 1380, month: 9, day: 8 });
+  });
+
+  it('never labels pre-1582 TIME_TICK rows as Gregorian (н. ст.)', () => {
+    const pre1582 = formatAxisGutterDate(
+      { rowType: 'TIME_TICK', year: 1380, month: 9, label: 'сен 1380', sortKey: 13800901, priority: 0 },
+      'month',
+    );
+    expect(pre1582.styleLabel).toBe('ст. ст.');
+    expect(pre1582.styleTone).toBe('julian');
+
+    const dualEra = formatAxisGutterDate(
+      { rowType: 'TIME_TICK', year: 1812, month: 6, label: 'июн 1812', sortKey: 18120601, priority: 0 },
+      'month',
+    );
+    expect(dualEra.styleLabel).toBe('н. ст.');
+    expect(dualEra.styleTone).toBe('gregorian');
+
+    const modern = formatAxisGutterDate(
+      { rowType: 'TIME_TICK', year: 1945, month: 5, label: 'май 1945', sortKey: 19450501, priority: 0 },
+      'month',
+    );
+    expect(modern.styleLabel).toBeUndefined();
   });
 
   it('keeps post-1918 reform dates purely Gregorian without style split', () => {

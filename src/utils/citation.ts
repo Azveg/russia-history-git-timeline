@@ -1,7 +1,7 @@
 import type { PersonDossier, SourceEntry, SourceEntryType } from '../types/timeline';
 
 export type CitationFormat = 'gost' | 'bibtex';
-export type DeepLinkKind = 'card' | 'ruler' | 'person';
+export type DeepLinkKind = 'card' | 'ruler' | 'person' | 'era' | 'window';
 
 export interface CitationTarget {
   kind: DeepLinkKind;
@@ -16,7 +16,8 @@ export interface AggregatedSourceEntry extends SourceEntry {
   originCardId?: string;
 }
 
-const ATLAS_PUBLICATION_TITLE = 'Исторический атлас-хронограф России (862–2000)';
+const ATLAS_PUBLICATION_TITLE = 'Исторический атлас-хронограф России и мира (862–2000)';
+const ATLAS_DB_VERSION = '2.2.0';
 
 const CYRILLIC_TRANSLIT: Record<string, string> = {
   а: 'a',
@@ -66,7 +67,7 @@ export function isPrimaryGroupSource(type: SourceEntryType): boolean {
 }
 
 export function buildCanonicalDeepLink(kind: DeepLinkKind, id: string): string {
-  const paramName = kind === 'card' ? 'card' : kind === 'ruler' ? 'ruler' : 'person';
+  const paramName = kind;
   const configuredSiteUrl =
     typeof import.meta !== 'undefined' && typeof import.meta.env?.VITE_SITE_URL === 'string'
       ? import.meta.env.VITE_SITE_URL.trim().replace(/\/+$/, '')
@@ -134,7 +135,7 @@ export function formatGostCitation(target: CitationTarget, now: Date = new Date(
   const url = buildCanonicalDeepLink(target.kind, target.id);
   const accessDate = formatAccessDateRu(now);
 
-  return `${titleWithPeriod} [Электронный ресурс] // ${ATLAS_PUBLICATION_TITLE} : ${target.sectionLabel}. — URL: ${url} (дата обращения: ${accessDate}).`;
+  return `${titleWithPeriod} [Электронный ресурс] // ${ATLAS_PUBLICATION_TITLE} : науч.-справ. электрон. изд. — Версия БД ${ATLAS_DB_VERSION}. — Раздел: ${target.sectionLabel}. — URL: ${url} (дата обращения: ${accessDate}).`;
 }
 
 /**
@@ -154,10 +155,10 @@ export function formatBibTeXCitation(target: CitationTarget, now: Date = new Dat
   return [
     `@misc{${key},`,
     `  title        = {{${escapeBibTeX(fullTitle)}}},`,
-    `  howpublished = {${escapeBibTeX(`${ATLAS_PUBLICATION_TITLE}, ${target.sectionLabel}`)}},`,
+    `  howpublished = {${escapeBibTeX(`${ATLAS_PUBLICATION_TITLE} : науч.-справ. электрон. изд., раздел «${target.sectionLabel}»`)}},`,
     `  year         = {${now.getFullYear()}},`,
     `  url          = {${url}},`,
-    `  note         = {Дата обращения: ${isoDate}}`,
+    `  note         = {Версия БД ${ATLAS_DB_VERSION}; дата обращения: ${isoDate}}`,
     `}`,
   ].join('\n');
 }

@@ -1,0 +1,65 @@
+import { describe, expect, it } from 'vitest';
+import {
+  classifyEventMacroRegions,
+  computeMacroRegionCounts,
+  doesEventMatchMacroRegion,
+} from '../regionFilter';
+
+describe('regionFilter — geographic macro-region facet classifier', () => {
+  it('classifies Russian historical regions deterministically', () => {
+    expect(
+      classifyEventMacroRegions({ region: 'Москва / Владимирская Русь', task: 'INTERNAL_BUFFER' }),
+    ).toContain('rus_center');
+
+    expect(
+      classifyEventMacroRegions({ region: 'Санкт-Петербург / Балтика', task: 'WEST_EXPANSION' }),
+    ).toContain('rus_north_west');
+
+    expect(
+      classifyEventMacroRegions({ region: 'Крым / Причерноморье / Кавказ', task: 'SOUTH_EXPANSION' }),
+    ).toContain('rus_south_caucasus');
+
+    expect(
+      classifyEventMacroRegions({ region: 'Поволжье / Казань / Средняя Азия', task: 'EAST_STEPPE' }),
+    ).toContain('rus_volga_ural');
+
+    expect(
+      classifyEventMacroRegions({ region: 'Сибирь / Дальний Восток / Порт-Артур', task: 'EAST_STEPPE' }),
+    ).toContain('rus_siberia_fareast');
+  });
+
+  it('classifies world regions (Europe, East/South Asia, Middle East, Americas)', () => {
+    expect(
+      classifyEventMacroRegions({ region: 'Франция / Германия / Европа', task: 'WORLD_CONTEXT' }),
+    ).toContain('europe');
+
+    expect(
+      classifyEventMacroRegions({ region: 'Китай / Япония / Индия', task: 'WORLD_CONTEXT' }),
+    ).toContain('asia_east');
+
+    expect(
+      classifyEventMacroRegions({ region: 'Османская империя / Иран', task: 'WORLD_CONTEXT' }),
+    ).toContain('middle_east_africa');
+
+    expect(
+      classifyEventMacroRegions({ region: 'США / Латинская Америка', task: 'WORLD_CONTEXT' }),
+    ).toContain('americas_global');
+  });
+
+  it('computes facet counts and supports matching against "all"', () => {
+    const sample = [
+      { region: 'Москва', task: 'REFORMS_ECO' },
+      { region: 'Китай', task: 'WORLD_CONTEXT' },
+      { region: 'Крым / Османская империя', task: 'SOUTH_EXPANSION' },
+    ];
+    const counts = computeMacroRegionCounts(sample);
+    expect(counts.all).toBe(3);
+    expect(counts.rus_center).toBe(1);
+    expect(counts.asia_east).toBe(1);
+    expect(counts.rus_south_caucasus).toBe(1);
+    expect(counts.middle_east_africa).toBe(1);
+    expect(doesEventMatchMacroRegion(sample[1], 'all')).toBe(true);
+    expect(doesEventMatchMacroRegion(sample[1], 'asia_east')).toBe(true);
+    expect(doesEventMatchMacroRegion(sample[1], 'europe')).toBe(false);
+  });
+});
