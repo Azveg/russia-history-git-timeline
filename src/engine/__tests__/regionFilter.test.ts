@@ -3,6 +3,8 @@ import {
   classifyEventMacroRegions,
   computeMacroRegionCounts,
   doesEventMatchMacroRegion,
+  getMacroRegionOption,
+  parseMacroRegionParam,
 } from '../regionFilter';
 
 describe('regionFilter — geographic macro-region facet classifier', () => {
@@ -62,4 +64,12 @@ describe('regionFilter — geographic macro-region facet classifier', () => {
     expect(doesEventMatchMacroRegion(sample[1], 'asia_east')).toBe(true);
     expect(doesEventMatchMacroRegion(sample[1], 'europe')).toBe(false);
   });
+
+  it('resolves macro-region options and URL parameters safely', () => {
+    expect(getMacroRegionOption('asia_east').shortLabel).toBe('Вост. и Юж. Азия');
+    expect(parseMacroRegionParam('europe')).toBe('europe');
+    expect(parseMacroRegionParam('invalid_region')).toBe('all');
+    expect(parseMacroRegionParam(null)).toBe('all');
+  });
 });
+

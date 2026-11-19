@@ -7,6 +7,7 @@ import {
   Compass,
   Eye,
   Flag,
+  MapPin,
   Minus,
   Plus,
   Rows3,
@@ -17,6 +18,11 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  MACRO_REGION_OPTIONS,
+  computeMacroRegionCounts,
+  getMacroRegionOption,
+} from '../engine/regionFilter';
 import { computeBranchPresetMap, resolveMacroEras } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
@@ -24,6 +30,7 @@ import type {
   CardDensity,
   EnrichedEvent,
   MacroEra,
+  MacroRegionId,
   RulerPeriod,
   TimeScaleMode,
 } from '../types/timeline';
@@ -51,6 +58,8 @@ interface TopControlBarProps {
   onJumpToRuler: (rulerId: string) => void;
   onFilterByRuler: (rulerId: string) => void;
   onOpenRulerModal: (rulerId: string) => void;
+  selectedMacroRegion?: MacroRegionId;
+  onSelectMacroRegion?: (region: MacroRegionId) => void;
   yearFrom: number;
   yearTo: number;
   minYear?: number;
@@ -122,6 +131,8 @@ export function TopControlBar({
   onJumpToRuler,
   onFilterByRuler,
   onOpenRulerModal,
+  selectedMacroRegion = 'all',
+  onSelectMacroRegion,
   yearFrom,
   yearTo,
   minYear = 862,
@@ -147,8 +158,10 @@ export function TopControlBar({
 }: TopControlBarProps) {
   const barRef = useRef<HTMLDivElement | null>(null);
   const presetPopoverRef = useRef<HTMLDivElement | null>(null);
+  const regionPopoverRef = useRef<HTMLDivElement | null>(null);
   const viewPopoverRef = useRef<HTMLDivElement | null>(null);
   const [isPresetMenuOpen, setIsPresetMenuOpen] = useState(false);
+  const [isRegionMenuOpen, setIsRegionMenuOpen] = useState(false);
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
 
   const leafBranches = branchControls.filter((b) => !b.isGroup);
@@ -166,6 +179,13 @@ export function TopControlBar({
   };
 
   const activePreset = QUICK_PRESETS.find((p) => isPresetActive(p.id)) ?? null;
+  const activeRegionOption = getMacroRegionOption(selectedMacroRegion);
+  const macroRegionCounts = useMemo(() => {
+    const windowEvents = enrichedEventsForEras.filter(
+      (ev) => ev.endYear >= yearFrom && ev.startYear <= yearTo,
+    );
+    return computeMacroRegionCounts(windowEvents);
+  }, [enrichedEventsForEras, yearFrom, yearTo]);
 
   useEffect(() => {
     const el = barRef.current;
@@ -185,7 +205,7 @@ export function TopControlBar({
   }, []);
 
   useEffect(() => {
-    if (!isPresetMenuOpen && !isViewMenuOpen) return;
+    if (!isPresetMenuOpen && !isRegionMenuOpen && !isViewMenuOpen) return;
 
     function handlePointerDown(e: PointerEvent) {
       if (
@@ -194,6 +214,13 @@ export function TopControlBar({
         !presetPopoverRef.current.contains(e.target as Node)
       ) {
         setIsPresetMenuOpen(false);
+      }
+      if (
+        isRegionMenuOpen &&
+        regionPopoverRef.current &&
+        !regionPopoverRef.current.contains(e.target as Node)
+      ) {
+        setIsRegionMenuOpen(false);
       }
       if (
         isViewMenuOpen &&
@@ -208,6 +235,7 @@ export function TopControlBar({
       if (e.key === 'Escape') {
         e.stopPropagation();
         setIsPresetMenuOpen(false);
+        setIsRegionMenuOpen(false);
         setIsViewMenuOpen(false);
       }
     }
@@ -218,7 +246,7 @@ export function TopControlBar({
       document.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [isPresetMenuOpen, isViewMenuOpen]);
+  }, [isPresetMenuOpen, isRegionMenuOpen, isViewMenuOpen]);
 
   const hasCustomViewSettings =
     cardDensity === 'compact' || !showEndNodes || timeScaleMode === 'proportional';
@@ -411,6 +439,127 @@ export function TopControlBar({
               </div>
             )}
           </div>
+
+          {/* Выпадающее меню фильтра по макрорегионам */}
+          {onSelectMacroRegion && (
+            <div ref={regionPopoverRef} className="relative shrink-0 inline-flex items-center">
+              <div
+                className={`inline-flex items-center rounded-lg border text-[11px] font-mono font-semibold transition-colors whitespace-nowrap ${
+                  isRegionMenuOpen
+                    ? 'bg-slate-800/95 border-amber-400/60 text-white'
+                    : selectedMacroRegion !== 'all'
+                      ? 'bg-amber-500/15 border-amber-500/45 text-amber-200'
+                      : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setIsRegionMenuOpen((prev) => !prev)}
+                  aria-expanded={isRegionMenuOpen}
+                  aria-haspopup="menu"
+                  className="px-2 sm:px-2.5 py-1.5 inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer"
+                  title={
+                    selectedMacroRegion !== 'all'
+                      ? `Активный фильтр по макрорегиону: ${activeRegionOption.label}`
+                      : 'Фильтр событий по макрорегиону'
+                  }
+                >
+                  <MapPin
+                    className={`w-3.5 h-3.5 shrink-0 ${
+                      selectedMacroRegion !== 'all' ? 'text-amber-400' : 'text-amber-400/85'
+                    }`}
+                  />
+                  <span>
+                    {selectedMacroRegion !== 'all' ? activeRegionOption.shortLabel : 'Регион'}
+                  </span>
+                  {selectedMacroRegion !== 'all' && (
+                    <span className="hidden md:inline px-1.5 py-0.5 rounded bg-amber-500/90 text-slate-950 font-bold text-[10px] tabular-nums">
+                      {macroRegionCounts[selectedMacroRegion] ?? 0}
+                    </span>
+                  )}
+                  <ChevronDown
+                    className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
+                      isRegionMenuOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+                {selectedMacroRegion !== 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onSelectMacroRegion('all');
+                      setIsRegionMenuOpen(false);
+                    }}
+                    aria-label="Сбросить фильтр по макрорегиону"
+                    title="Сбросить фильтр по макрорегиону (Все регионы)"
+                    className="pr-1.5 pl-1 py-1.5 border-l border-amber-500/30 text-amber-300/80 hover:text-white transition-colors cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              {isRegionMenuOpen && (
+                <div
+                  role="menu"
+                  aria-label="Фильтр по макрорегионам"
+                  className="fixed lg:absolute left-3 right-3 lg:left-0 lg:right-auto top-[54px] lg:top-full lg:mt-2 max-w-md lg:max-w-none lg:w-80 mx-auto lg:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-1.5 space-y-1 max-h-[75vh] overflow-y-auto animate-modal"
+                >
+                  <div className="px-2.5 py-1 flex items-center justify-between text-[10px] font-mono text-slate-400 border-b border-slate-800/80">
+                    <span>Фасетный фильтр по макрорегионам</span>
+                    <span className="text-slate-500 tabular-nums">
+                      {yearFrom}–{yearTo} гг.
+                    </span>
+                  </div>
+                  {MACRO_REGION_OPTIONS.map((opt) => {
+                    const active = selectedMacroRegion === opt.id;
+                    const count = macroRegionCounts[opt.id] ?? 0;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          onSelectMacroRegion(opt.id);
+                          setIsRegionMenuOpen(false);
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl text-left transition-colors cursor-pointer ${
+                          active
+                            ? 'bg-amber-500/15 border border-amber-500/45 text-white'
+                            : 'hover:bg-slate-900 border border-transparent text-slate-200'
+                        }`}
+                      >
+                        <div className="min-w-0 flex items-center gap-2">
+                          <MapPin
+                            className={`w-3.5 h-3.5 shrink-0 ${
+                              active ? 'text-amber-400' : 'text-slate-500'
+                            }`}
+                          />
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-white truncate">
+                              {opt.label}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono tabular-nums ${
+                              active
+                                ? 'bg-amber-500 text-slate-950 font-bold'
+                                : 'bg-slate-900 text-slate-400 border border-slate-800'
+                            }`}
+                          >
+                            {count}
+                          </span>
+                          {active && <Check className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex flex-nowrap items-center gap-1 sm:gap-1.5 ml-auto shrink-0">

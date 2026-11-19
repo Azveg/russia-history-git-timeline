@@ -122,3 +122,14 @@ export function computeMacroRegionCounts(
 
   return counts;
 }
+
+export function getMacroRegionOption(id: MacroRegionId): MacroRegionOption {
+  return MACRO_REGION_OPTIONS.find((opt) => opt.id === id) ?? MACRO_REGION_OPTIONS[0];
+}
+
+export function parseMacroRegionParam(raw: string | null | undefined): MacroRegionId {
+  if (!raw) return 'all';
+  const normalized = raw.trim() as MacroRegionId;
+  return MACRO_REGION_OPTIONS.some((opt) => opt.id === normalized) ? normalized : 'all';
+}
+

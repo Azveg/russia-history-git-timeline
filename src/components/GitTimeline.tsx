@@ -14,11 +14,13 @@ import {
   Link2,
   Lock,
   LockOpen,
+  MapPin,
   Pin,
   X,
   Zap,
 } from 'lucide-react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { classifyEventMacroRegions, getMacroRegionOption } from '../engine/regionFilter';
 import {
   computeBranchSubLaneLayout,
   computeRulerSubLaneLayout,
@@ -51,6 +53,7 @@ import type {
   EnrichedEvent,
   FocusDepth,
   FocusScope,
+  MacroRegionId,
   ResolvedMacroEra,
   RulerPeriod,
   StreamRow,
@@ -75,6 +78,8 @@ interface GitTimelineProps {
   hoveredEventId: string | null;
   cardDensity: CardDensity;
   timeScaleMode?: TimeScaleMode;
+  selectedMacroRegion?: MacroRegionId;
+  onSelectMacroRegion?: (region: MacroRegionId) => void;
   focusedEvent: EnrichedEvent | null;
   focusScope: FocusScope;
   focusDepth?: FocusDepth;
@@ -219,6 +224,8 @@ export function GitTimeline({
   hoveredEventId,
   cardDensity,
   timeScaleMode = 'compact',
+  selectedMacroRegion = 'all',
+  onSelectMacroRegion,
   focusedEvent,
   focusScope,
   focusDepth = 1,
@@ -1271,6 +1278,23 @@ export function GitTimeline({
           </div>
 
           <div ref={graphHelpRef} className="relative flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
+            {selectedMacroRegion !== 'all' && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-400/50 text-amber-200 font-semibold">
+                <MapPin className="w-3 h-3 text-amber-400 shrink-0" />
+                <span>{getMacroRegionOption(selectedMacroRegion).shortLabel}</span>
+                {onSelectMacroRegion && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectMacroRegion('all')}
+                    aria-label="Сбросить фильтр по макрорегиону"
+                    title="Сбросить фильтр по макрорегиону"
+                    className="ml-0.5 text-amber-300 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </span>
+            )}
             <span className="hidden md:inline text-slate-300">
               Масштаб оси: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
             </span>
@@ -2225,6 +2249,13 @@ export function GitTimeline({
             const hiddenBranchSummaries = getEventHiddenBranchSummaries(ev, activeBranches, branches);
             const hiddenLinksTotal = hiddenBranchSummaries.reduce((sum, b) => sum + b.linkCount, 0);
             const auditInfo = auditUnlinkedMode ? auditCandidateMap?.get(ev.id) : undefined;
+            const eventMacroRegions = classifyEventMacroRegions(ev);
+            const primaryMacroRegionId =
+              selectedMacroRegion !== 'all' && eventMacroRegions.includes(selectedMacroRegion)
+                ? selectedMacroRegion
+                : eventMacroRegions[0];
+            const primaryMacroRegionOpt = getMacroRegionOption(primaryMacroRegionId);
+            const isMacroRegionActive = selectedMacroRegion === primaryMacroRegionId;
 
             let cardHighlightClass =
               'border-slate-800/90 group-hover:border-slate-600 bg-slate-900/75 group-hover:bg-slate-900';
@@ -2577,6 +2608,24 @@ export function GitTimeline({
                           />
                           <span className="truncate">{origBranchObj.label}</span>
                         </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectMacroRegion?.(
+                              isMacroRegionActive ? 'all' : primaryMacroRegionId,
+                            );
+                          }}
+                          title={`${primaryMacroRegionOpt.label}${ev.region ? ` (${ev.region})` : ''} — нажмите для фильтрации по макрорегиону`}
+                          className={`hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-mono shrink-0 transition-colors cursor-pointer ${
+                            isMacroRegionActive
+                              ? 'bg-amber-500/20 border-amber-400/70 text-amber-200 font-semibold'
+                              : 'bg-slate-950/75 border-slate-800 text-slate-300 hover:border-amber-400/50 hover:text-amber-200'
+                          }`}
+                        >
+                          <MapPin className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                          <span>{primaryMacroRegionOpt.shortLabel}</span>
+                        </button>
                         {hasMultipleRulers && !isBioNode && (
                           <span className="hidden lg:inline text-xs font-sans text-slate-300 shrink-0 tabular-nums">
                             · <span className="font-mono">{ev.overlappingRulers.length}</span> правл.
@@ -2778,14 +2827,33 @@ export function GitTimeline({
                             />
                             <span className="truncate">{origBranchObj.label}</span>
                           </span>
-                          {ev.region && (
-                            <>
-                              <span aria-hidden="true" className="text-slate-400">
-                                ·
-                              </span>
-                              <span className="text-slate-400 max-w-[130px] truncate">{ev.region}</span>
-                            </>
-                          )}
+                          <span aria-hidden="true" className="text-slate-400">
+                            ·
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectMacroRegion?.(
+                                isMacroRegionActive ? 'all' : primaryMacroRegionId,
+                              );
+                            }}
+                            title={`${primaryMacroRegionOpt.label}${ev.region ? ` (${ev.region})` : ''} — нажмите для фильтрации ленты по макрорегиону`}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer ${
+                              isMacroRegionActive
+                                ? 'bg-amber-500/20 border-amber-400/70 text-amber-200 font-semibold'
+                                : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-amber-400/55 hover:text-amber-200'
+                            }`}
+                          >
+                            <MapPin className="w-3 h-3 text-amber-400 shrink-0" />
+                            <span>{primaryMacroRegionOpt.shortLabel}</span>
+                            {ev.region &&
+                              ev.region.toLowerCase() !== primaryMacroRegionOpt.shortLabel.toLowerCase() && (
+                                <span className="text-slate-400 max-w-[105px] truncate hidden lg:inline">
+                                  · {ev.region}
+                                </span>
+                              )}
+                          </button>
                         </div>
                       </div>
 
@@ -2857,6 +2925,24 @@ export function GitTimeline({
                             <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
                             <span className="font-mono text-[11px]">{nodeStatus.compactDurationLabel}</span>
                           </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectMacroRegion?.(
+                                isMacroRegionActive ? 'all' : primaryMacroRegionId,
+                              );
+                            }}
+                            title={`${primaryMacroRegionOpt.label}${ev.region ? ` (${ev.region})` : ''} — нажмите для фильтрации по макрорегиону`}
+                            className={`sm:hidden inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[11px] font-mono shrink-0 transition-colors cursor-pointer ${
+                              isMacroRegionActive
+                                ? 'bg-amber-500/20 border-amber-400/70 text-amber-200 font-semibold'
+                                : 'bg-slate-950/75 border-slate-800 text-slate-300 hover:border-amber-400/50 hover:text-amber-200'
+                            }`}
+                          >
+                            <MapPin className="w-2.5 h-2.5 text-amber-400 shrink-0" />
+                            <span>{primaryMacroRegionOpt.shortLabel}</span>
+                          </button>
                           {ev.ruler && (
                             <span
                               className={`inline-flex items-center gap-1 min-w-0 truncate ${

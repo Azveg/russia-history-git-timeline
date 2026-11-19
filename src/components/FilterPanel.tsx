@@ -317,6 +317,39 @@ export function FilterPanel({
         </div>
 
         <div className="flex flex-wrap items-center justify-between lg:justify-end gap-1.5 shrink-0">
+          {/* Всегда видимый фильтр по географическому макрорегиону */}
+          <div className="flex items-center gap-1 bg-slate-950/85 border border-slate-800 rounded-xl px-2 py-1">
+            <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <select
+              aria-label="Фильтр по макрорегиону"
+              value={selectedMacroRegion}
+              onChange={(e) => onSelectMacroRegion(e.target.value as MacroRegionId)}
+              className={`bg-transparent text-xs font-mono transition-colors cursor-pointer focus:outline-none max-w-[190px] sm:max-w-[225px] ${
+                selectedMacroRegion !== 'all'
+                  ? 'text-amber-200 font-semibold'
+                  : 'text-slate-300'
+              }`}
+              title="Фильтр исторических событий по географическому макрорегиону"
+            >
+              {MACRO_REGION_OPTIONS.map((opt) => (
+                <option key={opt.id} value={opt.id} className="bg-slate-950 text-slate-100">
+                  {opt.label} ({macroRegionCounts[opt.id] ?? 0})
+                </option>
+              ))}
+            </select>
+            {selectedMacroRegion !== 'all' && (
+              <button
+                type="button"
+                onClick={() => onSelectMacroRegion('all')}
+                aria-label="Сбросить фильтр по макрорегиону"
+                title="Сбросить фильтр по макрорегиону"
+                className="p-0.5 rounded text-amber-300 hover:text-white cursor-pointer shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
           <div className="flex lg:hidden items-center gap-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2.5 py-1 text-xs font-mono">
             <span className="text-slate-400">Окно:</span>
             <input

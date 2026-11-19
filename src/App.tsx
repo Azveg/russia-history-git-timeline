@@ -34,6 +34,11 @@ import {
   useTimelineUrlSync,
 } from './hooks/useTimelineUrlSync';
 import {
+  doesEventMatchMacroRegion,
+  getMacroRegionOption,
+  parseMacroRegionParam,
+} from './engine/regionFilter';
+import {
   buildPersonDossierIndex,
   buildSyncTagIndex,
   buildUnifiedTimelineStream,
@@ -111,7 +116,9 @@ export default function App() {
 
   const [selectedPersonKey, setSelectedPersonKey] = useState<string | null>(null);
   const [selectedSyncTag, setSelectedSyncTag] = useState<string | null>(null);
-  const [selectedMacroRegion, setSelectedMacroRegion] = useState<MacroRegionId>('all');
+  const [selectedMacroRegion, setSelectedMacroRegion] = useState<MacroRegionId>(() =>
+    parseMacroRegionParam(initialParams.get('region')),
+  );
   const [branchPairFilter, setBranchPairFilter] = useState<BranchPairFilter | null>(null);
   const [auditUnlinkedMode, setAuditUnlinkedMode] = useState(false);
   const [onlyWithSyncLinks, setOnlyWithSyncLinks] = useState(false);
@@ -306,6 +313,7 @@ export default function App() {
     yearFrom,
     yearTo,
     searchQuery,
+    selectedMacroRegion,
     activeCardId,
     activeRulerModalId,
     activePersonModalKey,
@@ -316,6 +324,7 @@ export default function App() {
     setYearFrom,
     setYearTo,
     setSearchQuery,
+    setSelectedMacroRegion,
     setActiveBranches,
     onPopModalFromUrl: handlePopModalFromUrl,
   });
@@ -526,6 +535,7 @@ export default function App() {
   const branchControls = useMemo(() => {
     const byBranchCount: Record<string, number> = {};
     enrichedEvents.forEach((ev) => {
+      if (!doesEventMatchMacroRegion(ev, selectedMacroRegion)) return;
       const effStart = getEventEffectiveStartYear(ev, branches);
       const effEnd = getEventEffectiveEndYear(ev, branches);
       if (intersectsTimeWindow(effStart, effEnd, effectiveYearFrom, effectiveYearTo)) {
@@ -545,7 +555,7 @@ export default function App() {
       }
       return { ...b, count: byBranchCount[b.id] || 0 };
     });
-  }, [branches, enrichedEvents, matchingRulers.length, effectiveYearFrom, effectiveYearTo]);
+  }, [branches, enrichedEvents, matchingRulers.length, effectiveYearFrom, effectiveYearTo, selectedMacroRegion]);
 
   const resolvedMacroEras = useMemo(
     () => (manifest ? resolveMacroEras(manifest.macroEras) : []),
@@ -1551,6 +1561,10 @@ export default function App() {
         onJumpToRuler={handleJumpToRuler}
         onFilterByRuler={handleSelectReign}
         onOpenRulerModal={handleOpenPeriodModal}
+        selectedMacroRegion={selectedMacroRegion}
+        onSelectMacroRegion={(region) => {
+          preserveViewportScrollAnchor(() => setSelectedMacroRegion(region));
+        }}
         yearFrom={effectiveYearFrom}
         yearTo={effectiveYearTo}
         minYear={timelineBounds.minYear}
@@ -1736,6 +1750,15 @@ export default function App() {
             hoveredEventId={hoveredEventId}
             cardDensity={cardDensity}
             timeScaleMode={timeScaleMode}
+            selectedMacroRegion={selectedMacroRegion}
+            onSelectMacroRegion={(region) => {
+              preserveViewportScrollAnchor(() => setSelectedMacroRegion(region));
+              if (region === 'all') {
+                showToast('Фильтр по макрорегиону сброшен (показаны все регионы)');
+              } else {
+                showToast(`Фильтр по макрорегиону: «${getMacroRegionOption(region).label}»`);
+              }
+            }}
             focusedEvent={focusedEvent}
             focusScope={focusScope}
             focusDepth={focusDepth}
@@ -1793,6 +1816,7 @@ export default function App() {
               eras={manifest.macroEras}
               personDossiers={personDossiers}
               focusedEventId={focusedEventId}
+              selectedMacroRegion={selectedMacroRegion}
               modalHistory={modalHistory}
               onClose={handleCloseAllModals}
               onNavigateBack={handleModalNavigateBack}
@@ -1801,6 +1825,15 @@ export default function App() {
               onRevealBranch={handleRevealBranch}
               onToggleFocusEvent={handleToggleFocusEvent}
               onFilterByRuler={handleSelectReign}
+              onFilterByMacroRegion={(region) => {
+                setSelectedMacroRegion(region);
+                handleCloseAllModals();
+                if (region === 'all') {
+                  showToast('Фильтр по макрорегиону сброшен (показаны все регионы)');
+                } else {
+                  showToast(`Фильтр по макрорегиону: «${getMacroRegionOption(region).label}»`);
+                }
+              }}
               onOpenPersonModal={handleOpenPersonModal}
               onFilterByPerson={(personName) => {
                 const cleanName = personName.replace(/\s*\([^)]*\)\s*/g, '').trim() || personName;

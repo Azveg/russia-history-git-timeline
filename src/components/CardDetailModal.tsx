@@ -28,6 +28,7 @@ import {
   SourcesApparatusSection,
 } from './AcademicCitationBar';
 import { DossierModalHeader } from './DossierModalHeader';
+import { classifyEventMacroRegions, getMacroRegionOption } from '../engine/regionFilter';
 import {
   findMacroEraForYear,
   formatCalendarDetailBadge,
@@ -41,6 +42,7 @@ import type {
   BranchDefinition,
   EnrichedEvent,
   MacroEra,
+  MacroRegionId,
   ModalHistoryItem,
   PersonDossier,
   RulerPeriod,
@@ -55,6 +57,7 @@ interface CardDetailModalProps {
   eras?: MacroEra[];
   personDossiers?: Map<string, PersonDossier>;
   focusedEventId: string | null;
+  selectedMacroRegion?: MacroRegionId;
   modalHistory?: ModalHistoryItem[];
   onClose: () => void;
   onNavigateBack?: () => void;
@@ -63,6 +66,7 @@ interface CardDetailModalProps {
   onRevealBranch?: (branchId: string) => void;
   onToggleFocusEvent: (id: string) => void;
   onFilterByRuler: (rulerId: string) => void;
+  onFilterByMacroRegion?: (region: MacroRegionId) => void;
   onOpenPersonModal?: (personKeyOrName: string) => void;
   onFilterByPerson?: (personName: string) => void;
   onOpenRulerModal?: (rulerId: string) => void;
@@ -91,6 +95,7 @@ export function CardDetailModal({
   eras = [],
   personDossiers,
   focusedEventId,
+  selectedMacroRegion = 'all',
   modalHistory = [],
   onClose,
   onNavigateBack,
@@ -99,6 +104,7 @@ export function CardDetailModal({
   onRevealBranch,
   onToggleFocusEvent,
   onFilterByRuler,
+  onFilterByMacroRegion,
   onOpenPersonModal,
   onFilterByPerson,
   onOpenRulerModal,
@@ -614,6 +620,36 @@ export function CardDetailModal({
                   {card.type && card.type !== 'Событие'
                     ? card.type
                     : EVENT_TYPE_LABELS[card.eventType ?? ''] ?? branchObj.label}
+                </div>
+                <div className="mt-2 pt-1.5 border-t border-slate-800/70 flex flex-wrap items-center gap-1.5">
+                  {classifyEventMacroRegions(card).map((regionId) => {
+                    const opt = getMacroRegionOption(regionId);
+                    const isActive = selectedMacroRegion === regionId;
+                    return (
+                      <button
+                        key={regionId}
+                        type="button"
+                        onClick={() => {
+                          if (onFilterByMacroRegion) {
+                            onFilterByMacroRegion(isActive ? 'all' : regionId);
+                          }
+                        }}
+                        title={
+                          isActive
+                            ? `Активен фильтр по макрорегиону «${opt.label}». Нажмите, чтобы сбросить`
+                            : `Отфильтровать ленту таймлайна по макрорегиону «${opt.label}»`
+                        }
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer ${
+                          isActive
+                            ? 'bg-amber-500/20 border-amber-400 text-amber-200 font-semibold'
+                            : 'bg-slate-900/90 border-slate-700/80 text-amber-200/90 hover:bg-amber-500/15 hover:border-amber-400/60 hover:text-white'
+                        }`}
+                      >
+                        <MapPin className="w-3 h-3 text-amber-400 shrink-0" />
+                        <span>{isActive ? `Фильтр: ${opt.shortLabel} ×` : `Фильтр: ${opt.shortLabel}`}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 

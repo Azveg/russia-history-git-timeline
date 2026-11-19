@@ -1,6 +1,7 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { parseMacroRegionParam } from '../engine/regionFilter';
 import { computeBranchPresetMap } from '../engine/timelineEngine';
-import type { BranchDefinition } from '../types/timeline';
+import type { BranchDefinition, MacroRegionId } from '../types/timeline';
 
 export interface TimelineUrlModalState {
   activeCardId: string | null;
@@ -14,11 +15,13 @@ export interface UseTimelineUrlSyncOptions extends TimelineUrlModalState {
   yearFrom: number;
   yearTo: number;
   searchQuery: string;
+  selectedMacroRegion?: MacroRegionId;
   activeBranches: Record<string, boolean>;
   branches: BranchDefinition[];
   setYearFrom: Dispatch<SetStateAction<number>>;
   setYearTo: Dispatch<SetStateAction<number>>;
   setSearchQuery: Dispatch<SetStateAction<string>>;
+  setSelectedMacroRegion?: Dispatch<SetStateAction<MacroRegionId>>;
   setActiveBranches: Dispatch<SetStateAction<Record<string, boolean>>>;
   onPopModalFromUrl: (next: {
     cardId: string | null;
@@ -50,6 +53,7 @@ export function useTimelineUrlSync({
   yearFrom,
   yearTo,
   searchQuery,
+  selectedMacroRegion = 'all',
   activeCardId,
   activeRulerModalId,
   activePersonModalKey,
@@ -60,6 +64,7 @@ export function useTimelineUrlSync({
   setYearFrom,
   setYearTo,
   setSearchQuery,
+  setSelectedMacroRegion,
   setActiveBranches,
   onPopModalFromUrl,
 }: UseTimelineUrlSyncOptions): void {
@@ -73,6 +78,12 @@ export function useTimelineUrlSync({
 
     if (searchQuery.trim()) params.set('search', searchQuery.trim());
     else params.delete('search');
+
+    if (selectedMacroRegion && selectedMacroRegion !== 'all') {
+      params.set('region', selectedMacroRegion);
+    } else {
+      params.delete('region');
+    }
 
     if (activeCardId) params.set('card', activeCardId);
     else params.delete('card');
@@ -118,6 +129,7 @@ export function useTimelineUrlSync({
     yearFrom,
     yearTo,
     searchQuery,
+    selectedMacroRegion,
     activeCardId,
     activeRulerModalId,
     activePersonModalKey,
@@ -133,6 +145,9 @@ export function useTimelineUrlSync({
       setYearFrom(parseInitialYearBound(params, 'from', 862));
       setYearTo(parseInitialYearBound(params, 'to', 2000));
       setSearchQuery(params.get('search') ?? '');
+      if (setSelectedMacroRegion) {
+        setSelectedMacroRegion(parseMacroRegionParam(params.get('region')));
+      }
 
       onPopModalFromUrl({
         cardId: params.get('card'),
@@ -167,5 +182,5 @@ export function useTimelineUrlSync({
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [branches, setYearFrom, setYearTo, setSearchQuery, setActiveBranches, onPopModalFromUrl]);
+  }, [branches, setYearFrom, setYearTo, setSearchQuery, setSelectedMacroRegion, setActiveBranches, onPopModalFromUrl]);
 }
