@@ -3,18 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none';"
+    />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
     <meta name="robots" content="noindex" />
-    <title>Перенаправление — Интерактивный хронограф истории России (862–2000)</title>
-    <script>
-      (function () {
-        var loc = window.location;
-        var base = '/Historical-Atlas/';
-        var path = loc.pathname.indexOf(base) === 0 ? base : '/';
-        loc.replace(loc.origin + path + loc.search + loc.hash);
-      })();
-    </script>
+    <title>Перенаправление — Исторический атлас-хронограф (862–2000)</title>
+    <link rel="stylesheet" href="./404.css" />
+    <script src="./404-redirect.js" defer></script>
   </head>
-  <body style="background:#050811;color:#f1f5f9;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;">
-    <p>Перенаправление в интерактивный хронограф истории России…</p>
+  <body>
+    <main>
+      <p>Перенаправление в Исторический атлас-хронограф…</p>
+      <p><a class="fallback-link" href="./">Открыть главную страницу</a></p>
+    </main>
   </body>
 </html>

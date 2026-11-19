@@ -1,4 +1,8 @@
-import { lazy, type ComponentType, type LazyExoticComponent } from 'react';
+import { lazy, type LazyExoticComponent } from 'react';
+
+type ReactLazyComponentBound = Parameters<typeof lazy>[0] extends () => Promise<{ default: infer C }>
+  ? C
+  : never;
 
 const RELOAD_GUARD_KEY = 'chronograph_module_reload_ts';
 const RELOAD_COOLDOWN_MS = 15_000;
@@ -39,7 +43,7 @@ function wait(ms: number): Promise<void> {
   });
 }
 
-export function lazyWithRetry<T extends ComponentType<any>>(
+export function lazyWithRetry<T extends ReactLazyComponentBound>(
   importer: () => Promise<{ default: T }>,
   retries = 2,
 ): LazyExoticComponent<T> {

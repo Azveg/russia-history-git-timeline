@@ -93,7 +93,7 @@
         "SCIENCE_ALL",
         "SCIENTISTS_BIO"
       ],
-      "title": "Выдающиеся учёные и инженеры России и СССР (XVIII–XX вв.)",
+      "title": "Выдающиеся учёные и инженеры России и СССР (XII–XX вв.)",
       "enabled": true
     },
     {
@@ -103,7 +103,79 @@
       "branchIds": [
         "SCIENCE_DISCOVERIES"
       ],
-      "title": "Научные открытия, академии и технологические прорывы (1687–2000)",
+      "title": "Научные открытия, академии и технологические прорывы (1136–2000)",
+      "enabled": true
+    },
+    {
+      "fileId": "architects_bio",
+      "path": "data/architects_bio.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "ARCHITECTURE_ALL",
+        "ARCHITECTS_BIO"
+      ],
+      "title": "Архитектура: зодчие, постройки и технологии (общая)",
+      "enabled": true
+    },
+    {
+      "fileId": "architecture_works",
+      "path": "data/architecture_works.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "ARCHITECTURE_WORKS"
+      ],
+      "title": "Архитектура: постройки, ансамбли и технологии",
+      "enabled": true
+    },
+    {
+      "fileId": "arts_culture",
+      "path": "data/arts_culture.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "ARTS_CULTURE"
+      ],
+      "title": "Искусство, музыка, театр и кино",
+      "enabled": true
+    },
+    {
+      "fileId": "doctors_bio",
+      "path": "data/doctors_bio.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "MEDICINE_ALL",
+        "DOCTORS_BIO"
+      ],
+      "title": "Медицина: врачи, клиники и открытия (общая)",
+      "enabled": true
+    },
+    {
+      "fileId": "medicine_health",
+      "path": "data/medicine_health.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "MEDICINE_HEALTH"
+      ],
+      "title": "Медицина: институты, клиники и открытия",
+      "enabled": true
+    },
+    {
+      "fileId": "statesmen_bio",
+      "path": "data/statesmen_bio.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "STATESMEN_BIO"
+      ],
+      "title": "Государственные деятели, дипломаты и реформаторы",
+      "enabled": true
+    },
+    {
+      "fileId": "thought_religion",
+      "path": "data/thought_religion.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "THOUGHT_RELIGION"
+      ],
+      "title": "Религия, просвещение и общественная мысль",
       "enabled": true
     }
   ],
@@ -242,11 +314,39 @@
       "label": "Затяжная 20-летняя Северная война потребовала введения подушной подати и ревизий населения"
     },
     {
+      "id": "link-mongol-batu",
+      "from": "1206-world-mongol-empire",
+      "to": "1237-batu-invasion",
+      "type": "enables",
+      "label": "Создание Монгольской империи Чингисхана (1206) и её западная экспансия привели к Батыеву нашествию на Русь (1237–1241)"
+    },
+    {
+      "id": "link-livonian-yam-zapolsky",
+      "from": "1558-livonian-war",
+      "to": "1582-yam-zapolsky-plyussa",
+      "type": "triggers",
+      "label": "Истощение ресурсов в 25-летней Ливонской войне вынудило Россию заключить Ям-Запольское (1582) и Плюсское (1583) перемирия"
+    },
+    {
+      "id": "link-qing-nerchinsk",
+      "from": "1368-world-ming-qing-china",
+      "to": "1686-eternal-peace-nerchinsk",
+      "type": "enables",
+      "label": "Экспансия маньчжурской империи Цин на Амуре привела к подписанию первого русско-китайского Нерчинского договора (1689)"
+    },
+    {
       "id": "link-seven-years-customs",
       "from": "1754-reform-customs",
       "to": "1756-seven-years",
+      "type": "enables",
+      "label": "Отмена внутренних таможен и рост внешнеторговых сборов по реформе П. И. Шувалова (1754) укрепили казну накануне Семилетней войны"
+    },
+    {
+      "id": "link-seven-years-nobility-freedom",
+      "from": "1756-seven-years",
+      "to": "1762-manifesto-nobility-freedom",
       "type": "sync_context",
-      "label": "Манифест о вольности дворянства Петра III (1762) совпал с резким выходом России из Семилетней войны"
+      "label": "Манифест о вольности дворянства Петра III (1762) совпал с резким выходом России из Семилетней войны и Петербургским миром с Пруссией"
     },
     {
       "id": "link-turk-assignats",
@@ -258,9 +358,9 @@
     {
       "id": "link-pugachev-guberniya",
       "from": "1773-pugachev",
-      "to": "1769-reform-assignats",
-      "type": "sync_context",
-      "label": "Разгром Пугачевского восстания привел к Губернской реформе 1775 г. для усиления контроля на местах"
+      "to": "1775-reform-guberniya",
+      "type": "triggers",
+      "label": "Разгром Пугачёвского восстания напрямую вызвал Губернскую реформу 1775 г. для усиления контроля и перестройки власти на местах"
     },
     {
       "id": "link-tilsit-blockade",
@@ -305,11 +405,46 @@
       "label": "Военные поражения в Русско-японской войне стали катализатором Первой русской революции 1905–1907 гг."
     },
     {
+      "id": "link-industrial-crimea",
+      "from": "1760-world-industrial-revolution",
+      "to": "1853-crimean-war",
+      "type": "enables",
+      "label": "Промышленный переворот на Западе (паровой флот, нарезное оружие, телеграф) обнажил технологическое отставание России в Крымской войне"
+    },
+    {
+      "id": "link-great-reforms-counter",
+      "from": "1861-reform-emancipation",
+      "to": "1881-counter-reforms-alexander-3",
+      "type": "triggers",
+      "label": "Убийство Александра II прервало цикл Великих реформ и вызвало охранительную ревизию — контрреформы Александра III (1881–1892)"
+    },
+    {
+      "id": "link-meiji-rus-japanese",
+      "from": "1868-world-meiji-restoration",
+      "to": "1904-rus-japanese",
+      "type": "enables",
+      "label": "Форсированная модернизация Японии эпохи Мэйдзи (с 1868 г.) создала современную армию и флот для столкновения с Россией на Дальнем Востоке"
+    },
+    {
+      "id": "link-mechnikov-vavilov-biology",
+      "from": "1883-mechnikov-phagocytosis-odessa-station",
+      "to": "1920-vavilov-genetics-seed-bank",
+      "type": "sync_context",
+      "label": "Преемственность мировой российской биологии: от фагоцитарной теории И. И. Мечникова (Нобелевская премия 1908) к генетике Н. И. Вавилова"
+    },
+    {
       "id": "link-civil-war-communism",
       "from": "1917-civil-war",
       "to": "1918-reform-war-communism",
       "type": "sync_context",
       "label": "Продразверстка «Военного коммунизма» снабжала РККА, но спровоцировала крестьянские восстания 1920–1921 гг."
+    },
+    {
+      "id": "link-prc-cold-war",
+      "from": "1945-world-yalta-nato",
+      "to": "1949-world-prc-founding",
+      "type": "sync_context",
+      "label": "Образование КНР в октябре 1949 года расширило биполярное противостояние Холодной войны на Восточную Азию"
     }
   ]
 }

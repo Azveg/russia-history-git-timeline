@@ -32,13 +32,22 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies (deterministic lockfile)
-        run: npm ci --legacy-peer-deps
+        run: npm ci
 
-      - name: Validate historical JSON modules & branch manifests
-        run: npm run validate:branches
+      - name: Security audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Validate historical JSON modules & branch manifests (strict)
+        run: npm run validate:branches:strict
+
+      - name: Verify BRANCH_CATALOG.md is in sync
+        run: npm run sync:catalog:check
 
       - name: Typecheck codebase
         run: npm run lint
+
+      - name: Run automated unit & integration tests
+        run: npm test
 
       - name: Build static bundle with canonical GitHub Pages URL
         env:

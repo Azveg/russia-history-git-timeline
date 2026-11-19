@@ -67,6 +67,15 @@ export interface ResolvedMacroEra extends MacroEra {
   displayShortTitle: string;
 }
 
+export type SourceEntryType = 'primary' | 'document' | 'historiography' | 'reference';
+
+export interface SourceEntry {
+  type: SourceEntryType;
+  citation: string;
+  note?: string;
+  url?: string;
+}
+
 export interface RulerPeriod {
   id: string;
   eraId: string;
@@ -81,6 +90,7 @@ export interface RulerPeriod {
   calendarStyle?: CalendarStyle;
   reignTitle: string;
   reignThesis: string;
+  sources?: SourceEntry[];
 }
 
 export interface SubEvent {
@@ -139,6 +149,7 @@ export interface TimelineNode {
   literaryProfile?: LiteraryProfile;
   subEvents?: SubEvent[];
   linksTo?: InlineNodeLink[];
+  sources?: SourceEntry[];
   campaignId?: string;
   syncTags?: string[];
   referenceTags?: string[];
@@ -171,8 +182,10 @@ export interface MountedFileMeta {
 }
 
 export interface ModulesIndexFile {
+  schemaVersion?: string;
   generatedAt?: string;
   files: string[];
+  fileHashes?: Record<string, string>;
 }
 
 export interface SyncManifest {

@@ -6,18 +6,26 @@ on:
       - "public/data/**/*.json"
       - "scripts/sync-branch-catalog.mjs"
       - "scripts/validate-branches.mjs"
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "public/data/**/*.json"
+      - "scripts/sync-branch-catalog.mjs"
+      - "scripts/validate-branches.mjs"
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: sync-catalog-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  validate-and-sync:
+  validate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -27,8 +35,8 @@ jobs:
         with:
           node-version: "22"
 
-      - name: Validate all branch JSON modules
-        run: npm run validate:branches
+      - name: Validate all branch JSON modules (strict)
+        run: npm run validate:branches:strict
 
       - name: Check catalog sync preview on Pull Request
         if: github.event_name == 'pull_request'
@@ -39,14 +47,27 @@ jobs:
             echo "BRANCH_CATALOG.md will be automatically regenerated on merge to main/master." >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  sync-on-main:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
       - name: Regenerate BRANCH_CATALOG.md
-        if: github.event_name != 'pull_request'
         run: |
           npm run sync:catalog
           npm run sync:catalog:check
 
       - name: Commit updated BRANCH_CATALOG.md
-        if: github.event_name != 'pull_request'
         run: |
           if [ -n "$(git status --porcelain BRANCH_CATALOG.md)" ]; then
             git config user.name "github-actions[bot]"

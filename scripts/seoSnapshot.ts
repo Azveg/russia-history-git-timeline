@@ -230,12 +230,33 @@ export function collectRepositorySnapshot(rootDir: string): RepositorySnapshot {
 
   let totalInlineLinks = 0;
 
+  const dataDir = path.join(publicDir, 'data');
+  const diskDataFiles = fs.existsSync(dataDir)
+    ? fs
+        .readdirSync(dataDir)
+        .filter((f) => f.endsWith('.json') && f !== 'sync.manifest.json' && f !== 'modules.index.json')
+        .map((f) => `data/${f}`)
+        .sort()
+    : [];
+
   const mountedEntries = manifest?.mountedFiles ?? [];
+  const manifestPathSet = new Set(
+    mountedEntries
+      .map((entry) => entry.path?.replace(/^(?:\.\/|\/)+/, ''))
+      .filter((p): p is string => Boolean(p)),
+  );
+  const unmountedDiskFiles = diskDataFiles.filter((p) => !manifestPathSet.has(p));
+  if (unmountedDiskFiles.length > 0) {
+    throw new Error(
+      `[SEO Snapshot] Unmounted data modules detected in public/data/: ${unmountedDiskFiles.join(', ')}. Register them in public/data/sync.manifest.json.`,
+    );
+  }
+
   const seenFiles = new Set<string>();
 
   for (const entry of mountedEntries) {
     if (!entry.path || entry.enabled === false) continue;
-    const relPath = entry.path.replace(/^\/+/, '');
+    const relPath = entry.path.replace(/^(?:\.\/|\/)+/, '');
     if (seenFiles.has(relPath)) continue;
     seenFiles.add(relPath);
 
@@ -484,10 +505,10 @@ export function buildRootHtmlSnapshot(snapshot: RepositorySnapshot): string {
   const erasHtml = snapshot.macroEras
     .map(
       (era) =>
-        `<li style="margin:0 0 10px 0;padding:10px 12px;border:1px solid #1e293b;border-radius:8px;background:#0b1120;">` +
-        `<strong style="color:#fcd34d;">${escapeHtml(era.title)}</strong> ` +
-        `<span style="color:#94a3b8;">(${escapeHtml(era.period)})</span>` +
-        `<p style="margin:4px 0 0 0;color:#cbd5e1;font-size:14px;">${escapeHtml(era.thesis)}</p>` +
+        `<li class="seo-snapshot-card">` +
+        `<strong class="seo-snapshot-accent">${escapeHtml(era.title)}</strong> ` +
+        `<span class="seo-snapshot-muted">(${escapeHtml(era.period)})</span>` +
+        `<p class="seo-snapshot-text">${escapeHtml(era.thesis)}</p>` +
         `</li>`,
     )
     .join('\n          ');
@@ -495,12 +516,12 @@ export function buildRootHtmlSnapshot(snapshot: RepositorySnapshot): string {
   const branchesHtml = snapshot.branches
     .map(
       (branch) =>
-        `<li style="margin:0 0 8px 0;">` +
-        `<strong style="color:#e2e8f0;">${escapeHtml(branch.label)}</strong> ` +
-        `<code style="color:#93c5fd;font-size:12px;">${escapeHtml(branch.gitName)}</code> ` +
-        `<span style="color:#94a3b8;">(${branch.nodesCount})</span> — ` +
-        `<span style="color:#cbd5e1;">${escapeHtml(branch.description)}</span> ` +
-        `[<a href="./${escapeHtml(branch.sourceFile)}" style="color:#38bdf8;">${escapeHtml(branch.sourceFile)}</a>]` +
+        `<li class="seo-snapshot-item">` +
+        `<strong>${escapeHtml(branch.label)}</strong> ` +
+        `<code class="seo-snapshot-code">${escapeHtml(branch.gitName)}</code> ` +
+        `<span class="seo-snapshot-muted">(${branch.nodesCount})</span> — ` +
+        `<span class="seo-snapshot-text-inline">${escapeHtml(branch.description)}</span> ` +
+        `[<a class="seo-snapshot-link" href="./${escapeHtml(branch.sourceFile)}">${escapeHtml(branch.sourceFile)}</a>]` +
         `</li>`,
     )
     .join('\n          ');
@@ -508,11 +529,11 @@ export function buildRootHtmlSnapshot(snapshot: RepositorySnapshot): string {
   const rulersHtml = snapshot.rulers
     .map(
       (ruler) =>
-        `<li style="margin:0 0 6px 0;">` +
-        `<time style="color:#fbbf24;font-family:monospace;">${escapeHtml(ruler.reignPeriod)}</time> — ` +
-        `<strong style="color:#f8fafc;">${escapeHtml(ruler.ruler)}</strong>` +
-        `${ruler.center ? ` <span style="color:#94a3b8;">[${escapeHtml(ruler.center)}]</span>` : ''}: ` +
-        `<span style="color:#cbd5e1;">${escapeHtml(ruler.reignTitle)}</span>` +
+        `<li class="seo-snapshot-item">` +
+        `<time class="seo-snapshot-time">${escapeHtml(ruler.reignPeriod)}</time> — ` +
+        `<strong>${escapeHtml(ruler.ruler)}</strong>` +
+        `${ruler.center ? ` <span class="seo-snapshot-muted">[${escapeHtml(ruler.center)}]</span>` : ''}: ` +
+        `<span class="seo-snapshot-text-inline">${escapeHtml(ruler.reignTitle)}</span>` +
         `</li>`,
     )
     .join('\n          ');
@@ -520,53 +541,53 @@ export function buildRootHtmlSnapshot(snapshot: RepositorySnapshot): string {
   const eventsHtml = snapshot.featuredEvents
     .map(
       (ev) =>
-        `<article style="margin:0 0 10px 0;padding:10px 12px;border:1px solid #1e293b;border-radius:8px;background:#0b1120;">` +
-        `<div style="font-size:12px;color:#94a3b8;">` +
-        `<time style="color:#38bdf8;font-family:monospace;">${escapeHtml(ev.period)}</time> · ` +
+        `<article class="seo-snapshot-card">` +
+        `<div class="seo-snapshot-meta">` +
+        `<time class="seo-snapshot-link">${escapeHtml(ev.period)}</time> · ` +
         `<span>${escapeHtml(ev.branchLabel)}</span> · ` +
         `<span>${escapeHtml(ev.region)}</span>` +
         `</div>` +
-        `<h3 style="margin:4px 0;font-size:16px;color:#f8fafc;">${escapeHtml(ev.title)}</h3>` +
-        `${ev.subtitle ? `<p style="margin:0 0 4px 0;color:#cbd5e1;font-size:14px;">${escapeHtml(ev.subtitle)}</p>` : ''}` +
-        `${ev.outcome ? `<p style="margin:0;color:#94a3b8;font-size:13px;">Итог: ${escapeHtml(ev.outcome)}</p>` : ''}` +
+        `<h3 class="seo-snapshot-item-title">${escapeHtml(ev.title)}</h3>` +
+        `${ev.subtitle ? `<p class="seo-snapshot-text">${escapeHtml(ev.subtitle)}</p>` : ''}` +
+        `${ev.outcome ? `<p class="seo-snapshot-outcome">Итог: ${escapeHtml(ev.outcome)}</p>` : ''}` +
         `</article>`,
     )
     .join('\n          ');
 
   return [
-    `<div data-seo-snapshot="true" style="max-width:1040px;margin:0 auto;padding:32px 20px;font-family:'Plus Jakarta Sans',system-ui,sans-serif;line-height:1.55;color:#f1f5f9;background:#050811;">`,
-    `  <header style="border-bottom:1px solid #1e293b;padding-bottom:16px;margin-bottom:24px;">`,
-    `    <p style="margin:0 0 6px 0;font-size:12px;letter-spacing:0.08em;text-transform:uppercase;color:#fbbf24;">Хронология ${snapshot.minYear}–${snapshot.maxYear} · Интерактивный Git-таймлайн</p>`,
-    `    <h1 style="margin:0 0 10px 0;font-size:28px;color:#ffffff;">${escapeHtml(snapshot.projectTitle)}</h1>`,
-    `    <p style="margin:0 0 12px 0;color:#cbd5e1;">Мультиветочный граф для синхронного изучения правлений, войн, экономических реформ, дипломатических договоров, мировой истории, науки и русской литературы.</p>`,
-    `    <p style="margin:0 0 12px 0;font-size:14px;color:#94a3b8;">Охват базы: ${snapshot.macroEras.length} макро-периодов · ${snapshot.branches.length} ветвей · ${snapshot.rulers.length} правлений · ${snapshot.events.length} событий · ${snapshot.totalLinks} связей.</p>`,
-    `    <nav aria-label="Машиночитаемые источники" style="display:flex;flex-wrap:wrap;gap:12px;font-size:13px;">`,
-    `      <a href="./data/sync.manifest.json" style="color:#38bdf8;">Манифест данных (sync.manifest.json)</a>`,
-    `      <a href="./llms.txt" style="color:#38bdf8;">Карта ветвей для ИИ-агентов (llms.txt)</a>`,
-    `      <a href="./data/modules.index.json" style="color:#38bdf8;">Индекс JSON-модулей (modules.index.json)</a>`,
+    `<div data-seo-snapshot="true" class="seo-noscript-snapshot">`,
+    `  <header class="seo-snapshot-header">`,
+    `    <p class="seo-snapshot-kicker">Хронология ${snapshot.minYear}–${snapshot.maxYear} · Интерактивный Git-таймлайн</p>`,
+    `    <h1 class="seo-snapshot-h1">${escapeHtml(snapshot.projectTitle)}</h1>`,
+    `    <p class="seo-snapshot-text">Мультиветочный граф для синхронного изучения правлений, войн, экономических реформ, дипломатических договоров, мировой истории, науки, архитектуры, медицины и русской литературы.</p>`,
+    `    <p class="seo-snapshot-muted">Охват базы: ${snapshot.macroEras.length} макро-периодов · ${snapshot.branches.length} ветвей · ${snapshot.rulers.length} правлений · ${snapshot.events.length} событий · ${snapshot.totalLinks} связей.</p>`,
+    `    <nav aria-label="Машиночитаемые источники" class="seo-snapshot-nav">`,
+    `      <a class="seo-snapshot-link" href="./data/sync.manifest.json">Манифест данных (sync.manifest.json)</a>`,
+    `      <a class="seo-snapshot-link" href="./llms.txt">Карта ветвей для ИИ-агентов (llms.txt)</a>`,
+    `      <a class="seo-snapshot-link" href="./data/modules.index.json">Индекс JSON-модулей (modules.index.json)</a>`,
     `    </nav>`,
     `  </header>`,
     `  <main>`,
-    `    <section style="margin-bottom:28px;">`,
-    `      <h2 style="font-size:20px;color:#fcd34d;margin:0 0 12px 0;">Макро-периоды истории (${snapshot.macroEras.length})</h2>`,
-    `      <ol style="list-style:none;padding:0;margin:0;">`,
+    `    <section class="seo-snapshot-section">`,
+    `      <h2 class="seo-snapshot-h2">Макро-периоды истории (${snapshot.macroEras.length})</h2>`,
+    `      <ol class="seo-snapshot-list-plain">`,
     `        ${erasHtml}`,
     `      </ol>`,
     `    </section>`,
-    `    <section style="margin-bottom:28px;">`,
-    `      <h2 style="font-size:20px;color:#fcd34d;margin:0 0 12px 0;">Тематические ветви и JSON-модули (${snapshot.branches.length})</h2>`,
-    `      <ul style="padding-left:18px;margin:0;">`,
+    `    <section class="seo-snapshot-section">`,
+    `      <h2 class="seo-snapshot-h2">Тематические ветви и JSON-модули (${snapshot.branches.length})</h2>`,
+    `      <ul class="seo-snapshot-list">`,
     `        ${branchesHtml}`,
     `      </ul>`,
     `    </section>`,
-    `    <section style="margin-bottom:28px;">`,
-    `      <h2 style="font-size:20px;color:#fcd34d;margin:0 0 12px 0;">Хронология правлений (${snapshot.rulers.length})</h2>`,
-    `      <ol style="padding-left:20px;margin:0;">`,
+    `    <section class="seo-snapshot-section">`,
+    `      <h2 class="seo-snapshot-h2">Хронология правлений (${snapshot.rulers.length})</h2>`,
+    `      <ol class="seo-snapshot-list">`,
     `        ${rulersHtml}`,
     `      </ol>`,
     `    </section>`,
-    `    <section style="margin-bottom:24px;">`,
-    `      <h2 style="font-size:20px;color:#fcd34d;margin:0 0 12px 0;">Ключевые исторические события и узлы (${snapshot.featuredEvents.length} из ${snapshot.events.length})</h2>`,
+    `    <section class="seo-snapshot-section">`,
+    `      <h2 class="seo-snapshot-h2">Ключевые исторические события и узлы (${snapshot.featuredEvents.length} из ${snapshot.events.length})</h2>`,
     `      ${eventsHtml}`,
     `    </section>`,
     `  </main>`,

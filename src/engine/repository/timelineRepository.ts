@@ -5,6 +5,8 @@ import type {
   MountedFileMeta,
   RulerPeriod,
   RulersFile,
+  SourceEntry,
+  SourceEntryType,
   SyncManifest,
   TimelineDataFile,
   TimelineNode,
@@ -100,6 +102,49 @@ export function sanitizeBranchDefinition(raw: unknown, fallbackPath: string): Br
     defaultEnabled: raw.defaultEnabled === false ? false : raw.defaultEnabled === true ? true : undefined,
     defaultCollapsedOnTimeline: raw.defaultCollapsedOnTimeline === true ? true : undefined,
   };
+}
+
+const VALID_SOURCE_TYPES = new Set<SourceEntryType>([
+  'primary',
+  'document',
+  'historiography',
+  'reference',
+]);
+
+function sanitizeSourcesList(raw: unknown): SourceEntry[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const result: SourceEntry[] = [];
+  const seenCitations = new Set<string>();
+
+  for (const item of raw) {
+    if (!isPlainRecord(item)) continue;
+    const rawType = typeof item.type === 'string' ? item.type.trim() : '';
+    const citation = typeof item.citation === 'string' ? item.citation.trim() : '';
+    if (!citation) continue;
+
+    const dedupKey = citation.toLowerCase();
+    if (seenCitations.has(dedupKey)) continue;
+    seenCitations.add(dedupKey);
+
+    const type: SourceEntryType = VALID_SOURCE_TYPES.has(rawType as SourceEntryType)
+      ? (rawType as SourceEntryType)
+      : 'historiography';
+    const note =
+      typeof item.note === 'string' && item.note.trim().length > 0 ? item.note.trim() : undefined;
+    const rawUrl =
+      typeof item.url === 'string' && /^https:\/\/\S+$/i.test(item.url.trim())
+        ? item.url.trim()
+        : undefined;
+
+    result.push({
+      type,
+      citation,
+      ...(note ? { note } : {}),
+      ...(rawUrl ? { url: rawUrl } : {}),
+    });
+  }
+
+  return result.length > 0 ? result : undefined;
 }
 
 export function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): TimelineNode | null {
@@ -270,6 +315,7 @@ export function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): Timel
     type: typeof raw.type === 'string' ? raw.type : 'Событие',
     subEvents,
     linksTo,
+    sources: sanitizeSourcesList(raw.sources),
     campaignId: typeof raw.campaignId === 'string' && raw.campaignId.trim() ? raw.campaignId.trim() : undefined,
     syncTags,
     referenceTags,
@@ -307,6 +353,7 @@ export function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
         : undefined,
     reignTitle: typeof raw.reignTitle === 'string' ? raw.reignTitle : ruler,
     reignThesis: typeof raw.reignThesis === 'string' ? raw.reignThesis : '',
+    sources: sanitizeSourcesList(raw.sources),
   };
 }
 
@@ -320,6 +367,15 @@ export function isBranchFile(file: TimelineDataFile | undefined): file is Branch
 
 const DATA_SCHEMA_CACHE_KEY = '2.1.0';
 
+const CORE_INITIAL_MODULE_PATHS = new Set<string>([
+  'data/rulers.json',
+  'data/wars.json',
+  'data/economics.json',
+  'data/diplomacy.json',
+  'data/writers_bio.json',
+  'data/writers_works.json',
+]);
+
 function normalizeDataPath(rawPath: string): string {
   return rawPath.trim().replace(/^(?:\.\/|\/)+/, '');
 }
@@ -328,10 +384,12 @@ function resolveRepoFetchUrl(rawPath: string): string {
   return `./${normalizeDataPath(rawPath)}`;
 }
 
-function withCacheVersion(url: string, version = DATA_SCHEMA_CACHE_KEY): string {
-  const cleanVersion = (version || DATA_SCHEMA_CACHE_KEY).trim();
+export function buildVersionedDataUrl(rawPath: string, versionOrHash?: string, isContentHash = false): string {
+  const url = resolveRepoFetchUrl(rawPath);
+  const cleanToken = (versionOrHash || DATA_SCHEMA_CACHE_KEY).trim();
   const separator = url.includes('?') ? '&' : '?';
-  return `${url}${separator}v=${encodeURIComponent(cleanVersion)}`;
+  const paramName = isContentHash ? 'h' : 'v';
+  return `${url}${separator}${paramName}=${encodeURIComponent(cleanToken)}`;
 }
 
 export function collectBranchesFromDataFile(fileData: TimelineDataFile, fallbackPath: string): BranchDefinition[] {
@@ -358,17 +416,112 @@ export function collectBranchesFromDataFile(fileData: TimelineDataFile, fallback
 export interface TimelineRepositorySnapshot {
   manifest: SyncManifest;
   files: Record<string, TimelineDataFile>;
+  isFullyHydrated?: boolean;
+}
+
+interface RepositoryBootstrapState {
+  manifest: SyncManifest;
+  manifestMetaByNormPath: Map<string, MountedFileMeta>;
+  orderedCandidatePaths: string[];
+  fileHashes: Record<string, string>;
+  fallbackVersion: string;
 }
 
 let cachedRepositorySnapshot: TimelineRepositorySnapshot | null = null;
 let inFlightRepositoryPromise: Promise<TimelineRepositorySnapshot> | null = null;
+let cachedBootstrapState: RepositoryBootstrapState | null = null;
+let inFlightHydrationPromise: Promise<TimelineRepositorySnapshot> | null = null;
 
 export function clearTimelineRepositoryCache(): void {
   cachedRepositorySnapshot = null;
   inFlightRepositoryPromise = null;
+  cachedBootstrapState = null;
+  inFlightHydrationPromise = null;
 }
 
-async function loadTimelineRepositoryNetwork(): Promise<TimelineRepositorySnapshot> {
+async function fetchDataModuleFile(
+  normPath: string,
+  fileHashes: Record<string, string>,
+  fallbackVersion: string,
+): Promise<{ normPath: string; data: TimelineDataFile | null }> {
+  try {
+    const contentHash = fileHashes[normPath];
+    const moduleUrl = buildVersionedDataUrl(normPath, contentHash || fallbackVersion, Boolean(contentHash));
+    const res = await fetch(moduleUrl, { cache: contentHash ? 'force-cache' : 'no-cache' });
+    const ct = res.headers.get('content-type') || '';
+    if (!res.ok || ct.includes('text/html')) {
+      return { normPath, data: null };
+    }
+    const parsed = (await res.json()) as unknown;
+    if (!isPlainRecord(parsed) || (!Array.isArray(parsed.nodes) && !Array.isArray(parsed.rulers))) {
+      return { normPath, data: null };
+    }
+    return { normPath, data: parsed as unknown as TimelineDataFile };
+  } catch {
+    return { normPath, data: null };
+  }
+}
+
+function buildSnapshotFromFiles(
+  bootstrap: RepositoryBootstrapState,
+  files: Record<string, TimelineDataFile>,
+  isFullyHydrated: boolean,
+): TimelineRepositorySnapshot {
+  const resolvedMountedFiles: MountedFileMeta[] = [];
+
+  bootstrap.orderedCandidatePaths.forEach((normPath) => {
+    const existingMeta = bootstrap.manifestMetaByNormPath.get(normPath);
+    const data = files[normPath] ?? (existingMeta?.path ? files[existingMeta.path] : undefined);
+
+    if (!data) {
+      if (existingMeta) {
+        resolvedMountedFiles.push(existingMeta);
+      }
+      return;
+    }
+
+    const rawDataPath = typeof data.path === 'string' && data.path.trim() ? normalizeDataPath(data.path) : '';
+    const storeKey = existingMeta?.path || rawDataPath || normPath;
+    if (!files[storeKey]) {
+      files[storeKey] = data;
+    }
+
+    const declaredBranches = collectBranchesFromDataFile(data, storeKey);
+    const branchIds = declaredBranches.map((b) => b.id);
+    const inferredRole: MountedFileMeta['role'] = isRulersFile(data)
+      ? 'rulers_branch'
+      : declaredBranches.some((b) => b.isMilitary)
+        ? 'military_branches'
+        : 'thematic_branch';
+
+    const isFileEnabled =
+      data.enabled === false
+        ? false
+        : existingMeta
+          ? existingMeta.enabled !== false
+          : true;
+
+    resolvedMountedFiles.push({
+      fileId: existingMeta?.fileId || (typeof data.fileId === 'string' && data.fileId) || normPath,
+      path: storeKey,
+      role: existingMeta?.role || inferredRole,
+      branchIds: existingMeta?.branchIds?.length ? existingMeta.branchIds : branchIds,
+      title: existingMeta?.title || declaredBranches[0]?.label || storeKey,
+      enabled: isFileEnabled,
+    });
+  });
+
+  return {
+    manifest: {
+      ...bootstrap.manifest,
+      mountedFiles: resolvedMountedFiles,
+    },
+    files,
+    isFullyHydrated,
+  };
+}
+
+async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
   const manifestUrl = resolveRepoFetchUrl('data/sync.manifest.json');
   const manifestRes = await fetch(manifestUrl, { cache: 'no-cache' });
   if (!manifestRes.ok) {
@@ -397,8 +550,11 @@ async function loadTimelineRepositoryNetwork(): Promise<TimelineRepositorySnapsh
 
   let hasDiscoveredIndex = false;
   let discoveredPaths: string[] = [];
+  let fileHashes: Record<string, string> = {};
+  let indexVersion = cacheVersion;
+
   try {
-    const indexUrl = withCacheVersion(resolveRepoFetchUrl('data/modules.index.json'), cacheVersion);
+    const indexUrl = resolveRepoFetchUrl('data/modules.index.json');
     const indexRes = await fetch(indexUrl, { cache: 'no-cache' });
     const ct = indexRes.headers.get('content-type') || '';
     if (indexRes.ok && !ct.includes('text/html')) {
@@ -406,6 +562,16 @@ async function loadTimelineRepositoryNetwork(): Promise<TimelineRepositorySnapsh
       if (Array.isArray(idxData?.files)) {
         hasDiscoveredIndex = true;
         discoveredPaths = idxData.files.map(normalizeDataPath).filter(Boolean);
+      }
+      if (idxData?.fileHashes && isPlainRecord(idxData.fileHashes)) {
+        Object.entries(idxData.fileHashes).forEach(([rawKey, val]) => {
+          if (typeof val === 'string' && val.trim()) {
+            fileHashes[normalizeDataPath(rawKey)] = val.trim();
+          }
+        });
+      }
+      if (typeof idxData?.generatedAt === 'string' && idxData.generatedAt.trim()) {
+        indexVersion = idxData.generatedAt.trim();
       }
     }
   } catch {
@@ -450,93 +616,138 @@ async function loadTimelineRepositoryNetwork(): Promise<TimelineRepositorySnapsh
     });
   }
 
-  const files: Record<string, TimelineDataFile> = {};
-  const resolvedMountedFiles: MountedFileMeta[] = [];
+  return {
+    manifest,
+    manifestMetaByNormPath,
+    orderedCandidatePaths,
+    fileHashes,
+    fallbackVersion: indexVersion,
+  };
+}
 
-  const fetchedEntries = await Promise.all(
-    orderedCandidatePaths.map(async (normPath) => {
-      try {
-        const moduleUrl = withCacheVersion(resolveRepoFetchUrl(normPath), cacheVersion);
-        const res = await fetch(moduleUrl, { cache: 'default' });
-        const ct = res.headers.get('content-type') || '';
-        if (!res.ok || ct.includes('text/html')) {
-          return { normPath, data: null as TimelineDataFile | null };
-        }
-        const parsed = (await res.json()) as unknown;
-        if (!isPlainRecord(parsed) || (!Array.isArray(parsed.nodes) && !Array.isArray(parsed.rulers))) {
-          return { normPath, data: null as TimelineDataFile | null };
-        }
-        return { normPath, data: parsed as unknown as TimelineDataFile };
-      } catch {
-        return { normPath, data: null as TimelineDataFile | null };
+function selectInitialModulePaths(
+  bootstrap: RepositoryBootstrapState,
+  progressive: boolean,
+  requiredBranchIds?: Set<string>,
+): string[] {
+  if (!progressive) {
+    return bootstrap.orderedCandidatePaths;
+  }
+
+  const initialPaths = bootstrap.orderedCandidatePaths.filter((normPath) => {
+    if (CORE_INITIAL_MODULE_PATHS.has(normPath)) return true;
+    if (requiredBranchIds && requiredBranchIds.size > 0) {
+      const meta = bootstrap.manifestMetaByNormPath.get(normPath);
+      if (meta?.branchIds?.some((id) => requiredBranchIds.has(id))) {
+        return true;
       }
-    }),
-  );
-
-  fetchedEntries.forEach(({ normPath, data }) => {
-    if (!data) return;
-    const existingMeta = manifestMetaByNormPath.get(normPath);
-    const rawDataPath = typeof data.path === 'string' && data.path.trim() ? normalizeDataPath(data.path) : '';
-    const storeKey = existingMeta?.path || rawDataPath || normPath;
-    files[storeKey] = data;
-
-    const declaredBranches = collectBranchesFromDataFile(data, storeKey);
-    const branchIds = declaredBranches.map((b) => b.id);
-    const inferredRole: MountedFileMeta['role'] = isRulersFile(data)
-      ? 'rulers_branch'
-      : declaredBranches.some((b) => b.isMilitary)
-        ? 'military_branches'
-        : 'thematic_branch';
-
-    const isFileEnabled =
-      data.enabled === false
-        ? false
-        : existingMeta
-          ? existingMeta.enabled !== false
-          : true;
-
-    resolvedMountedFiles.push({
-      fileId: existingMeta?.fileId || (typeof data.fileId === 'string' && data.fileId) || normPath,
-      path: storeKey,
-      role: existingMeta?.role || inferredRole,
-      branchIds: existingMeta?.branchIds?.length ? existingMeta.branchIds : branchIds,
-      title: existingMeta?.title || declaredBranches[0]?.label || storeKey,
-      enabled: isFileEnabled,
-    });
+    }
+    return false;
   });
 
-  return {
-    manifest: {
-      ...manifest,
-      mountedFiles: resolvedMountedFiles,
-    },
-    files,
-  };
+  return initialPaths.length > 0 ? initialPaths : bootstrap.orderedCandidatePaths;
+}
+
+export async function hydrateRemainingTimelineModules(): Promise<TimelineRepositorySnapshot | null> {
+  if (!cachedBootstrapState || !cachedRepositorySnapshot) {
+    return cachedRepositorySnapshot;
+  }
+  if (cachedRepositorySnapshot.isFullyHydrated) {
+    return cachedRepositorySnapshot;
+  }
+  if (inFlightHydrationPromise) {
+    return inFlightHydrationPromise;
+  }
+
+  const bootstrap = cachedBootstrapState;
+  const existingFiles = cachedRepositorySnapshot.files;
+  const remainingPaths = bootstrap.orderedCandidatePaths.filter((normPath) => !existingFiles[normPath]);
+
+  if (remainingPaths.length === 0) {
+    cachedRepositorySnapshot = {
+      ...cachedRepositorySnapshot,
+      isFullyHydrated: true,
+    };
+    return cachedRepositorySnapshot;
+  }
+
+  inFlightHydrationPromise = Promise.all(
+    remainingPaths.map((normPath) =>
+      fetchDataModuleFile(normPath, bootstrap.fileHashes, bootstrap.fallbackVersion),
+    ),
+  )
+    .then((fetchedEntries) => {
+      const mergedFiles: Record<string, TimelineDataFile> = { ...existingFiles };
+      fetchedEntries.forEach(({ normPath, data }) => {
+        if (!data) return;
+        const existingMeta = bootstrap.manifestMetaByNormPath.get(normPath);
+        const rawDataPath = typeof data.path === 'string' && data.path.trim() ? normalizeDataPath(data.path) : '';
+        const storeKey = existingMeta?.path || rawDataPath || normPath;
+        mergedFiles[storeKey] = data;
+      });
+      const fullSnapshot = buildSnapshotFromFiles(bootstrap, mergedFiles, true);
+      cachedRepositorySnapshot = fullSnapshot;
+      inFlightHydrationPromise = null;
+      return fullSnapshot;
+    })
+    .catch((err) => {
+      inFlightHydrationPromise = null;
+      throw err;
+    });
+
+  return inFlightHydrationPromise;
 }
 
 export async function fetchTimelineRepository(options?: {
   forceRefresh?: boolean;
+  progressive?: boolean;
+  requiredBranchIds?: string[];
 }): Promise<TimelineRepositorySnapshot> {
   if (options?.forceRefresh) {
     clearTimelineRepositoryCache();
   }
-  if (cachedRepositorySnapshot) {
+  if (cachedRepositorySnapshot && (!options?.progressive || cachedRepositorySnapshot.isFullyHydrated)) {
+    return cachedRepositorySnapshot;
+  }
+  if (cachedRepositorySnapshot && options?.progressive) {
     return cachedRepositorySnapshot;
   }
   if (inFlightRepositoryPromise) {
     return inFlightRepositoryPromise;
   }
 
-  inFlightRepositoryPromise = loadTimelineRepositoryNetwork()
-    .then((snapshot) => {
-      cachedRepositorySnapshot = snapshot;
-      inFlightRepositoryPromise = null;
-      return snapshot;
-    })
-    .catch((err) => {
-      inFlightRepositoryPromise = null;
-      throw err;
+  const progressive = Boolean(options?.progressive);
+  const requiredSet = options?.requiredBranchIds ? new Set(options.requiredBranchIds) : undefined;
+
+  inFlightRepositoryPromise = (async () => {
+    const bootstrap = await loadRepositoryBootstrap();
+    cachedBootstrapState = bootstrap;
+
+    const initialPaths = selectInitialModulePaths(bootstrap, progressive, requiredSet);
+    const fetchedEntries = await Promise.all(
+      initialPaths.map((normPath) =>
+        fetchDataModuleFile(normPath, bootstrap.fileHashes, bootstrap.fallbackVersion),
+      ),
+    );
+
+    const files: Record<string, TimelineDataFile> = {};
+    fetchedEntries.forEach(({ normPath, data }) => {
+      if (!data) return;
+      const existingMeta = bootstrap.manifestMetaByNormPath.get(normPath);
+      const rawDataPath = typeof data.path === 'string' && data.path.trim() ? normalizeDataPath(data.path) : '';
+      const storeKey = existingMeta?.path || rawDataPath || normPath;
+      files[storeKey] = data;
     });
+
+    const isFullyHydrated = initialPaths.length >= bootstrap.orderedCandidatePaths.length;
+    const snapshot = buildSnapshotFromFiles(bootstrap, files, isFullyHydrated);
+    cachedRepositorySnapshot = snapshot;
+    inFlightRepositoryPromise = null;
+    return snapshot;
+  })().catch((err) => {
+    inFlightRepositoryPromise = null;
+    throw err;
+  });
 
   return inFlightRepositoryPromise;
 }

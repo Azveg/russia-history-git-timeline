@@ -1,8 +1,3 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>https://anton-z-v.github.io/Historical-Atlas/</loc>
-    <changefreq>weekly</changefreq>
-    <priority>1.0</priority>
-  </url>
-</urlset>
+<!-- Production sitemap.xml is generated dynamically from VITE_SITE_URL during `npm run build`. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" />

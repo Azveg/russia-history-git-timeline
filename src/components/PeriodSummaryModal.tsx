@@ -18,6 +18,11 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import {
+  AcademicCitationPanel,
+  CiteTriggerButton,
+  SourcesApparatusSection,
+} from './AcademicCitationBar';
+import {
   formatCalendarDetailBadge,
   getLeafBranches,
   getRulerPeriodSummaryData,
@@ -68,6 +73,7 @@ export function PeriodSummaryModal({
   const [selectedBranchPairKey, setSelectedBranchPairKey] = useState<string | null>(null);
   const [showAllCrossLinks, setShowAllCrossLinks] = useState(false);
   const [eventsSortMode, setEventsSortMode] = useState<ReignEventsSortMode>('chronological');
+  const [showCitation, setShowCitation] = useState(false);
 
   useEffect(() => {
     setShowAllParticipants(false);
@@ -76,6 +82,7 @@ export function PeriodSummaryModal({
     setSelectedBranchPairKey(null);
     setShowAllCrossLinks(false);
     setEventsSortMode('chronological');
+    setShowCitation(false);
   }, [ruler?.id]);
 
   const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
@@ -206,6 +213,10 @@ export function PeriodSummaryModal({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <CiteTriggerButton
+              isOpen={showCitation}
+              onToggle={() => setShowCitation((prev) => !prev)}
+            />
             {onCompareWithRuler && (
               <button
                 type="button"
@@ -240,6 +251,19 @@ export function PeriodSummaryModal({
 
         {/* Тело модального окна */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
+          {showCitation && (
+            <AcademicCitationPanel
+              target={{
+                kind: 'ruler',
+                id: ruler.id,
+                title: ruler.reignTitle,
+                period: ruler.reignPeriod,
+                sectionLabel: 'досье правления',
+              }}
+              onClose={() => setShowCitation(false)}
+            />
+          )}
+
           <div>
             <h3
               id="period-modal-title"
@@ -993,6 +1017,10 @@ export function PeriodSummaryModal({
               </div>
             )}
           </div>
+
+          {ruler.sources && ruler.sources.length > 0 && (
+            <SourcesApparatusSection sources={ruler.sources} />
+          )}
         </div>
       </div>
     </div>

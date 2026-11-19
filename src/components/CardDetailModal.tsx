@@ -24,6 +24,11 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import {
+  AcademicCitationPanel,
+  CiteTriggerButton,
+  SourcesApparatusSection,
+} from './AcademicCitationBar';
+import {
   findMacroEraForYear,
   formatCalendarDetailBadge,
   isBiographyNode,
@@ -101,10 +106,12 @@ export function CardDetailModal({
 }: CardDetailModalProps) {
   const [concurrentBranchFilter, setConcurrentBranchFilter] = useState<string>('ALL');
   const [copiedSummary, setCopiedSummary] = useState(false);
+  const [showCitation, setShowCitation] = useState(false);
 
   useEffect(() => {
     setConcurrentBranchFilter('ALL');
     setCopiedSummary(false);
+    setShowCitation(false);
   }, [card?.id]);
 
   const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
@@ -413,6 +420,11 @@ export function CardDetailModal({
               </span>
             </button>
 
+            <CiteTriggerButton
+              isOpen={showCitation}
+              onToggle={() => setShowCitation((prev) => !prev)}
+            />
+
             <button
               type="button"
               onClick={() => {
@@ -458,6 +470,21 @@ export function CardDetailModal({
 
         {/* Основное содержимое паспорта события */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
+          {showCitation && (
+            <AcademicCitationPanel
+              target={{
+                kind: 'card',
+                id: card.id,
+                title: card.title,
+                period: card.period,
+                sectionLabel: parentBranchObj
+                  ? `раздел «${parentBranchObj.short} · ${branchObj.label}»`
+                  : `раздел «${branchObj.label}»`,
+              }}
+              onClose={() => setShowCitation(false)}
+            />
+          )}
+
           {/* Заголовок и краткая суть */}
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
@@ -1326,6 +1353,10 @@ export function CardDetailModal({
                 })}
               </div>
             </div>
+          )}
+
+          {card.sources && card.sources.length > 0 && (
+            <SourcesApparatusSection sources={card.sources} />
           )}
         </div>
 

@@ -1643,7 +1643,7 @@ export function GitTimeline({
             return (
               <div
                 key={`era-${resolvedEra.id}`}
-                className="relative flex items-stretch bg-gradient-to-r from-slate-900/95 via-slate-900/70 to-slate-950 border-y border-amber-500/30"
+                className="timeline-row-cv relative flex items-stretch bg-gradient-to-r from-slate-900/95 via-slate-900/70 to-slate-950 border-y border-amber-500/30"
               >
                 <div
                   title={gutter.title}
@@ -1958,8 +1958,18 @@ export function GitTimeline({
             return (
               <div
                 key={`ruler-end-${r.id}-${idx}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`Завершение правления: ${r.ruler} (${r.reignPeriod})`}
                 onClick={() => onOpenPeriodModal(r.id)}
-                className="relative flex items-stretch bg-slate-950/55 hover:bg-slate-900/45 transition-colors cursor-pointer group"
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onOpenPeriodModal(r.id);
+                  }
+                }}
+                className="timeline-row-cv relative flex items-stretch bg-slate-950/55 hover:bg-slate-900/45 focus-visible:outline-2 focus-visible:outline-amber-400 transition-colors cursor-pointer group"
               >
                 <div
                   title={gutter.title}
@@ -2200,7 +2210,7 @@ export function GitTimeline({
                   scheduleClearHoverEvent();
                   closeCardTooltip();
                 }}
-                className="commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
+                className="timeline-row-cv commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
               >
                 <div
                   title={gutter.title}
@@ -2885,7 +2895,7 @@ export function GitTimeline({
               }}
               onMouseEnter={() => activateHoverEvent(ev.id)}
               onMouseLeave={() => scheduleClearHoverEvent()}
-              className="relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
+              className="timeline-row-cv relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
             >
               <div
                 title={gutter.title}

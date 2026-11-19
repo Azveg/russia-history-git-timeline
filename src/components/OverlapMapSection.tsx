@@ -1085,6 +1085,7 @@ export function OverlapMapSection({
             createPortal(
               <div
                 role={isPinned ? 'dialog' : 'status'}
+                aria-modal={isPinned ? 'false' : undefined}
                 aria-label={`Срез процессов на ${scanSlice.year} год`}
                 onClick={(e) => e.stopPropagation()}
                 style={{

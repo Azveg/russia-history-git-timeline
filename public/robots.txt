@@ -1,4 +1,2 @@
 User-agent: *
 Allow: /
-
-Sitemap: https://anton-z-v.github.io/Historical-Atlas/sitemap.xml

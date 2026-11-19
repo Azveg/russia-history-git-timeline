@@ -86,6 +86,7 @@ export function RulerSelectorPopover({
       if (e.key === 'Escape') {
         e.stopPropagation();
         setIsOpen(false);
+        containerRef.current?.querySelector<HTMLButtonElement>('button[aria-haspopup="dialog"]')?.focus();
       }
     }
 
@@ -135,6 +136,7 @@ export function RulerSelectorPopover({
       {isOpen && (
         <div
           role="dialog"
+          aria-modal="false"
           aria-label="Навигатор по правителям"
           className="fixed lg:absolute left-3 right-3 lg:left-0 lg:right-auto top-[54px] lg:top-full lg:mt-2 max-w-[500px] lg:max-w-[calc(100vw-2rem)] lg:w-[500px] mx-auto lg:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"
         >

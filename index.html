@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: https:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none';"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none';"
     />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
     <title>Исторический атлас-хронограф</title>
@@ -16,7 +16,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png?v=2" />
     <meta
       name="description"
-      content="Интерактивный Git-граф истории (862–2000): изучайте 16 ветвей, 70 правлений и сотни событий — войны, реформы, дипломатию, науку и литературу."
+      content="Интерактивный Git-граф истории (862–2000): синхронное изучение правлений, войн, реформ, дипломатии, науки, культуры и литературы."
     />
     <meta property="og:type" content="website" />
     <meta property="og:locale" content="ru_RU" />
@@ -24,7 +24,7 @@
     <meta property="og:title" content="Исторический атлас-хронограф" />
     <meta
       property="og:description"
-      content="Интерактивный Git-граф истории (862–2000): изучайте 16 ветвей, 70 правлений и сотни событий — войны, реформы, дипломатию, науку и литературу."
+      content="Интерактивный Git-граф истории (862–2000): синхронное изучение правлений, войн, реформ, дипломатии, науки, культуры и литературы."
     />
     <meta property="og:image" content="./og-image.png" />
     <meta property="og:image:type" content="image/png" />
@@ -38,19 +38,19 @@
     <meta name="twitter:title" content="Исторический атлас-хронограф" />
     <meta
       name="twitter:description"
-      content="Интерактивный Git-граф истории (862–2000): изучайте 16 ветвей, 70 правлений и сотни событий — войны, реформы, дипломатию, науку и литературу."
+      content="Интерактивный Git-граф истории (862–2000): синхронное изучение правлений, войн, реформ, дипломатии, науки, культуры и литературы."
     />
     <meta name="twitter:image" content="./og-image.png" />
     <link rel="alternate" type="text/plain" title="LLMs Index" href="./llms.txt" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=JetBrains+Mono:wght@400;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap&subset=cyrillic"
-      rel="stylesheet"
-    />
   </head>
   <body class="min-h-screen bg-[#050811] text-slate-100 antialiased selection:bg-amber-500/30 selection:text-amber-200">
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-boot-shell" aria-busy="true">
+        <p class="app-boot-title">Исторический атлас-хронограф (862–2000)</p>
+        <p class="app-boot-subtitle">Загрузка интерактивной ленты времени…</p>
+      </div>
+    </div>
+    <!--SEO_NOSCRIPT_SNAPSHOT-->
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

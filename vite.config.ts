@@ -1,5 +1,6 @@
-import fs from 'fs';
-import path from 'path';
+import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import {defineConfig, type Plugin} from 'vite';
@@ -38,10 +39,49 @@ function scanDataModules(rootDir: string): string[] {
   return results.sort((a, b) => a.localeCompare(b));
 }
 
+function buildModulesIndexPayload(rootDir: string): string {
+  const files = scanDataModules(rootDir).map((p) => p.replace(/^(?:\.\/|\/)+/, ''));
+  const fileHashes: Record<string, string> = {};
+
+  for (const relPath of files) {
+    const fullPath = path.resolve(rootDir, 'public', relPath);
+    if (fs.existsSync(fullPath)) {
+      fileHashes[relPath] = crypto
+        .createHash('sha256')
+        .update(fs.readFileSync(fullPath))
+        .digest('hex')
+        .slice(0, 12);
+    }
+  }
+
+  return JSON.stringify(
+    {
+      schemaVersion: '2.1.0',
+      generatedAt: new Date().toISOString(),
+      files,
+      fileHashes,
+    },
+    null,
+    2,
+  );
+}
+
 function resolveBuildSiteUrl(): string {
-  return (process.env.VITE_SITE_URL || process.env.SITE_URL || process.env.APP_URL || '')
+  const raw = (process.env.VITE_SITE_URL || process.env.SITE_URL || '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '')
     .trim()
     .replace(/\/+$/, '');
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return '';
+    }
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return '';
+  }
 }
 
 function timelineDataModulesIndex(): Plugin {
@@ -52,15 +92,7 @@ function timelineDataModulesIndex(): Plugin {
       server.middlewares.use((req, res, next) => {
         const cleanUrl = req.url?.split('?')[0] ?? '';
         if (cleanUrl === '/data/modules.index.json' || cleanUrl.endsWith('/data/modules.index.json')) {
-          const payload = JSON.stringify(
-            {
-              schemaVersion: '2.1.0',
-              generatedAt: new Date().toISOString(),
-              files: scanDataModules(rootDir).map((p) => p.replace(/^(?:\.\/|\/)+/, '')),
-            },
-            null,
-            2,
-          );
+          const payload = buildModulesIndexPayload(rootDir);
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.setHeader('Cache-Control', 'no-cache');
@@ -74,15 +106,7 @@ function timelineDataModulesIndex(): Plugin {
       this.emitFile({
         type: 'asset',
         fileName: 'data/modules.index.json',
-        source: JSON.stringify(
-          {
-            schemaVersion: '2.1.0',
-            generatedAt: new Date().toISOString(),
-            files: scanDataModules(rootDir).map((p) => p.replace(/^(?:\.\/|\/)+/, '')),
-          },
-          null,
-          2,
-        ),
+        source: buildModulesIndexPayload(rootDir),
       });
     },
   };
@@ -109,19 +133,49 @@ function timelineSeoSnapshotPlugin(): Plugin {
     },
     generateBundle() {
       const snapshot = collectRepositorySnapshot(rootDir);
+      const siteUrl = resolveBuildSiteUrl();
       this.emitFile({
         type: 'asset',
         fileName: 'llms.txt',
-        source: buildLlmsTxt(snapshot, resolveBuildSiteUrl()),
+        source: buildLlmsTxt(snapshot, siteUrl),
       });
+
+      if (siteUrl) {
+        const lastmod = new Date().toISOString().slice(0, 10);
+        this.emitFile({
+          type: 'asset',
+          fileName: 'robots.txt',
+          source: `User-agent: *\nAllow: /\n\nSitemap: ${siteUrl}/sitemap.xml\n`,
+        });
+        this.emitFile({
+          type: 'asset',
+          fileName: 'sitemap.xml',
+          source: [
+            '<?xml version="1.0" encoding="UTF-8"?>',
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+            '  <url>',
+            `    <loc>${siteUrl}/</loc>`,
+            `    <lastmod>${lastmod}</lastmod>`,
+            '    <changefreq>weekly</changefreq>',
+            '    <priority>1.0</priority>',
+            '  </url>',
+            '</urlset>',
+            '',
+          ].join('\n'),
+        });
+      }
     },
     transformIndexHtml(html) {
       const snapshot = collectRepositorySnapshot(rootDir);
       const siteUrl = resolveBuildSiteUrl();
       const jsonLd = buildSchemaOrgJsonLd(snapshot, siteUrl);
       const rootSnapshot = buildRootHtmlSnapshot(snapshot);
+      const dynamicDescription = `Интерактивный Git-граф истории (${snapshot.minYear}–${snapshot.maxYear}): ${snapshot.branches.length} ветвей, ${snapshot.rulers.length} правлений и ${snapshot.events.length} событий — войны, реформы, дипломатия, наука, искусство и литература.`;
 
-      let nextHtml = html;
+      let nextHtml = html.replace(
+        /Интерактивный Git-граф истории \(862–2000\): синхронное изучение правлений, войн, реформ, дипломатии, науки, культуры и литературы\./g,
+        dynamicDescription,
+      );
 
       if (siteUrl) {
         nextHtml = nextHtml.replace(/content="\.\/og-image\.png"/g, `content="${siteUrl}/og-image.png"`);
@@ -141,8 +195,8 @@ function timelineSeoSnapshotPlugin(): Plugin {
       }
 
       nextHtml = nextHtml.replace(
-        /<div id="root">\s*<\/div>/,
-        `<div id="root">\n${rootSnapshot}\n    </div>`,
+        '<!--SEO_NOSCRIPT_SNAPSHOT-->',
+        `<noscript>\n${rootSnapshot}\n    </noscript>`,
       );
 
       return nextHtml;
@@ -150,7 +204,7 @@ function timelineSeoSnapshotPlugin(): Plugin {
   };
 }
 
-function sanitizePublicArtifactsPlugin(): Plugin {
+function sanitizePublicArtifactsPlugin(isDevServer: boolean): Plugin {
   const rootDir = process.cwd();
   const forbiddenDirs = [
     path.resolve(rootDir, 'public/assets/aistudio'),
@@ -175,14 +229,30 @@ function sanitizePublicArtifactsPlugin(): Plugin {
       purgeForbiddenDirs();
     },
     transformIndexHtml(html) {
-      if (!html.includes('http-equiv="Content-Security-Policy"')) {
+      const cspMatch = html.match(/http-equiv="Content-Security-Policy"\s+content="([^"]+)"/i);
+      if (!cspMatch) {
         throw new Error('[AppSec Guard] Missing <meta http-equiv="Content-Security-Policy"> in index.html');
       }
-      if (!html.includes("connect-src 'self'") || !html.includes("object-src 'none'")) {
+      const csp = cspMatch[1];
+      if (!csp.includes("connect-src 'self'") || !csp.includes("object-src 'none'")) {
         throw new Error('[AppSec Guard] CSP meta directive in index.html is missing required core restrictions');
+      }
+      if (/script-src[^;]*'unsafe-inline'/i.test(csp) || /script-src[^;]*'unsafe-eval'/i.test(csp)) {
+        throw new Error('[AppSec Guard] Forbidden unsafe-inline/unsafe-eval in CSP script-src directive');
+      }
+      if (/img-src[^;]*\bhttps:/i.test(csp)) {
+        throw new Error('[AppSec Guard] Overly broad img-src https: directive is forbidden in CSP');
+      }
+      if (html.includes('fonts.googleapis.com') || html.includes('fonts.gstatic.com')) {
+        throw new Error('[AppSec Guard] External Google Fonts CDN is forbidden; use self-hosted @fontsource packages');
       }
       if (!html.includes('name="referrer"') || !html.includes('strict-origin-when-cross-origin')) {
         throw new Error('[AppSec Guard] Missing <meta name="referrer" content="strict-origin-when-cross-origin"> in index.html');
+      }
+
+      // In local Vite dev server only, allow @vitejs/plugin-react inline Refresh preamble; production dist/ stays strictly script-src 'self'.
+      if (isDevServer) {
+        return html.replace(/script-src 'self';/i, "script-src 'self' 'unsafe-inline';");
       }
       return html;
     },
@@ -192,30 +262,38 @@ function sanitizePublicArtifactsPlugin(): Plugin {
   };
 }
 
-export default defineConfig(() => {
+export default defineConfig(({command}) => {
+  const isDevServer = command === 'serve';
   return {
     base: './',
     build: {
       emptyOutDir: true,
-      rollupOptions: {
+      rolldownOptions: {
         output: {
-          manualChunks(id) {
-            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/') || id.includes('node_modules/scheduler/')) {
-              return 'react-vendor';
-            }
-            if (id.includes('node_modules/lucide-react/')) {
-              return 'icons-vendor';
-            }
-            if (id.includes('/src/engine/')) {
-              return 'timeline-engine';
-            }
-            return undefined;
+          codeSplitting: {
+            groups: [
+              {
+                name: 'react-vendor',
+                priority: 30,
+                test: /[\\/]node_modules[\\/](react|react-dom|scheduler)[\\/]/,
+              },
+              {
+                name: 'icons-vendor',
+                priority: 20,
+                test: /[\\/]node_modules[\\/]lucide-react[\\/]/,
+              },
+              {
+                name: 'timeline-engine',
+                priority: 10,
+                test: /[\\/]src[\\/]engine[\\/]/,
+              },
+            ],
           },
         },
       },
     },
     plugins: [
-      sanitizePublicArtifactsPlugin(),
+      sanitizePublicArtifactsPlugin(isDevServer),
       react(),
       tailwindcss(),
       timelineDataModulesIndex(),
@@ -223,7 +301,7 @@ export default defineConfig(() => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(import.meta.dirname, '.'),
       },
     },
     server: {

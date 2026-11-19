@@ -11,6 +11,12 @@ import {
 import { useEffect, useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { isEventBranchActive, resolveBranchCategory } from '../engine/timelineEngine';
+import { aggregatePersonSources } from '../utils/citation';
+import {
+  AcademicCitationPanel,
+  CiteTriggerButton,
+  SourcesApparatusSection,
+} from './AcademicCitationBar';
 import type {
   BranchDefinition,
   ModalHistoryItem,
@@ -76,9 +82,11 @@ export function PersonDossierModal({
   onFilterTimelineByPerson,
 }: PersonDossierModalProps) {
   const [sphereFilter, setSphereFilter] = useState<SphereFilterId>('all');
+  const [showCitation, setShowCitation] = useState(false);
 
   useEffect(() => {
     setSphereFilter('all');
+    setShowCitation(false);
   }, [dossier?.key]);
 
   const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
@@ -112,6 +120,11 @@ export function PersonDossierModal({
       (ev) => getEventSphere(branchById.get(ev.task), ev.task) === sphereFilter,
     );
   }, [dossier, sphereFilter, branchById]);
+
+  const aggregatedSources = useMemo(
+    () => (dossier ? aggregatePersonSources(dossier) : []),
+    [dossier],
+  );
 
   if (!dossier) return null;
 
@@ -154,6 +167,10 @@ export function PersonDossierModal({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <CiteTriggerButton
+              isOpen={showCitation}
+              onToggle={() => setShowCitation((prev) => !prev)}
+            />
             <button
               type="button"
               onClick={() => {
@@ -179,6 +196,20 @@ export function PersonDossierModal({
 
         {/* Тело модального окна */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
+          {showCitation && (
+            <AcademicCitationPanel
+              target={{
+                kind: 'person',
+                id: dossier.key,
+                title: dossier.displayName,
+                period: yearSpanLabel,
+                sectionLabel: 'досье исторического деятеля',
+              }}
+              secondaryCardDeepLinkId={dossier.bioCard?.id ?? null}
+              onClose={() => setShowCitation(false)}
+            />
+          )}
+
           {/* Заголовок и тихая строка метаданных без декоративных капсул */}
           <div className="space-y-2 pb-4 border-b border-slate-800/80">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -360,6 +391,14 @@ export function PersonDossierModal({
               })}
             </div>
           </div>
+
+          {aggregatedSources.length > 0 && (
+            <SourcesApparatusSection
+              sources={aggregatedSources}
+              onSelectOriginCard={onSelectCard}
+              contextHint="Источники собраны из биографической карточки и ключевых исторических вех с участием деятеля."
+            />
+          )}
         </div>
       </div>
     </div>

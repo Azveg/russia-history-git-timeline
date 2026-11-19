@@ -27,6 +27,8 @@ const PersonDossierModal = lazyWithRetry(() =>
 const WindowSummaryModal = lazyWithRetry(() =>
   import('./components/WindowSummaryModal').then((m) => ({ default: m.WindowSummaryModal })),
 );
+import { useTimelineData } from './hooks/useTimelineData';
+import { parseInitialYearBound, useTimelineUrlSync } from './hooks/useTimelineUrlSync';
 import {
   buildPersonDossierIndex,
   buildSyncTagIndex,
@@ -36,7 +38,6 @@ import {
   doesIntervalBelongToEra,
   extractBranchesFromStore,
   extractRulersFromStore,
-  fetchTimelineRepository,
   getDescendantBranchIds,
   getEnrichedEvents,
   getEventEffectiveEndYear,
@@ -63,8 +64,6 @@ import type {
   FocusScope,
   ModalHistoryItem,
   SyncLinkTypeFilter,
-  SyncManifest,
-  TimelineDataFile,
   YearRangeStep,
 } from './types/timeline';
 
@@ -78,24 +77,22 @@ type ActiveModalState =
   | { type: 'COMPARE'; pair: { left: ComparisonTarget; right: ComparisonTarget } };
 
 export default function App() {
-  const [manifest, setManifest] = useState<SyncManifest | null>(null);
-  const [filesMap, setFilesMap] = useState<Record<string, TimelineDataFile>>({});
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
   const initialParams = useMemo(() => new URLSearchParams(window.location.search), []);
+
+  const {
+    manifest,
+    filesMap,
+    loading,
+    loadError,
+    reloadRepository,
+    ensureAllModulesLoaded,
+  } = useTimelineData({ initialParams });
 
   const [activeBranches, setActiveBranches] = useState<Record<string, boolean>>({});
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
 
-  const [yearFrom, setYearFrom] = useState<number>(() => {
-    const raw = Number(initialParams.get('from'));
-    return Number.isFinite(raw) && raw >= 862 && raw <= 2000 ? raw : 862;
-  });
-  const [yearTo, setYearTo] = useState<number>(() => {
-    const raw = Number(initialParams.get('to'));
-    return Number.isFinite(raw) && raw >= 862 && raw <= 2000 ? raw : 2000;
-  });
+  const [yearFrom, setYearFrom] = useState<number>(() => parseInitialYearBound(initialParams, 'from', 862));
+  const [yearTo, setYearTo] = useState<number>(() => parseInitialYearBound(initialParams, 'to', 2000));
   const [zoomHistory, setZoomHistory] = useState<YearRangeStep[]>([]);
   const [selectedEra, setSelectedEra] = useState('ALL');
   const [selectedReign, setSelectedReign] = useState('ALL');
@@ -122,7 +119,12 @@ export default function App() {
 
   const [activeModal, setActiveModal] = useState<ActiveModalState>(() => {
     const initialCardId = initialParams.get('card');
-    return initialCardId ? { type: 'CARD', cardId: initialCardId } : { type: 'NONE' };
+    if (initialCardId) return { type: 'CARD', cardId: initialCardId };
+    const initialRulerId = initialParams.get('ruler');
+    if (initialRulerId) return { type: 'REIGN', rulerId: initialRulerId };
+    const initialPersonKey = initialParams.get('person');
+    if (initialPersonKey) return { type: 'PERSON', personKey: initialPersonKey };
+    return { type: 'NONE' };
   });
   const [modalHistory, setModalHistory] = useState<ModalHistoryItem[]>([]);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
@@ -138,24 +140,11 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [toastMessage]);
 
-  const loadRepositoryData = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const repo = await fetchTimelineRepository();
-      setManifest(repo.manifest);
-      setFilesMap(repo.files);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Неизвестная ошибка загрузки данных';
-      setLoadError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    void loadRepositoryData();
-  }, [loadRepositoryData]);
+    if (searchQuery.trim() || selectedPersonKey || activeModal.type !== 'NONE') {
+      void ensureAllModulesLoaded();
+    }
+  }, [searchQuery, selectedPersonKey, activeModal.type, ensureAllModulesLoaded]);
 
   useEffect(() => {
     if (!highlightedJumpId) return;
@@ -241,87 +230,43 @@ export default function App() {
 
   // Двусторонняя синхронизация с URLSearchParams (Deep Linking и History API)
   const activeCardId = activeModal.type === 'CARD' ? activeModal.cardId : null;
+  const activeRulerModalId = activeModal.type === 'REIGN' ? activeModal.rulerId : null;
+  const activePersonModalKey = activeModal.type === 'PERSON' ? activeModal.personKey : null;
 
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (yearFrom !== 862) params.set('from', String(yearFrom));
-    else params.delete('from');
-
-    if (yearTo !== 2000) params.set('to', String(yearTo));
-    else params.delete('to');
-
-    if (searchQuery.trim()) params.set('search', searchQuery.trim());
-    else params.delete('search');
-
-    if (activeCardId) params.set('card', activeCardId);
-    else params.delete('card');
-
-    if (branches.length > 0 && Object.keys(activeBranches).length > 0) {
-      const overviewMap = computeBranchPresetMap(branches, 'overview');
-      const leafBranches = branches.filter((b) => !b.isGroup);
-      const isOverviewDefault = leafBranches.every(
-        (b) => Boolean(activeBranches[b.id]) === Boolean(overviewMap[b.id]),
-      );
-      if (isOverviewDefault) {
-        params.delete('branches');
+  const handlePopModalFromUrl = useCallback(
+    ({ cardId, rulerId, personKey }: { cardId: string | null; rulerId: string | null; personKey: string | null }) => {
+      if (cardId) {
+        setActiveModal({ type: 'CARD', cardId });
+      } else if (rulerId) {
+        setActiveModal({ type: 'REIGN', rulerId });
+      } else if (personKey) {
+        setActiveModal({ type: 'PERSON', personKey });
       } else {
-        const enabledIds = leafBranches
-          .filter((b) => activeBranches[b.id])
-          .map((b) => b.id);
-        params.set('branches', enabledIds.join(','));
+        setActiveModal((prev) =>
+          prev.type === 'CARD' || prev.type === 'REIGN' || prev.type === 'PERSON'
+            ? { type: 'NONE' }
+            : prev,
+        );
       }
-    }
+    },
+    [],
+  );
 
-    const query = params.toString();
-    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
-    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (nextUrl !== currentUrl) {
-      window.history.replaceState(null, '', nextUrl);
-    }
-  }, [yearFrom, yearTo, searchQuery, activeCardId, activeBranches, branches]);
-
-  useEffect(() => {
-    const handlePopState = () => {
-      const params = new URLSearchParams(window.location.search);
-      const rawFrom = Number(params.get('from'));
-      const rawTo = Number(params.get('to'));
-      setYearFrom(Number.isFinite(rawFrom) && rawFrom >= 862 && rawFrom <= 2000 ? rawFrom : 862);
-      setYearTo(Number.isFinite(rawTo) && rawTo >= 862 && rawTo <= 2000 ? rawTo : 2000);
-      setSearchQuery(params.get('search') ?? '');
-
-      const cardParam = params.get('card');
-      if (cardParam) {
-        setActiveModal({ type: 'CARD', cardId: cardParam });
-      } else {
-        setActiveModal((prev) => (prev.type === 'CARD' ? { type: 'NONE' } : prev));
-      }
-
-      if (branches.length > 0) {
-        const urlBranchesRaw = params.get('branches');
-        if (!urlBranchesRaw) {
-          setActiveBranches(computeBranchPresetMap(branches, 'overview'));
-        } else {
-          const requestedIds = new Set(
-            urlBranchesRaw
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean),
-          );
-          const leafBranches = branches.filter((b) => !b.isGroup);
-          if (leafBranches.some((b) => requestedIds.has(b.id))) {
-            const nextMap: Record<string, boolean> = {};
-            leafBranches.forEach((b) => {
-              nextMap[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
-            });
-            setActiveBranches(nextMap);
-          }
-        }
-      }
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, [branches]);
+  useTimelineUrlSync({
+    yearFrom,
+    yearTo,
+    searchQuery,
+    activeCardId,
+    activeRulerModalId,
+    activePersonModalKey,
+    activeBranches,
+    branches,
+    setYearFrom,
+    setYearTo,
+    setSearchQuery,
+    setActiveBranches,
+    onPopModalFromUrl: handlePopModalFromUrl,
+  });
 
   const rulers = useMemo(() => {
     if (!manifest) return [];
@@ -1492,7 +1437,7 @@ export default function App() {
           <p className="text-sm text-slate-300">{loadError || 'Каталог исторических данных временно недоступен.'}</p>
           <button
             type="button"
-            onClick={() => void loadRepositoryData()}
+            onClick={() => void reloadRepository()}
             className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
           >
             Повторить загрузку
