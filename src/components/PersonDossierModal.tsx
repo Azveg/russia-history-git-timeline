@@ -9,6 +9,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { isEventBranchActive, resolveBranchCategory } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
@@ -80,16 +81,7 @@ export function PersonDossierModal({
     setSphereFilter('all');
   }, [dossier?.key]);
 
-  useEffect(() => {
-    if (!dossier) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [dossier, onClose]);
+  const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
 
   const branchById = useMemo(
     () => new Map(branches.map((b) => [b.id, b])),
@@ -132,6 +124,8 @@ export function PersonDossierModal({
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby="person-dossier-title"

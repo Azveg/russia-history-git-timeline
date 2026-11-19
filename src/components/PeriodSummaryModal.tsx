@@ -16,6 +16,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import {
   formatCalendarDetailBadge,
   getLeafBranches,
@@ -77,16 +78,7 @@ export function PeriodSummaryModal({
     setEventsSortMode('chronological');
   }, [ruler?.id]);
 
-  useEffect(() => {
-    if (!ruler) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [ruler, onClose]);
+  const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
 
   const summary = useMemo(() => {
     if (!ruler) return null;
@@ -179,6 +171,8 @@ export function PeriodSummaryModal({
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby="period-modal-title"

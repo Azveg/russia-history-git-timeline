@@ -22,6 +22,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import {
   findMacroEraForYear,
   formatCalendarDetailBadge,
@@ -106,16 +107,7 @@ export function CardDetailModal({
     setCopiedSummary(false);
   }, [card?.id]);
 
-  useEffect(() => {
-    if (!card) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [card, onClose]);
+  const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
 
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
 
@@ -337,6 +329,8 @@ export function CardDetailModal({
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby="modal-card-title"

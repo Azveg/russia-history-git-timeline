@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="noindex" />
+    <title>Перенаправление — Интерактивный хронограф истории России (862–2000)</title>
+    <script>
+      (function () {
+        var loc = window.location;
+        var base = '/Historical-Atlas/';
+        var path = loc.pathname.indexOf(base) === 0 ? base : '/';
+        loc.replace(loc.origin + path + loc.search + loc.hash);
+      })();
+    </script>
+  </head>
+  <body style="background:#050811;color:#f1f5f9;font-family:system-ui,-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;">
+    <p>Перенаправление в интерактивный хронограф истории России…</p>
+  </body>
+</html>

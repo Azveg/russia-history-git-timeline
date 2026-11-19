@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { computePeriodComparison, resolveMacroEras } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
@@ -273,16 +274,7 @@ export function ComparePeriodsModal({
   onOpenPersonModal,
   onSelectYearRange,
 }: ComparePeriodsModalProps) {
-  useEffect(() => {
-    if (!comparePair) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [comparePair, onClose]);
+  const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
 
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
 
@@ -494,6 +486,8 @@ export function ComparePeriodsModal({
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby="compare-modal-title"

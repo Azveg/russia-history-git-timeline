@@ -154,22 +154,7 @@ export function resolveEffectiveCalendarStyle(
   return 'julian';
 }
 
-const CUSTOM_EVENT_YEARS: Record<string, [number, number]> = {
-  '1746-chukchi': [1746, 1776],
-  '1776-world-usa-france': [1776, 1789],
-  '1813-foreign-campaigns': [1813, 1815],
-  '1918-basmachi': [1918, 1934],
-  '1920s-north-caucasus': [1922, 1936],
-  '1934-xinjiang': [1934, 1937],
-  '1944-upa-forest-brothers': [1944, 1956],
-  '1973-reform-oil-boom': [1970, 1986],
-  '1975-world-helsinki': [1975, 1989],
-};
-
-export function parseEventYears(periodStr: string, eventId?: string): { startYear: number; endYear: number } {
-  if (eventId && CUSTOM_EVENT_YEARS[eventId]) {
-    return { startYear: CUSTOM_EVENT_YEARS[eventId][0], endYear: CUSTOM_EVENT_YEARS[eventId][1] };
-  }
+export function parseEventYears(periodStr: string, _eventId?: string): { startYear: number; endYear: number } {
   const matches = periodStr.match(/\b(\d{3,4})\b/g);
   const nums = (matches || []).map(Number).filter((n) => n >= 100 && n <= 2100);
   if (nums.length === 0) {

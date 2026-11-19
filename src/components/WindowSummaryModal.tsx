@@ -21,6 +21,7 @@ import {
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import {
   formatEventTitleWithPeriod,
   getCustomWindowSummaryData,
@@ -92,16 +93,7 @@ export function WindowSummaryModal({
     setEventsSortMode('chronological');
   }, [windowRange?.from, windowRange?.to]);
 
-  useEffect(() => {
-    if (!windowRange) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [windowRange, onClose]);
+  const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
 
   const summary = useMemo(() => {
     if (!windowRange) return null;
@@ -215,6 +207,8 @@ export function WindowSummaryModal({
 
   return (
     <div
+      ref={dialogRef}
+      tabIndex={-1}
       role="dialog"
       aria-modal="true"
       aria-labelledby="window-modal-title"

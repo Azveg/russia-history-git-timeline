@@ -245,6 +245,8 @@ export function GitTimeline({
   const graphHelpRef = useRef<HTMLDivElement | null>(null);
   const hoverClearTimerRef = useRef<number | null>(null);
   const tooltipOpenTimerRef = useRef<number | null>(null);
+  const hoverActivateTimerRef = useRef<number | null>(null);
+  const [localHoveredEventId, setLocalHoveredEventId] = useState<string | null>(null);
   const [activeStickyRulerId, setActiveStickyRulerId] = useState<string | null>(null);
   const [hoveredCardTooltip, setHoveredCardTooltip] = useState<HoveredCardTooltipState | null>(null);
   const [isGraphHelpOpen, setIsGraphHelpOpen] = useState(false);
@@ -285,19 +287,28 @@ export function GitTimeline({
       window.clearTimeout(hoverClearTimerRef.current);
       hoverClearTimerRef.current = null;
     }
+    if (hoverActivateTimerRef.current !== null) {
+      window.clearTimeout(hoverActivateTimerRef.current);
+      hoverActivateTimerRef.current = null;
+    }
   };
 
   const activateHoverEvent = (eventId: string) => {
     cancelScheduledHoverClear();
-    onHoverEvent(eventId);
+    setLocalHoveredEventId((prev) => (prev === eventId ? prev : eventId));
+    hoverActivateTimerRef.current = window.setTimeout(() => {
+      onHoverEvent(eventId);
+      hoverActivateTimerRef.current = null;
+    }, 85);
   };
 
   const scheduleClearHoverEvent = () => {
     cancelScheduledHoverClear();
     hoverClearTimerRef.current = window.setTimeout(() => {
+      setLocalHoveredEventId(null);
       onHoverEvent(null);
       hoverClearTimerRef.current = null;
-    }, 240);
+    }, 220);
   };
 
   useEffect(() => {
@@ -614,7 +625,7 @@ export function GitTimeline({
     return set;
   }, [stream]);
 
-  const effectiveActiveEventId = pinnedHoverEventId || hoveredEventId;
+  const effectiveActiveEventId = pinnedHoverEventId || localHoveredEventId || hoveredEventId;
   const hoveredEvent = effectiveActiveEventId
     ? (matchingEvents.find((e) => e.id === effectiveActiveEventId) ?? null)
     : null;
@@ -2168,17 +2179,28 @@ export function GitTimeline({
               <div
                 key={`commit-${ev.id}-${idx}`}
                 id={`row-${ev.id}`}
+                role="button"
+                tabIndex={0}
+                aria-label={`${ev.title} (${ev.period})`}
                 data-ruler-context={ev.overlappingRulers[0]?.id ?? ''}
                 onClick={() => {
                   closeCardTooltip();
                   onOpenCardModal(ev.id);
+                }}
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    closeCardTooltip();
+                    onOpenCardModal(ev.id);
+                  }
                 }}
                 onMouseEnter={() => activateHoverEvent(ev.id)}
                 onMouseLeave={() => {
                   scheduleClearHoverEvent();
                   closeCardTooltip();
                 }}
-                className="commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group"
+                className="commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
               >
                 <div
                   title={gutter.title}
@@ -2840,7 +2862,7 @@ export function GitTimeline({
                 idx < entry.endIdx,
             );
           const mergeTargetX = hasBaseContinuingAfter ? baseX : timeSpineX;
-          const isEndSelfHovered = hoveredEventId === ev.id;
+          const isEndSelfHovered = effectiveActiveEventId === ev.id;
           const isEndJumpHighlighted = localJumpDomId === `row-end-${ev.id}`;
           const hasStartRowInStream = rowIndexByEventId.has(ev.id);
           const effStartYearForEnd = getEventEffectiveStartYear(ev, branches);
@@ -2850,10 +2872,20 @@ export function GitTimeline({
             <div
               key={`end-${ev.id}-${idx}`}
               id={`row-end-${ev.id}`}
+              role="button"
+              tabIndex={0}
+              aria-label={`Окончание: ${ev.title} (${item.dateLabel})`}
               onClick={() => onOpenCardModal(ev.id)}
-              onMouseEnter={() => onHoverEvent(ev.id)}
-              onMouseLeave={() => onHoverEvent(null)}
-              className="relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group"
+              onKeyDown={(e) => {
+                if (e.target !== e.currentTarget) return;
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpenCardModal(ev.id);
+                }
+              }}
+              onMouseEnter={() => activateHoverEvent(ev.id)}
+              onMouseLeave={() => scheduleClearHoverEvent()}
+              className="relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
             >
               <div
                 title={gutter.title}
