@@ -1,28 +1,30 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { DashboardHeader } from './components/DashboardHeader';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import type { EpochSlicePreset } from './components/EraSelectorPopover';
 import { FilterPanel } from './components/FilterPanel';
 import { GitTimeline } from './components/GitTimeline';
 import { HiddenLinksNotice } from './components/HiddenLinksNotice';
 import { OverlapMapSection } from './components/OverlapMapSection';
 import { TopControlBar } from './components/TopControlBar';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
-const CardDetailModal = lazy(() =>
+const CardDetailModal = lazyWithRetry(() =>
   import('./components/CardDetailModal').then((m) => ({ default: m.CardDetailModal })),
 );
-const ComparePeriodsModal = lazy(() =>
+const ComparePeriodsModal = lazyWithRetry(() =>
   import('./components/ComparePeriodsModal').then((m) => ({ default: m.ComparePeriodsModal })),
 );
-const EraSummaryModal = lazy(() =>
+const EraSummaryModal = lazyWithRetry(() =>
   import('./components/EraSummaryModal').then((m) => ({ default: m.EraSummaryModal })),
 );
-const PeriodSummaryModal = lazy(() =>
+const PeriodSummaryModal = lazyWithRetry(() =>
   import('./components/PeriodSummaryModal').then((m) => ({ default: m.PeriodSummaryModal })),
 );
-const PersonDossierModal = lazy(() =>
+const PersonDossierModal = lazyWithRetry(() =>
   import('./components/PersonDossierModal').then((m) => ({ default: m.PersonDossierModal })),
 );
-const WindowSummaryModal = lazy(() =>
+const WindowSummaryModal = lazyWithRetry(() =>
   import('./components/WindowSummaryModal').then((m) => ({ default: m.WindowSummaryModal })),
 );
 import {
@@ -1731,159 +1733,165 @@ export default function App() {
         )}
       </main>
 
-      <Suspense
-        fallback={
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#050811]/75 backdrop-blur-xs"
-            role="status"
-            aria-live="polite"
-          >
-            <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/95 px-4 py-2.5 text-xs font-medium text-slate-200 shadow-2xl">
-              <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-              <span>Загрузка аналитического модуля…</span>
-            </div>
-          </div>
-        }
+      <ErrorBoundary
+        variant="modal"
+        resetKey={JSON.stringify(activeModal)}
+        onClose={handleCloseAllModals}
       >
-        {activeCardObj && (
-          <CardDetailModal
-            card={activeCardObj}
-            enrichedEvents={enrichedEvents}
-            matchingEvents={matchingEvents}
-            branches={branches}
-            activeBranches={activeBranches}
-            eras={manifest.macroEras}
-            personDossiers={personDossiers}
-            focusedEventId={focusedEventId}
-            modalHistory={modalHistory}
-            onClose={handleCloseAllModals}
-            onNavigateBack={handleModalNavigateBack}
-            onSelectCard={handleOpenCardModal}
-            onJumpToTimelineRow={handleJumpToEvent}
-            onRevealBranch={handleRevealBranch}
-            onToggleFocusEvent={handleToggleFocusEvent}
-            onFilterByRuler={handleSelectReign}
-            onOpenPersonModal={handleOpenPersonModal}
-            onFilterByPerson={(personName) => {
-              const cleanName = personName.replace(/\s*\([^)]*\)\s*/g, '').trim() || personName;
-              setFocusedEventId(null);
-              setSelectedEra('ALL');
-              setSelectedReign('ALL');
-              setYearFrom(timelineBounds.minYear);
-              setYearTo(timelineBounds.maxYear);
-              setActiveBranches((prev) => ({
-                ...prev,
-                ...computeBranchPresetMap(branches, 'all'),
-              }));
-              setSearchQuery(cleanName);
-              setIsFiltersCollapsed(false);
-              showToast(`Поиск по исторической личности: «${cleanName}» (включены все ветки)`);
-            }}
-            onOpenRulerModal={handleOpenPeriodModal}
-            onOpenEraModal={handleOpenEraModal}
-          />
-        )}
+        <Suspense
+          fallback={
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-[#050811]/75 backdrop-blur-xs"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900/95 px-4 py-2.5 text-xs font-medium text-slate-200 shadow-2xl">
+                <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+                <span>Загрузка аналитического модуля…</span>
+              </div>
+            </div>
+          }
+        >
+          {activeCardObj && (
+            <CardDetailModal
+              card={activeCardObj}
+              enrichedEvents={enrichedEvents}
+              matchingEvents={matchingEvents}
+              branches={branches}
+              activeBranches={activeBranches}
+              eras={manifest.macroEras}
+              personDossiers={personDossiers}
+              focusedEventId={focusedEventId}
+              modalHistory={modalHistory}
+              onClose={handleCloseAllModals}
+              onNavigateBack={handleModalNavigateBack}
+              onSelectCard={handleOpenCardModal}
+              onJumpToTimelineRow={handleJumpToEvent}
+              onRevealBranch={handleRevealBranch}
+              onToggleFocusEvent={handleToggleFocusEvent}
+              onFilterByRuler={handleSelectReign}
+              onOpenPersonModal={handleOpenPersonModal}
+              onFilterByPerson={(personName) => {
+                const cleanName = personName.replace(/\s*\([^)]*\)\s*/g, '').trim() || personName;
+                setFocusedEventId(null);
+                setSelectedEra('ALL');
+                setSelectedReign('ALL');
+                setYearFrom(timelineBounds.minYear);
+                setYearTo(timelineBounds.maxYear);
+                setActiveBranches((prev) => ({
+                  ...prev,
+                  ...computeBranchPresetMap(branches, 'all'),
+                }));
+                setSearchQuery(cleanName);
+                setIsFiltersCollapsed(false);
+                showToast(`Поиск по исторической личности: «${cleanName}» (включены все ветки)`);
+              }}
+              onOpenRulerModal={handleOpenPeriodModal}
+              onOpenEraModal={handleOpenEraModal}
+            />
+          )}
 
-        {activeRulerObj && (
-          <PeriodSummaryModal
-            ruler={activeRulerObj}
-            enrichedEvents={enrichedEvents}
-            branches={branches}
-            personDossiers={personDossiers}
-            modalHistory={modalHistory}
-            onClose={handleCloseAllModals}
-            onNavigateBack={handleModalNavigateBack}
-            onSelectCard={handleOpenCardModal}
-            onOpenPersonModal={handleOpenPersonModal}
-            onFilterByRuler={handleSelectReign}
-            onCompareWithRuler={handleCompareWithRuler}
-          />
-        )}
+          {activeRulerObj && (
+            <PeriodSummaryModal
+              ruler={activeRulerObj}
+              enrichedEvents={enrichedEvents}
+              branches={branches}
+              personDossiers={personDossiers}
+              modalHistory={modalHistory}
+              onClose={handleCloseAllModals}
+              onNavigateBack={handleModalNavigateBack}
+              onSelectCard={handleOpenCardModal}
+              onOpenPersonModal={handleOpenPersonModal}
+              onFilterByRuler={handleSelectReign}
+              onCompareWithRuler={handleCompareWithRuler}
+            />
+          )}
 
-        {activePersonObj && (
-          <PersonDossierModal
-            dossier={activePersonObj}
-            branches={branches}
-            activeBranches={activeBranches}
-            modalHistory={modalHistory}
-            onClose={handleCloseAllModals}
-            onNavigateBack={handleModalNavigateBack}
-            onSelectCard={handleOpenCardModal}
-            onOpenRulerModal={handleOpenPeriodModal}
-            onFilterTimelineByPerson={handleFilterTimelineByPerson}
-          />
-        )}
+          {activePersonObj && (
+            <PersonDossierModal
+              dossier={activePersonObj}
+              branches={branches}
+              activeBranches={activeBranches}
+              modalHistory={modalHistory}
+              onClose={handleCloseAllModals}
+              onNavigateBack={handleModalNavigateBack}
+              onSelectCard={handleOpenCardModal}
+              onOpenRulerModal={handleOpenPeriodModal}
+              onFilterTimelineByPerson={handleFilterTimelineByPerson}
+            />
+          )}
 
-        {activeEraObj && (
-          <EraSummaryModal
-            era={activeEraObj}
-            eras={manifest.macroEras}
-            rulers={rulers}
-            enrichedEvents={enrichedEvents}
-            branches={branches}
-            modalHistory={modalHistory}
-            onClose={handleCloseAllModals}
-            onNavigateBack={handleModalNavigateBack}
-            onSelectEra={handleOpenEraModal}
-            onSelectRuler={handleOpenPeriodModal}
-            onSelectEvent={handleOpenCardModal}
-            onFilterByEraRange={(startYear, endYear) => {
-              setSelectedEra('ALL');
-              setSelectedReign('ALL');
-              handleYearRangeChange(startYear, endYear);
-            }}
-            onCompareWithEra={handleCompareWithEra}
-          />
-        )}
+          {activeEraObj && (
+            <EraSummaryModal
+              era={activeEraObj}
+              eras={manifest.macroEras}
+              rulers={rulers}
+              enrichedEvents={enrichedEvents}
+              branches={branches}
+              modalHistory={modalHistory}
+              onClose={handleCloseAllModals}
+              onNavigateBack={handleModalNavigateBack}
+              onSelectEra={handleOpenEraModal}
+              onSelectRuler={handleOpenPeriodModal}
+              onSelectEvent={handleOpenCardModal}
+              onFilterByEraRange={(startYear, endYear) => {
+                setSelectedEra('ALL');
+                setSelectedReign('ALL');
+                handleYearRangeChange(startYear, endYear);
+              }}
+              onCompareWithEra={handleCompareWithEra}
+            />
+          )}
 
-        {activeWindowRange && (
-          <WindowSummaryModal
-            windowRange={activeWindowRange}
-            eras={manifest.macroEras}
-            rulers={rulers}
-            enrichedEvents={enrichedEvents}
-            branches={branches}
-            activeBranches={activeBranches}
-            personDossiers={personDossiers}
-            modalHistory={modalHistory}
-            onClose={handleCloseAllModals}
-            onNavigateBack={handleModalNavigateBack}
-            onSelectEra={handleOpenEraModal}
-            onSelectRuler={handleOpenPeriodModal}
-            onSelectEvent={handleOpenCardModal}
-            onOpenPersonModal={handleOpenPersonModal}
-            onRevealBranches={handleRevealBranches}
-            onCompareWithWindow={handleCompareWithWindow}
-          />
-        )}
+          {activeWindowRange && (
+            <WindowSummaryModal
+              windowRange={activeWindowRange}
+              eras={manifest.macroEras}
+              rulers={rulers}
+              enrichedEvents={enrichedEvents}
+              branches={branches}
+              activeBranches={activeBranches}
+              personDossiers={personDossiers}
+              modalHistory={modalHistory}
+              onClose={handleCloseAllModals}
+              onNavigateBack={handleModalNavigateBack}
+              onSelectEra={handleOpenEraModal}
+              onSelectRuler={handleOpenPeriodModal}
+              onSelectEvent={handleOpenCardModal}
+              onOpenPersonModal={handleOpenPersonModal}
+              onRevealBranches={handleRevealBranches}
+              onCompareWithWindow={handleCompareWithWindow}
+            />
+          )}
 
-        {activeComparePair && (
-          <ComparePeriodsModal
-            comparePair={activeComparePair}
-            rulers={rulers}
-            eras={manifest.macroEras}
-            enrichedEvents={enrichedEvents}
-            branches={branches}
-            personDossiers={personDossiers}
-            modalHistory={modalHistory}
-            currentWindow={{ from: effectiveYearFrom, to: effectiveYearTo }}
-            minYear={timelineBounds.minYear}
-            maxYear={timelineBounds.maxYear}
-            onUpdatePair={(nextPair) => setActiveModal({ type: 'COMPARE', pair: nextPair })}
-            onClose={handleCloseAllModals}
-            onNavigateBack={handleModalNavigateBack}
-            onSelectCard={handleOpenCardModal}
-            onOpenRulerModal={handleOpenPeriodModal}
-            onOpenEraModal={handleOpenEraModal}
-            onOpenPersonModal={handleOpenPersonModal}
-            onSelectYearRange={(fromVal, toVal) => {
-              setSelectedEra('ALL');
-              setSelectedReign('ALL');
-              handleYearRangeChange(fromVal, toVal);
-            }}
-          />
-        )}
-      </Suspense>
+          {activeComparePair && (
+            <ComparePeriodsModal
+              comparePair={activeComparePair}
+              rulers={rulers}
+              eras={manifest.macroEras}
+              enrichedEvents={enrichedEvents}
+              branches={branches}
+              personDossiers={personDossiers}
+              modalHistory={modalHistory}
+              currentWindow={{ from: effectiveYearFrom, to: effectiveYearTo }}
+              minYear={timelineBounds.minYear}
+              maxYear={timelineBounds.maxYear}
+              onUpdatePair={(nextPair) => setActiveModal({ type: 'COMPARE', pair: nextPair })}
+              onClose={handleCloseAllModals}
+              onNavigateBack={handleModalNavigateBack}
+              onSelectCard={handleOpenCardModal}
+              onOpenRulerModal={handleOpenPeriodModal}
+              onOpenEraModal={handleOpenEraModal}
+              onOpenPersonModal={handleOpenPersonModal}
+              onSelectYearRange={(fromVal, toVal) => {
+                setSelectedEra('ALL');
+                setSelectedReign('ALL');
+                handleYearRangeChange(fromVal, toVal);
+              }}
+            />
+          )}
+        </Suspense>
+      </ErrorBoundary>
     </div>
   );
 }
