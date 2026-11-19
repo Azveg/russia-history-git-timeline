@@ -264,6 +264,13 @@ const CORE_SOURCE_REQUIRED_FILES = new Set([
   'data/economics.json',
   'data/diplomacy.json',
   'data/world.json',
+  'data/world_diplomacy.json',
+  'data/world_economy.json',
+  'data/world_science.json',
+  'data/world_medicine.json',
+  'data/world_literature.json',
+  'data/world_arts_arch.json',
+  'data/world_thought.json',
 ]);
 
 function validatePrerequisitesIntegrity(relFromPublic, entityLabel, prerequisites) {

@@ -32,20 +32,24 @@ describe('regionFilter — geographic macro-region facet classifier', () => {
 
   it('classifies world regions (Europe, East/South Asia, Middle East, Americas)', () => {
     expect(
-      classifyEventMacroRegions({ region: 'Франция / Германия / Европа', task: 'WORLD_CONTEXT' }),
+      classifyEventMacroRegions({ region: 'Франция / Германия / Европа', task: 'WORLD_GEOPOLITICS' }),
     ).toContain('europe');
 
     expect(
-      classifyEventMacroRegions({ region: 'Китай / Япония / Индия', task: 'WORLD_CONTEXT' }),
+      classifyEventMacroRegions({ region: 'Китай / Япония / Индия', task: 'WORLD_GEOPOLITICS' }),
     ).toContain('asia_east');
 
     expect(
-      classifyEventMacroRegions({ region: 'Османская империя / Иран', task: 'WORLD_CONTEXT' }),
+      classifyEventMacroRegions({ region: 'Османская империя / Иран', task: 'WORLD_GEOPOLITICS' }),
     ).toContain('middle_east_africa');
 
     expect(
-      classifyEventMacroRegions({ region: 'США / Латинская Америка', task: 'WORLD_CONTEXT' }),
+      classifyEventMacroRegions({ region: 'США / Латинская Америка', task: 'WORLD_ECONOMY' }),
     ).toContain('americas_global');
+
+    expect(
+      classifyEventMacroRegions({ region: 'Падуя / Базель', task: 'WORLD_MEDICINE' }),
+    ).toEqual(['europe']);
   });
 
   it('computes facet counts and supports matching against "all"', () => {

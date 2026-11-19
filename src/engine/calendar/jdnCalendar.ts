@@ -152,7 +152,7 @@ export function resolveEffectiveCalendarStyle(
   if (explicitStyle === 'julian' || explicitStyle === 'gregorian' || explicitStyle === 'both') {
     return explicitStyle;
   }
-  if (taskHint === 'WORLD_CONTEXT') return 'gregorian';
+  if (taskHint === 'WORLD_CONTEXT' || taskHint?.startsWith('WORLD_')) return 'gregorian';
   if (taskHint === 'DIPLOMACY_TREATIES') return 'both';
   return 'julian';
 }
@@ -516,7 +516,7 @@ export function isMajorCampaignOrConflictNode(
   const typeLower = (ev.type || '').toLowerCase();
   const evTypeLower = (ev.eventType || '').toLowerCase();
   if (
-    task === 'WORLD_CONTEXT' &&
+    (task === 'WORLD_CONTEXT' || task.startsWith('WORLD_')) &&
     (evTypeLower === 'war' ||
       evTypeLower === 'crisis' ||
       typeLower.includes('войн') ||

@@ -80,7 +80,7 @@ export function classifyEventMacroRegions(
   }
 
   if (matched.length === 0) {
-    if (ev.task === 'WORLD_CONTEXT') {
+    if (ev.task === 'WORLD_CONTEXT' || ev.task.startsWith('WORLD_')) {
       return ['europe'];
     }
     return ['rus_center'];

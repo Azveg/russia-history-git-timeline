@@ -100,4 +100,13 @@ describe('jdnCalendar — Julian/Gregorian historical date engine', () => {
     expect(doesIntervalBelongToEra(1200, 1240, 'ERA_2', resolved[1])).toBe(true);
     expect(doesIntervalBelongToEra(900, 950, 'ERA_1', resolved[1])).toBe(false);
   });
+
+  it('defaults WORLD_* sub-branches to gregorian calendar style after 1582', () => {
+    const parsedScience = parsePreciseDate('1687-07-05', 1687, false, { task: 'WORLD_SCIENCE' });
+    expect(parsedScience.calendarStyle).toBe('gregorian');
+    expect(parsedScience.unified).toMatchObject({ year: 1687, month: 7, day: 5 });
+
+    const parsedMedicine = parsePreciseDate('1796-05-14', 1796, false, { task: 'WORLD_MEDICINE' });
+    expect(parsedMedicine.calendarStyle).toBe('gregorian');
+  });
 });

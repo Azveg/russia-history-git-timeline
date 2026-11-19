@@ -49,9 +49,80 @@
       "path": "data/world.json",
       "role": "thematic_branch",
       "branchIds": [
-        "WORLD_CONTEXT"
+        "WORLD_ALL",
+        "WORLD_GEOPOLITICS"
       ],
-      "title": "События в других странах и мировой контекст",
+      "title": "Мировой контекст: геополитика, империи и войны (общая группа и геополитика)",
+      "enabled": true
+    },
+    {
+      "fileId": "world_diplomacy",
+      "path": "data/world_diplomacy.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "WORLD_DIPLOMACY"
+      ],
+      "title": "Мир: дипломатия, конгрессы и международное право",
+      "enabled": true
+    },
+    {
+      "fileId": "world_economy",
+      "path": "data/world_economy.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "WORLD_ECONOMY"
+      ],
+      "title": "Мир: экономика, право и социальные реформы",
+      "enabled": true
+    },
+    {
+      "fileId": "world_science",
+      "path": "data/world_science.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "WORLD_SCIENCE"
+      ],
+      "title": "Мир: научные революции и технологии",
+      "enabled": true
+    },
+    {
+      "fileId": "world_medicine",
+      "path": "data/world_medicine.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "WORLD_MEDICINE"
+      ],
+      "title": "Мир: медицина, эпидемии и здравоохранение",
+      "enabled": true
+    },
+    {
+      "fileId": "world_literature",
+      "path": "data/world_literature.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "WORLD_LITERATURE"
+      ],
+      "title": "Мир: литература и книгопечатание",
+      "enabled": true
+    },
+    {
+      "fileId": "world_arts_arch",
+      "path": "data/world_arts_arch.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "WORLD_ARTS_ARCH"
+      ],
+      "title": "Мир: архитектура, искусство, музыка и кино",
+      "enabled": true
+    },
+    {
+      "fileId": "world_thought",
+      "path": "data/world_thought.json",
+      "role": "thematic_branch",
+      "branchIds": [
+        "WORLD_THOUGHT"
+      ],
+      "title": "Мир: религия, философия и общественная мысль",
       "enabled": true
     },
     {

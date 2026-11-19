@@ -5,10 +5,10 @@ import {
   collectRepositorySnapshot,
 } from '../../../scripts/seoSnapshot';
 
-describe('seoSnapshot — full 16-module indexing & zero inline styles', () => {
-  it('indexes all 16 historical JSON modules and generates clean noscript HTML without inline styles', () => {
+describe('seoSnapshot — full 23-module indexing & zero inline styles', () => {
+  it('indexes all 23 historical JSON modules and generates clean noscript HTML without inline styles', () => {
     const snapshot = collectRepositorySnapshot(process.cwd());
-    expect(snapshot.mountedFiles.length).toBe(16);
+    expect(snapshot.mountedFiles.length).toBe(23);
     expect(snapshot.rulers.length).toBeGreaterThanOrEqual(70);
     expect(snapshot.events.length).toBeGreaterThan(250);
 

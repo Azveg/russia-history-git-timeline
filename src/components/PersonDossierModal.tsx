@@ -48,7 +48,7 @@ const SPHERE_TABS: Array<{ id: SphereFilterId; label: string }> = [
 function getEventSphere(branch: BranchDefinition | undefined, taskId: string): SphereFilterId {
   if (taskId === 'DIPLOMACY_TREATIES') return 'diplomacy';
   if (taskId === 'REFORMS_ECO') return 'economy';
-  if (taskId === 'WORLD_CONTEXT') return 'world';
+  if (taskId === 'WORLD_CONTEXT' || taskId.startsWith('WORLD_')) return 'world';
   if (
     taskId === 'WRITERS_BIO' ||
     taskId === 'WRITERS_WORKS' ||
