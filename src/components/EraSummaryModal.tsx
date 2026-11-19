@@ -14,10 +14,10 @@ import {
   ScrollText,
   Sparkles,
   Users,
-  X,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { DossierModalHeader } from './DossierModalHeader';
 import {
   formatEventTitleWithPeriod,
   getLeafBranches,
@@ -132,60 +132,55 @@ export function EraSummaryModal({
       }}
     >
       <div className="w-full max-w-5xl max-h-[92vh] rounded-2xl bg-[#0b1325] border border-amber-500/40 shadow-2xl flex flex-col overflow-hidden">
-        {/* Верхняя панель с кнопкой «Назад», номером макро-периода и быстрым фильтром */}
-        <div className="px-5 py-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 text-xs font-mono text-amber-400 flex-wrap min-w-0">
-            {lastHistoryItem && onNavigateBack && (
+        {/* Двухстрочная шапка досье макро-периода */}
+        <DossierModalHeader
+          lastHistoryItem={lastHistoryItem}
+          onNavigateBack={onNavigateBack}
+          onClose={onClose}
+          closeAriaLabel="Закрыть досье макро-периода"
+          context={
+            <>
+              <ScrollText className="w-4 h-4 text-amber-400 shrink-0" />
+              <span
+                className="font-mono text-xs sm:text-sm font-bold text-amber-300 truncate tabular-nums"
+                title={`${resolvedEra.displayShortTitle} · ${resolvedEra.period} · Досье макро-периода`}
+              >
+                {resolvedEra.displayShortTitle} · {resolvedEra.period}
+              </span>
+              <span aria-hidden="true" className="text-slate-500 hidden sm:inline shrink-0">
+                ·
+              </span>
+              <span className="font-mono text-xs text-slate-400 hidden sm:inline shrink-0">
+                Досье макро-периода
+              </span>
+            </>
+          }
+          actions={
+            <>
+              {onCompareWithEra && (
+                <button
+                  type="button"
+                  onClick={() => onCompareWithEra(resolvedEra.id)}
+                  className="h-8 px-3 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
+                  title="Сравнить эту макро-эпоху с другой эпохой или правлением"
+                >
+                  <GitCompareArrows className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>Сравнить с…</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={onNavigateBack}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-semibold transition-colors cursor-pointer"
-                title={`Вернуться назад: ${lastHistoryItem.label}`}
+                onClick={() => {
+                  onFilterByEraRange(resolvedEra.startYear, resolvedEra.endYear);
+                  onClose();
+                }}
+                className="h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold inline-flex items-center transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="truncate max-w-[200px]">Назад: {lastHistoryItem.label}</span>
+                Сфокусировать окно ({resolvedEra.startYear}–{resolvedEra.endYear})
               </button>
-            )}
-            <ScrollText className="w-4 h-4 shrink-0" />
-            <span className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-black tabular-nums">
-              {resolvedEra.displayShortTitle}
-            </span>
-            <span className="font-bold text-amber-200 tabular-nums">{resolvedEra.period}</span>
-            <span className="text-slate-500 hidden sm:inline">· Досье макро-периода</span>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {onCompareWithEra && (
-              <button
-                type="button"
-                onClick={() => onCompareWithEra(resolvedEra.id)}
-                className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
-                title="Сравнить эту макро-эпоху с другой эпохой или правлением"
-              >
-                <GitCompareArrows className="w-3.5 h-3.5 text-sky-400" />
-                <span>Сравнить с…</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                onFilterByEraRange(resolvedEra.startYear, resolvedEra.endYear);
-                onClose();
-              }}
-              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
-            >
-              Сфокусировать окно ({resolvedEra.startYear}–{resolvedEra.endYear})
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть досье макро-периода"
-              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Тело модального окна */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">

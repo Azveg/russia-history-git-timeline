@@ -19,7 +19,6 @@ import {
   Sparkles,
   User,
   Users,
-  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
@@ -28,6 +27,7 @@ import {
   CiteTriggerButton,
   SourcesApparatusSection,
 } from './AcademicCitationBar';
+import { DossierModalHeader } from './DossierModalHeader';
 import {
   findMacroEraForYear,
   formatCalendarDetailBadge,
@@ -347,126 +347,115 @@ export function CardDetailModal({
       }}
     >
       <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl bg-[#0b1325] border border-slate-700/80 shadow-2xl flex flex-col overflow-hidden">
-        {/* Верхняя панель с кнопкой «Назад», веткой и действиями */}
-        <div className="px-5 py-3.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs font-mono flex-wrap min-w-0">
-            {lastHistoryItem && onNavigateBack && (
-              <button
-                type="button"
-                onClick={onNavigateBack}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-semibold transition-colors cursor-pointer"
-                title={`Вернуться назад: ${lastHistoryItem.label}`}
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="truncate max-w-[200px]">Назад: {lastHistoryItem.label}</span>
-              </button>
-            )}
-
-            <span className="inline-flex items-center gap-2 font-sans text-xs sm:text-sm font-semibold text-slate-100 shrink-0">
+        {/* Двухстрочная шапка с контекстом ветки и закреплённой панелью действий */}
+        <DossierModalHeader
+          lastHistoryItem={lastHistoryItem}
+          onNavigateBack={onNavigateBack}
+          onClose={onClose}
+          closeAriaLabel="Закрыть модальное окно"
+          context={
+            <>
               <span
                 className="w-2.5 h-2.5 rounded-full shrink-0"
                 style={{ backgroundColor: branchObj.color }}
+                aria-hidden="true"
               />
-              <span>
-                {parentBranchObj ? `${parentBranchObj.short} · ${branchObj.label}` : branchObj.label}
+              <span
+                className="font-sans text-xs sm:text-sm font-semibold text-slate-100 truncate min-w-0"
+                title={
+                  parentBranchObj
+                    ? `${parentBranchObj.short} · ${branchObj.label}`
+                    : branchObj.label
+                }
+              >
+                {parentBranchObj
+                  ? `${parentBranchObj.short} · ${branchObj.label}`
+                  : branchObj.label}
               </span>
-            </span>
-
-            {card.eventType && (
-              <>
-                <span aria-hidden="true" className="text-slate-500">
-                  ·
-                </span>
-                <span className="font-sans text-xs text-slate-300">
-                  {EVENT_TYPE_LABELS[card.eventType] ?? card.eventType}
-                </span>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                const lines: string[] = [
-                  `${card.period} — ${card.title}`,
-                  card.subtitle,
-                ];
-                if (card.prerequisitesList.length > 0) {
-                  lines.push(
-                    `Предпосылки: ${card.prerequisitesList.join('; ')}`,
-                  );
-                }
-                if (card.outcome) {
-                  lines.push(`Главный итог: ${card.outcome}`);
-                }
-                if (card.details) {
-                  lines.push(card.details);
-                }
-                navigator.clipboard?.writeText(lines.join('\n\n'));
-                setCopiedSummary(true);
-                window.setTimeout(() => setCopiedSummary(false), 2000);
-              }}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono text-indigo-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Скопировать краткий конспект карточки (предпосылки, суть, главный итог)"
-            >
-              {copiedSummary ? (
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-              ) : (
-                <Copy className="w-3.5 h-3.5" />
+              {card.eventType && (
+                <>
+                  <span aria-hidden="true" className="text-slate-500 hidden sm:inline shrink-0">
+                    ·
+                  </span>
+                  <span className="font-sans text-xs text-slate-300 hidden sm:inline truncate shrink-0 max-w-[160px]">
+                    {EVENT_TYPE_LABELS[card.eventType] ?? card.eventType}
+                  </span>
+                </>
               )}
-              <span className="hidden sm:inline">
-                {copiedSummary ? 'Скопировано' : 'Конспект'}
-              </span>
-            </button>
+            </>
+          }
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  const lines: string[] = [
+                    `${card.period} — ${card.title}`,
+                    card.subtitle,
+                  ];
+                  if (card.prerequisitesList.length > 0) {
+                    lines.push(
+                      `Предпосылки: ${card.prerequisitesList.join('; ')}`,
+                    );
+                  }
+                  if (card.outcome) {
+                    lines.push(`Главный итог: ${card.outcome}`);
+                  }
+                  if (card.details) {
+                    lines.push(card.details);
+                  }
+                  navigator.clipboard?.writeText(lines.join('\n\n'));
+                  setCopiedSummary(true);
+                  window.setTimeout(() => setCopiedSummary(false), 2000);
+                }}
+                className="h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono text-indigo-200 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
+                title="Скопировать краткий конспект карточки (предпосылки, суть, главный итог)"
+              >
+                {copiedSummary ? (
+                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                ) : (
+                  <Copy className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>{copiedSummary ? 'Скопировано' : 'Конспект'}</span>
+              </button>
 
-            <CiteTriggerButton
-              isOpen={showCitation}
-              onToggle={() => setShowCitation((prev) => !prev)}
-            />
+              <CiteTriggerButton
+                isOpen={showCitation}
+                onToggle={() => setShowCitation((prev) => !prev)}
+              />
 
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onJumpToTimelineRow(card.id);
-              }}
-              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono text-amber-300 inline-flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Прокрутить график к этому событию и подсветить его"
-            >
-              <Compass className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Показать на графике</span>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onJumpToTimelineRow(card.id);
+                }}
+                className="h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono text-amber-300 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
+                title="Прокрутить график к этому событию и подсветить его"
+              >
+                <Compass className="w-3.5 h-3.5 shrink-0" />
+                <span>Показать на графике</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                onToggleFocusEvent(card.id);
-                onClose();
-              }}
-              className={`px-2.5 py-1.5 rounded-lg border text-xs font-mono inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
-                isFocused
-                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
-                  : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300'
-              }`}
-              title="Изолировать это событие и все связанные с ним процессы на таймлайне"
-            >
-              <Crosshair className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">
-                {isFocused ? 'Выключить фокус' : 'Фокус связей'}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть модальное окно"
-              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  onToggleFocusEvent(card.id);
+                  onClose();
+                }}
+                className={`h-8 px-2.5 rounded-lg border text-xs font-mono inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 ${
+                  isFocused
+                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
+                    : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-500/40 text-emerald-300'
+                }`}
+                title="Изолировать это событие и все связанные с ним процессы на таймлайне"
+              >
+                <Crosshair className="w-3.5 h-3.5 shrink-0" />
+                <span>{isFocused ? 'Выключить фокус' : 'Фокус связей'}</span>
+              </button>
+            </>
+          }
+        />
 
         {/* Основное содержимое паспорта события */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">

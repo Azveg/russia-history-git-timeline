@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   ArrowRight,
   BookMarked,
   BookOpen,
@@ -18,10 +17,10 @@ import {
   Sparkles,
   User,
   Users,
-  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { DossierModalHeader } from './DossierModalHeader';
 import {
   formatEventTitleWithPeriod,
   getCustomWindowSummaryData,
@@ -218,61 +217,52 @@ export function WindowSummaryModal({
       }}
     >
       <div className="w-full max-w-5xl max-h-[92vh] rounded-2xl bg-[#0b1325] border border-amber-500/40 shadow-2xl flex flex-col overflow-hidden">
-        {/* Верхняя панель досье окна */}
-        <div className="px-5 py-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 text-xs font-mono text-amber-400 flex-wrap min-w-0">
-            {lastHistoryItem && onNavigateBack && (
-              <button
-                type="button"
-                onClick={onNavigateBack}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-semibold transition-colors cursor-pointer"
-                title={`Вернуться назад: ${lastHistoryItem.label}`}
+        {/* Двухстрочная шапка досье окна */}
+        <DossierModalHeader
+          lastHistoryItem={lastHistoryItem}
+          onNavigateBack={onNavigateBack}
+          onClose={onClose}
+          closeAriaLabel="Закрыть досье окна"
+          context={
+            <>
+              <CalendarRange className="w-4 h-4 text-amber-400 shrink-0" />
+              <span
+                className="font-mono text-xs sm:text-sm font-bold text-amber-200 truncate tabular-nums"
+                title={`Досье произвольного окна · ${yearFrom}–${yearTo} гг.`}
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="truncate max-w-[200px]">Назад: {lastHistoryItem.label}</span>
-              </button>
-            )}
-            <CalendarRange className="w-4 h-4 shrink-0" />
-            <span className="font-bold text-amber-200 tabular-nums">
-              Досье произвольного окна · {yearFrom}–{yearTo} гг.
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            {onCompareWithWindow && (
-              <button
-                type="button"
-                onClick={() => onCompareWithWindow(yearFrom, yearTo)}
-                className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
-                title="Сравнить выбранный интервал лет с другим периодом или правлением"
-              >
-                <GitCompareArrows className="w-3.5 h-3.5 text-sky-400" />
-                <span>Сравнить с…</span>
-              </button>
-            )}
-            {hiddenActiveBranches.length > 0 && onRevealBranches && (
-              <button
-                type="button"
-                onClick={() => onRevealBranches(hiddenActiveBranches.map((b) => b.id))}
-                className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap"
-                title="Включить на основной ленте все ветки, в которых есть события этого окна"
-              >
-                <Eye className="w-3.5 h-3.5" />
-                <span className="tabular-nums">
-                  Показать скрытые ветки ({hiddenActiveBranches.length})
-                </span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть досье окна"
-              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+                Досье произвольного окна · {yearFrom}–{yearTo} гг.
+              </span>
+            </>
+          }
+          actions={
+            onCompareWithWindow || (hiddenActiveBranches.length > 0 && onRevealBranches) ? (
+              <>
+                {onCompareWithWindow && (
+                  <button
+                    type="button"
+                    onClick={() => onCompareWithWindow(yearFrom, yearTo)}
+                    className="h-8 px-3 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
+                    title="Сравнить выбранный интервал лет с другим периодом или правлением"
+                  >
+                    <GitCompareArrows className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    <span>Сравнить с…</span>
+                  </button>
+                )}
+                {hiddenActiveBranches.length > 0 && onRevealBranches && (
+                  <button
+                    type="button"
+                    onClick={() => onRevealBranches(hiddenActiveBranches.map((b) => b.id))}
+                    className="h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors duration-150 cursor-pointer inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                    title="Включить на основной ленте все ветки, в которых есть события этого окна"
+                  >
+                    <Eye className="w-3.5 h-3.5 shrink-0" />
+                    <span>Показать скрытые ветки ({hiddenActiveBranches.length})</span>
+                  </button>
+                )}
+              </>
+            ) : undefined
+          }
+        />
 
         {/* Тело модального окна */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">

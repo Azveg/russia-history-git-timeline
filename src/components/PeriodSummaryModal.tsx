@@ -1,5 +1,4 @@
 import {
-  ArrowLeft,
   ArrowRight,
   BookMarked,
   BookOpen,
@@ -13,7 +12,6 @@ import {
   Sparkles,
   User,
   Users,
-  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
@@ -22,6 +20,7 @@ import {
   CiteTriggerButton,
   SourcesApparatusSection,
 } from './AcademicCitationBar';
+import { DossierModalHeader } from './DossierModalHeader';
 import {
   formatCalendarDetailBadge,
   getLeafBranches,
@@ -189,65 +188,63 @@ export function PeriodSummaryModal({
       }}
     >
       <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl bg-[#0b1325] border border-amber-500/40 shadow-2xl flex flex-col overflow-hidden">
-        {/* Верхняя панель с кнопкой «Назад» и данными правителя */}
-        <div className="px-5 py-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 text-xs font-mono text-amber-400 flex-wrap min-w-0">
-            {lastHistoryItem && onNavigateBack && (
-              <button
-                type="button"
-                onClick={onNavigateBack}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-semibold transition-colors cursor-pointer"
-                title={`Вернуться назад: ${lastHistoryItem.label}`}
+        {/* Двухстрочная шапка досье правителя */}
+        <DossierModalHeader
+          lastHistoryItem={lastHistoryItem}
+          onNavigateBack={onNavigateBack}
+          onClose={onClose}
+          closeAriaLabel="Закрыть досье правления"
+          context={
+            <>
+              <Crown className="w-4 h-4 text-amber-400 shrink-0" />
+              <span
+                className="font-mono text-xs sm:text-sm font-bold text-amber-300 truncate tabular-nums"
+                title={`Досье правления · ${ruler.reignPeriod}${ruler.center ? ` · Центр: ${ruler.center}` : ''}`}
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="truncate max-w-[200px]">Назад: {lastHistoryItem.label}</span>
-              </button>
-            )}
-            <Crown className="w-4 h-4 shrink-0" />
-            <span className="font-bold">Досье правления · {ruler.reignPeriod}</span>
-            {ruler.center && (
-              <span className="px-2 py-0.5 rounded bg-slate-950 border border-amber-500/35 text-[11px] text-amber-200">
-                Центр: {ruler.center}
+                Досье правления · {ruler.reignPeriod}
               </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <CiteTriggerButton
-              isOpen={showCitation}
-              onToggle={() => setShowCitation((prev) => !prev)}
-            />
-            {onCompareWithRuler && (
+              {ruler.center && (
+                <>
+                  <span aria-hidden="true" className="text-slate-500 hidden sm:inline shrink-0">
+                    ·
+                  </span>
+                  <span className="hidden sm:inline font-mono text-xs text-amber-200/90 truncate">
+                    Центр: {ruler.center}
+                  </span>
+                </>
+              )}
+            </>
+          }
+          actions={
+            <>
+              <CiteTriggerButton
+                isOpen={showCitation}
+                onToggle={() => setShowCitation((prev) => !prev)}
+              />
+              {onCompareWithRuler && (
+                <button
+                  type="button"
+                  onClick={() => onCompareWithRuler(ruler.id)}
+                  className="h-8 px-3 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
+                  title="Открыть сравнение этого правления с другим правлением или эпохой"
+                >
+                  <GitCompareArrows className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                  <span>Сравнить с…</span>
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => onCompareWithRuler(ruler.id)}
-                className="px-3 py-1.5 rounded-lg border border-sky-500/40 bg-sky-500/15 hover:bg-sky-500/25 text-sky-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
-                title="Открыть сравнение этого правления с другим правлением или эпохой"
+                onClick={() => {
+                  onFilterByRuler(ruler.id);
+                  onClose();
+                }}
+                className="h-8 px-3 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold inline-flex items-center transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
               >
-                <GitCompareArrows className="w-3.5 h-3.5 text-sky-400" />
-                <span>Сравнить с…</span>
+                Сфокусировать таймлайн
               </button>
-            )}
-            <button
-              type="button"
-              onClick={() => {
-                onFilterByRuler(ruler.id);
-                onClose();
-              }}
-              className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
-            >
-              Сфокусировать таймлайн
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть досье правления"
-              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Тело модального окна */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">

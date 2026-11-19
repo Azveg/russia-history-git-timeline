@@ -33,7 +33,7 @@ export function CiteTriggerButton({ isOpen, onToggle }: CiteTriggerButtonProps) 
       type="button"
       onClick={onToggle}
       aria-expanded={isOpen}
-      className={`px-2.5 py-1.5 rounded-lg border text-xs font-mono inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 ${
+      className={`h-8 px-2.5 rounded-lg border text-xs font-mono inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 ${
         isOpen
           ? 'bg-amber-500/20 border-amber-400/70 text-amber-100 font-semibold'
           : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-amber-200'
@@ -41,7 +41,7 @@ export function CiteTriggerButton({ isOpen, onToggle }: CiteTriggerButtonProps) 
       title="Сформировать библиографическую ссылку по ГОСТ Р 7.0.5 / BibTeX и скопировать канонический Deep Link"
     >
       <Quote className="w-3.5 h-3.5 shrink-0" />
-      <span className="hidden sm:inline">Цитировать</span>
+      <span>Цитировать</span>
     </button>
   );
 }

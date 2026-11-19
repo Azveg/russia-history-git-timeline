@@ -1,12 +1,10 @@
 import {
-  ArrowLeft,
   BookOpen,
   Calendar,
   Crown,
   ExternalLink,
   Filter,
   User,
-  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
@@ -17,6 +15,7 @@ import {
   CiteTriggerButton,
   SourcesApparatusSection,
 } from './AcademicCitationBar';
+import { DossierModalHeader } from './DossierModalHeader';
 import type {
   BranchDefinition,
   ModalHistoryItem,
@@ -148,51 +147,51 @@ export function PersonDossierModal({
       }}
     >
       <div className="w-full max-w-4xl max-h-[92vh] rounded-2xl bg-[#0b1325] border border-sky-500/35 shadow-2xl flex flex-col overflow-hidden animate-modal">
-        {/* Верхняя навигационная панель досье */}
-        <div className="px-5 py-3.5 bg-slate-900/95 border-b border-slate-800 flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex items-center gap-2 text-xs font-mono text-sky-300 min-w-0 flex-wrap">
-            {lastHistoryItem && onNavigateBack && (
+        {/* Двухстрочная навигационная шапка досье */}
+        <DossierModalHeader
+          lastHistoryItem={lastHistoryItem}
+          onNavigateBack={onNavigateBack}
+          backButtonTone="slate"
+          onClose={onClose}
+          closeAriaLabel="Закрыть досье участника"
+          context={
+            <>
+              <User className="w-4 h-4 text-sky-400 shrink-0" />
+              <span
+                className="font-mono text-xs sm:text-sm font-bold text-sky-300 truncate"
+                title={`Досье исторического деятеля · ${dossier.displayName}`}
+              >
+                Досье исторического деятеля
+              </span>
+              <span aria-hidden="true" className="text-slate-500 hidden sm:inline shrink-0">
+                ·
+              </span>
+              <span className="hidden sm:inline font-mono text-xs text-slate-300 truncate">
+                {dossier.displayName}
+              </span>
+            </>
+          }
+          actions={
+            <>
+              <CiteTriggerButton
+                isOpen={showCitation}
+                onToggle={() => setShowCitation((prev) => !prev)}
+              />
               <button
                 type="button"
-                onClick={onNavigateBack}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold transition-colors cursor-pointer"
-                title={`Вернуться назад: ${lastHistoryItem.label}`}
+                onClick={() => {
+                  onFilterTimelineByPerson(dossier.key);
+                  onClose();
+                }}
+                className="h-8 inline-flex items-center gap-1.5 px-3 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-mono font-bold transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
+                title="Отфильтровать основной таймлайн по всем событиям с участием этого человека"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="truncate max-w-[200px]">Назад: {lastHistoryItem.label}</span>
+                <Filter className="w-3.5 h-3.5 shrink-0" />
+                <span>Показать все на таймлайне ({dossier.events.length})</span>
               </button>
-            )}
-            <User className="w-4 h-4 text-sky-400 shrink-0" />
-            <span className="font-bold">Досье исторического деятеля</span>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <CiteTriggerButton
-              isOpen={showCitation}
-              onToggle={() => setShowCitation((prev) => !prev)}
-            />
-            <button
-              type="button"
-              onClick={() => {
-                onFilterTimelineByPerson(dossier.key);
-                onClose();
-              }}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 text-xs font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
-              title="Отфильтровать основной таймлайн по всем событиям с участием этого человека"
-            >
-              <Filter className="w-3.5 h-3.5" />
-              <span>Показать все на таймлайне ({dossier.events.length})</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть досье участника"
-              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+            </>
+          }
+        />
 
         {/* Тело модального окна */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
