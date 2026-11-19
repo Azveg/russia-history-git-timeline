@@ -42,6 +42,17 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.props.onClose?.();
   };
 
+  private handleResetToTimeline = (): void => {
+    try {
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState(null, '', cleanUrl);
+    } catch {
+      // Игнорируем возможный SecurityError от History API
+    }
+    this.setState({ error: null });
+    this.props.onClose?.();
+  };
+
   override render(): ReactNode {
     const { error } = this.state;
     const { children, variant = 'page' } = this.props;
@@ -57,6 +68,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     const description = isModuleError
       ? 'Браузер не смог подгрузить динамический скрипт модуля — обычно это происходит после обновления версии или кратковременного разрыва соединения.'
       : 'Во время отображения раздела возникла непредвиденная ошибка. Вы можете обновить страницу или вернуться к ленте времени.';
+    const errorSummary = `${error.name || 'Error'}: ${error.message || 'Неизвестная ошибка выполнения'}`;
 
     if (variant === 'modal') {
       return (
@@ -71,18 +83,21 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               {title}
             </h2>
             <p className="mt-2 text-xs leading-relaxed text-slate-300">{description}</p>
+            <div className="mt-3 rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 font-mono text-[11px] text-rose-300/90 break-words">
+              {errorSummary}
+            </div>
             <div className="mt-5 flex flex-wrap items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={this.handleClose}
-                className="rounded-lg border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-xs font-medium text-slate-200 transition hover:bg-slate-700"
+                className="rounded-lg border border-slate-700 bg-slate-800/80 px-3.5 py-2 text-xs font-medium text-slate-200 transition hover:bg-slate-700 cursor-pointer"
               >
                 Закрыть
               </button>
               <button
                 type="button"
                 onClick={this.handleReload}
-                className="rounded-lg border border-amber-500/40 bg-amber-500/20 px-3.5 py-2 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/30"
+                className="rounded-lg border border-amber-500/40 bg-amber-500/20 px-3.5 py-2 text-xs font-semibold text-amber-200 transition hover:bg-amber-500/30 cursor-pointer"
               >
                 Обновить страницу
               </button>
@@ -100,11 +115,26 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
         >
           <h1 className="text-lg font-semibold text-rose-200">{title}</h1>
           <p className="mt-2 text-sm leading-relaxed text-slate-300">{description}</p>
-          <div className="mt-6 flex items-center gap-3">
+          <div className="mt-4 rounded-xl border border-slate-800 bg-slate-950/85 px-3.5 py-2.5">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+              Техническая сводка
+            </div>
+            <div className="mt-1 font-mono text-xs text-rose-300/90 break-words">
+              {errorSummary}
+            </div>
+          </div>
+          <div className="mt-6 flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={this.handleResetToTimeline}
+              className="rounded-lg border border-amber-500/50 bg-amber-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-amber-400 cursor-pointer"
+            >
+              Сбросить окно и вернуться к ленте
+            </button>
             <button
               type="button"
               onClick={this.handleReload}
-              className="rounded-lg border border-amber-500/40 bg-amber-500/20 px-4 py-2 text-sm font-semibold text-amber-200 transition hover:bg-amber-500/30"
+              className="rounded-lg border border-slate-700 bg-slate-800/80 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-slate-700 cursor-pointer"
             >
               Обновить страницу
             </button>

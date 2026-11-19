@@ -49,6 +49,20 @@ export function parseWindowRangeParam(raw: string | null): { from: number; to: n
   return { from, to };
 }
 
+export function safelyReplaceUrlState(nextUrl: string): boolean {
+  try {
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState(null, '', nextUrl);
+      return true;
+    }
+    return false;
+  } catch {
+    // Защита от DOMException: SecurityError при превышении лимита вызовов History API в браузере
+    return false;
+  }
+}
+
 export function useTimelineUrlSync({
   yearFrom,
   yearTo,
@@ -69,62 +83,63 @@ export function useTimelineUrlSync({
   onPopModalFromUrl,
 }: UseTimelineUrlSyncOptions): void {
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (yearFrom !== 862) params.set('from', String(yearFrom));
-    else params.delete('from');
+    const timer = window.setTimeout(() => {
+      const params = new URLSearchParams(window.location.search);
+      if (yearFrom !== 862) params.set('from', String(yearFrom));
+      else params.delete('from');
 
-    if (yearTo !== 2000) params.set('to', String(yearTo));
-    else params.delete('to');
+      if (yearTo !== 2000) params.set('to', String(yearTo));
+      else params.delete('to');
 
-    if (searchQuery.trim()) params.set('search', searchQuery.trim());
-    else params.delete('search');
+      if (searchQuery.trim()) params.set('search', searchQuery.trim());
+      else params.delete('search');
 
-    if (selectedMacroRegion && selectedMacroRegion !== 'all') {
-      params.set('region', selectedMacroRegion);
-    } else {
-      params.delete('region');
-    }
-
-    if (activeCardId) params.set('card', activeCardId);
-    else params.delete('card');
-
-    if (activeRulerModalId) params.set('ruler', activeRulerModalId);
-    else params.delete('ruler');
-
-    if (activePersonModalKey) params.set('person', activePersonModalKey);
-    else params.delete('person');
-
-    if (activeEraModalId) params.set('era', activeEraModalId);
-    else params.delete('era');
-
-    if (activeWindowModalRange) {
-      params.set('window', `${activeWindowModalRange.from}-${activeWindowModalRange.to}`);
-    } else {
-      params.delete('window');
-    }
-
-    if (branches.length > 0 && Object.keys(activeBranches).length > 0) {
-      const overviewMap = computeBranchPresetMap(branches, 'overview');
-      const leafBranches = branches.filter((b) => !b.isGroup);
-      const isOverviewDefault = leafBranches.every(
-        (b) => Boolean(activeBranches[b.id]) === Boolean(overviewMap[b.id]),
-      );
-      if (isOverviewDefault) {
-        params.delete('branches');
+      if (selectedMacroRegion && selectedMacroRegion !== 'all') {
+        params.set('region', selectedMacroRegion);
       } else {
-        const enabledIds = leafBranches
-          .filter((b) => activeBranches[b.id])
-          .map((b) => b.id);
-        params.set('branches', enabledIds.join(','));
+        params.delete('region');
       }
-    }
 
-    const query = params.toString();
-    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
-    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
-    if (nextUrl !== currentUrl) {
-      window.history.replaceState(null, '', nextUrl);
-    }
+      if (activeCardId) params.set('card', activeCardId);
+      else params.delete('card');
+
+      if (activeRulerModalId) params.set('ruler', activeRulerModalId);
+      else params.delete('ruler');
+
+      if (activePersonModalKey) params.set('person', activePersonModalKey);
+      else params.delete('person');
+
+      if (activeEraModalId) params.set('era', activeEraModalId);
+      else params.delete('era');
+
+      if (activeWindowModalRange) {
+        params.set('window', `${activeWindowModalRange.from}-${activeWindowModalRange.to}`);
+      } else {
+        params.delete('window');
+      }
+
+      if (branches.length > 0 && Object.keys(activeBranches).length > 0) {
+        const overviewMap = computeBranchPresetMap(branches, 'overview');
+        const leafBranches = branches.filter((b) => !b.isGroup);
+        const isOverviewDefault = leafBranches.every(
+          (b) => Boolean(activeBranches[b.id]) === Boolean(overviewMap[b.id]),
+        );
+        if (isOverviewDefault) {
+          params.delete('branches');
+        } else {
+          const enabledIds = leafBranches
+            .filter((b) => activeBranches[b.id])
+            .map((b) => b.id);
+          params.set('branches', enabledIds.join(','));
+        }
+      }
+
+      const query = params.toString();
+      const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
+      safelyReplaceUrlState(nextUrl);
+    }, 220);
+
+    return () => window.clearTimeout(timer);
   }, [
     yearFrom,
     yearTo,

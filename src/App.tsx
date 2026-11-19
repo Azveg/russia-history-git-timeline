@@ -1562,6 +1562,7 @@ export default function App() {
         onFilterByRuler={handleSelectReign}
         onOpenRulerModal={handleOpenPeriodModal}
         selectedMacroRegion={selectedMacroRegion}
+        macroRegionCounts={macroRegionCounts}
         onSelectMacroRegion={(region) => {
           preserveViewportScrollAnchor(() => setSelectedMacroRegion(region));
         }}

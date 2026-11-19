@@ -59,6 +59,7 @@ interface TopControlBarProps {
   onFilterByRuler: (rulerId: string) => void;
   onOpenRulerModal: (rulerId: string) => void;
   selectedMacroRegion?: MacroRegionId;
+  macroRegionCounts?: Record<MacroRegionId, number>;
   onSelectMacroRegion?: (region: MacroRegionId) => void;
   yearFrom: number;
   yearTo: number;
@@ -132,6 +133,7 @@ export function TopControlBar({
   onFilterByRuler,
   onOpenRulerModal,
   selectedMacroRegion = 'all',
+  macroRegionCounts: externalMacroRegionCounts,
   onSelectMacroRegion,
   yearFrom,
   yearTo,
@@ -181,11 +183,12 @@ export function TopControlBar({
   const activePreset = QUICK_PRESETS.find((p) => isPresetActive(p.id)) ?? null;
   const activeRegionOption = getMacroRegionOption(selectedMacroRegion);
   const macroRegionCounts = useMemo(() => {
+    if (externalMacroRegionCounts) return externalMacroRegionCounts;
     const windowEvents = enrichedEventsForEras.filter(
       (ev) => ev.endYear >= yearFrom && ev.startYear <= yearTo,
     );
     return computeMacroRegionCounts(windowEvents);
-  }, [enrichedEventsForEras, yearFrom, yearTo]);
+  }, [externalMacroRegionCounts, enrichedEventsForEras, yearFrom, yearTo]);
 
   useEffect(() => {
     const el = barRef.current;

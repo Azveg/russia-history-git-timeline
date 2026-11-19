@@ -336,6 +336,38 @@ export function OverlapMapSection({
     }
   };
 
+  const dragRafRef = useRef<number | null>(null);
+  const wheelRafRef = useRef<number | null>(null);
+  const lastEmittedRangeRef = useRef<{ from: number; to: number }>({ from: yearFrom, to: yearTo });
+
+  useEffect(() => {
+    lastEmittedRangeRef.current = { from: yearFrom, to: yearTo };
+  }, [yearFrom, yearTo]);
+
+  useEffect(() => {
+    return () => {
+      if (dragRafRef.current !== null) {
+        window.cancelAnimationFrame(dragRafRef.current);
+      }
+      if (wheelRafRef.current !== null) {
+        window.cancelAnimationFrame(wheelRafRef.current);
+      }
+    };
+  }, []);
+
+  const selectBinYearRange = (startYear: number, endYear: number) => {
+    let nextFrom = Math.max(minYear, Math.min(maxYear, Math.round(startYear)));
+    let nextTo = Math.max(minYear, Math.min(maxYear, Math.round(endYear)));
+    if (nextTo - nextFrom < 2) {
+      if (nextTo + 2 <= maxYear) {
+        nextTo = nextFrom + 2;
+      } else {
+        nextFrom = Math.max(minYear, nextTo - 2);
+      }
+    }
+    onSelectYearRange(nextFrom, nextTo, true);
+  };
+
   useEffect(() => {
     const track = scrubberTrackRef.current;
     if (!track) return;
@@ -351,7 +383,9 @@ export function OverlapMapSection({
       }
 
       const factor = e.deltaY < 0 ? 0.7 : 1.4;
-      const currentSpan = Math.max(2, yearTo - yearFrom);
+      const baseFrom = lastEmittedRangeRef.current.from;
+      const baseTo = lastEmittedRangeRef.current.to;
+      const currentSpan = Math.max(2, baseTo - baseFrom);
       let targetSpan =
         factor < 1
           ? Math.max(2, Math.floor(currentSpan * factor))
@@ -360,24 +394,39 @@ export function OverlapMapSection({
         targetSpan = currentSpan - 1;
       }
 
-      if (targetSpan >= globalSpan) {
-        onSelectYearRange(minYear, maxYear, false);
+      let nextFrom = minYear;
+      let nextTo = maxYear;
+
+      if (targetSpan < globalSpan) {
+        const center = Math.round((baseFrom + baseTo) / 2);
+        const halfLeft = Math.floor(targetSpan / 2);
+        nextFrom = center - halfLeft;
+        nextTo = nextFrom + targetSpan;
+        if (nextFrom < minYear) {
+          nextFrom = minYear;
+          nextTo = Math.min(maxYear, minYear + targetSpan);
+        }
+        if (nextTo > maxYear) {
+          nextTo = maxYear;
+          nextFrom = Math.max(minYear, maxYear - targetSpan);
+        }
+      }
+
+      if (
+        nextFrom === lastEmittedRangeRef.current.from &&
+        nextTo === lastEmittedRangeRef.current.to
+      ) {
         return;
       }
 
-      const center = Math.round((yearFrom + yearTo) / 2);
-      const halfLeft = Math.floor(targetSpan / 2);
-      let nextFrom = center - halfLeft;
-      let nextTo = nextFrom + targetSpan;
-      if (nextFrom < minYear) {
-        nextFrom = minYear;
-        nextTo = Math.min(maxYear, minYear + targetSpan);
+      lastEmittedRangeRef.current = { from: nextFrom, to: nextTo };
+      if (wheelRafRef.current !== null) {
+        window.cancelAnimationFrame(wheelRafRef.current);
       }
-      if (nextTo > maxYear) {
-        nextTo = maxYear;
-        nextFrom = Math.max(minYear, maxYear - targetSpan);
-      }
-      onSelectYearRange(nextFrom, nextTo, false);
+      wheelRafRef.current = window.requestAnimationFrame(() => {
+        wheelRafRef.current = null;
+        onSelectYearRange(nextFrom, nextTo, false);
+      });
     };
 
     track.addEventListener('wheel', handleWheel, { passive: false });
@@ -400,13 +449,33 @@ export function OverlapMapSection({
 
     onRecordZoomCheckpoint();
 
+    let pendingRange: { from: number; to: number } | null = null;
+
+    const flushPendingRange = () => {
+      dragRafRef.current = null;
+      if (!pendingRange) return;
+      const { from: nextFrom, to: nextTo } = pendingRange;
+      pendingRange = null;
+      if (
+        nextFrom === lastEmittedRangeRef.current.from &&
+        nextTo === lastEmittedRangeRef.current.to
+      ) {
+        return;
+      }
+      lastEmittedRangeRef.current = { from: nextFrom, to: nextTo };
+      onSelectYearRange(nextFrom, nextTo, false);
+    };
+
     const onMouseMove = (moveEvent: MouseEvent) => {
       const dx = moveEvent.clientX - startX;
       const deltaYears = Math.round((dx / Math.max(1, rect.width)) * globalSpan);
 
+      let nextFrom = initFrom;
+      let nextTo = initTo;
+
       if (mode === 'move') {
-        let nextFrom = initFrom + deltaYears;
-        let nextTo = initTo + deltaYears;
+        nextFrom = initFrom + deltaYears;
+        nextTo = initTo + deltaYears;
         if (nextFrom < minYear) {
           nextFrom = minYear;
           nextTo = Math.min(maxYear, minYear + currentWidthYears);
@@ -415,19 +484,34 @@ export function OverlapMapSection({
           nextTo = maxYear;
           nextFrom = Math.max(minYear, maxYear - currentWidthYears);
         }
-        onSelectYearRange(nextFrom, nextTo, false);
       } else if (mode === 'left') {
-        const nextFrom = Math.max(minYear, Math.min(initTo - 2, initFrom + deltaYears));
-        onSelectYearRange(nextFrom, initTo, false);
+        nextFrom = Math.max(minYear, Math.min(initTo - 2, initFrom + deltaYears));
+        nextTo = initTo;
       } else if (mode === 'right') {
-        const nextTo = Math.min(maxYear, Math.max(initFrom + 2, initTo + deltaYears));
-        onSelectYearRange(initFrom, nextTo, false);
+        nextFrom = initFrom;
+        nextTo = Math.min(maxYear, Math.max(initFrom + 2, initTo + deltaYears));
+      }
+
+      if (
+        nextFrom === lastEmittedRangeRef.current.from &&
+        nextTo === lastEmittedRangeRef.current.to
+      ) {
+        return;
+      }
+
+      pendingRange = { from: nextFrom, to: nextTo };
+      if (dragRafRef.current === null) {
+        dragRafRef.current = window.requestAnimationFrame(flushPendingRange);
       }
     };
 
     const onMouseUp = () => {
       window.removeEventListener('mousemove', onMouseMove);
       window.removeEventListener('mouseup', onMouseUp);
+      if (dragRafRef.current !== null) {
+        window.cancelAnimationFrame(dragRafRef.current);
+        flushPendingRange();
+      }
     };
 
     window.addEventListener('mousemove', onMouseMove);
@@ -690,7 +774,7 @@ export function OverlapMapSection({
                 <button
                   key={`global-bin-${bin.startYear}`}
                   type="button"
-                  onClick={() => onSelectYearRange(bin.startYear, bin.endYear)}
+                  onClick={() => selectBinYearRange(bin.startYear, bin.endYear)}
                   title={`${bin.startYear}–${bin.endYear} гг.: событий — ${bin.totalCount}. Клик для фокуса`}
                   className="flex-1 h-full flex items-end cursor-pointer group/gbin"
                 >
@@ -776,7 +860,7 @@ export function OverlapMapSection({
                 {peakBin && peakBin.totalCount > 0 && (
                   <button
                     type="button"
-                    onClick={() => onSelectYearRange(peakBin.startYear, peakBin.endYear)}
+                    onClick={() => selectBinYearRange(peakBin.startYear, peakBin.endYear)}
                     className="inline-flex items-center gap-1 text-amber-300 hover:text-amber-200 cursor-pointer"
                     title="Перейти к самому насыщенному интервалу времени"
                   >
@@ -803,7 +887,7 @@ export function OverlapMapSection({
                   <button
                     key={`${bin.startYear}-${bin.endYear}`}
                     type="button"
-                    onClick={() => onSelectYearRange(bin.startYear, bin.endYear)}
+                    onClick={() => selectBinYearRange(bin.startYear, bin.endYear)}
                     title={`${bin.startYear}–${bin.endYear} гг.: активных событий — ${bin.totalCount}, новых событий — ${bin.commitCount}. Клик для фокуса`}
                     className="group flex-1 h-full flex flex-col justify-end items-stretch cursor-pointer focus:outline-none"
                   >
