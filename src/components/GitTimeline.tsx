@@ -1,14 +1,11 @@
 import {
-  AlertTriangle,
   ArrowDown,
   ArrowUp,
+  ChevronDown,
   Crosshair,
   Crown,
-  Eye,
-  Flag,
   GitBranch,
   GitCommitHorizontal,
-  GitCompare,
   GitMerge,
   HelpCircle,
   Link2,
@@ -19,8 +16,8 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
-import { classifyEventMacroRegions, getMacroRegionOption } from '../engine/regionFilter';
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { getMacroRegionOption } from '../engine/regionFilter';
 import {
   computeBranchSubLaneLayout,
   computeRulerSubLaneLayout,
@@ -28,11 +25,9 @@ import {
   formatAxisGutterDate,
   formatCalendarDetailBadge,
   formatEventTitleWithPeriod,
-  getCalendarStyleAxisMarker,
   getDirectChildBranches,
   getEventEffectiveEndYear,
   getEventEffectiveStartYear,
-  getEventHiddenBranchSummaries,
   hasChildBranches,
   isBiographyNode,
   isBranchOrDescendantActive,
@@ -40,9 +35,6 @@ import {
   isMajorCampaignOrConflictNode,
   isScientistBioNode,
   isWriterBioNode,
-  parsePreciseDate,
-  resolveEventBranch,
-  resolveMacroEra,
   resolveMacroEras,
 } from '../engine/timelineEngine';
 import type {
@@ -60,6 +52,11 @@ import type {
   SyncManifest,
   TimeScaleMode,
 } from '../types/timeline';
+import {
+  TimelineStreamRow,
+  computeNodeVisualStatusMeta,
+} from './timeline/TimelineStreamRow';
+import { precomputeTimelineLayout } from './timeline/timelineLayoutPrecompute';
 
 interface GitTimelineProps {
   stream: StreamRow[];
@@ -121,90 +118,36 @@ const RESOLUTION_LABELS: Record<AxisResolution, string> = {
   day: 'Дни и точные даты (окно ≤ 2 л.)',
 };
 
-type NodeVisualKind = 'milestone' | 'process' | 'biography';
+const INITIAL_VISIBLE_ROWS = 48;
+const LOAD_MORE_ROWS_STEP = 64;
 
-interface NodeVisualStatusMeta {
-  kind: NodeVisualKind;
-  symbol: '◆' | '●' | '◈';
-  kindLabel: string;
-  shortKindLabel: string;
-  durationLabel: string;
-  compactDurationLabel: string;
-  spanRangeLabel: string;
-  trackStartPct: number;
-  trackWidthPct: number;
-  secondaryTrackLabel?: string;
+function useIsSmUp(): boolean {
+  const [isSmUp, setIsSmUp] = useState<boolean>(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
+      return true;
+    }
+    return window.matchMedia('(min-width: 640px)').matches;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const mql = window.matchMedia('(min-width: 640px)');
+    const onChange = (e: MediaQueryListEvent) => setIsSmUp(e.matches);
+    setIsSmUp(mql.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+
+  return isSmUp;
 }
 
-function formatDurationYearsRu(years: number): string {
-  const n = Math.max(1, Math.round(years));
-  const mod100 = n % 100;
-  const mod10 = n % 10;
-  if (mod100 >= 11 && mod100 <= 19) return `${n} лет`;
-  if (mod10 === 1) return `${n} год`;
-  if (mod10 >= 2 && mod10 <= 4) return `${n} года`;
-  return `${n} лет`;
-}
-
-function computeNodeVisualStatusMeta(
-  ev: EnrichedEvent,
-  isBioNode: boolean,
-  isAtomicInView: boolean,
-  effStartYear: number,
-  effEndYear: number,
-): NodeVisualStatusMeta {
-  if (isBioNode) {
-    const lifeYears = Math.max(1, ev.endYear - ev.startYear);
-    const activeYears = Math.max(1, effEndYear - effStartYear);
-    const rawStartPct = Math.round(((effStartYear - ev.startYear) / lifeYears) * 100);
-    const trackStartPct = Math.max(0, Math.min(82, rawStartPct));
-    const rawWidthPct = Math.round((activeYears / lifeYears) * 100);
-    const trackWidthPct = Math.max(16, Math.min(100 - trackStartPct, rawWidthPct));
-    return {
-      kind: 'biography',
-      symbol: '◈',
-      kindLabel: 'Биография',
-      shortKindLabel: 'биогр.',
-      durationLabel: `жизнь ${lifeYears} л. · пик ${activeYears} л.`,
-      compactDurationLabel: `акт. ${activeYears} л.`,
-      spanRangeLabel: `${ev.startYear}–${ev.endYear} (акт. ${effStartYear}–${effEndYear})`,
-      trackStartPct,
-      trackWidthPct,
-      secondaryTrackLabel: `${ev.startYear}–${ev.endYear}`,
-    };
-  }
-
-  const rawSpanYears = Math.max(0, ev.endYear - ev.startYear);
-  if (!isAtomicInView || rawSpanYears > 1) {
-    const spanYears = Math.max(1, rawSpanYears);
-    const trackWidthPct = Math.max(
-      20,
-      Math.min(100, Math.round(Math.sqrt(spanYears / 45) * 100)),
-    );
-    return {
-      kind: 'process',
-      symbol: '●',
-      kindLabel: 'Процесс',
-      shortKindLabel: 'процесс',
-      durationLabel: `${ev.startYear}–${ev.endYear} · ${formatDurationYearsRu(spanYears)}`,
-      compactDurationLabel: `${spanYears} л.`,
-      spanRangeLabel: `${ev.startYear}–${ev.endYear}`,
-      trackStartPct: 0,
-      trackWidthPct,
-    };
-  }
-
-  return {
-    kind: 'milestone',
-    symbol: '◆',
-    kindLabel: 'Веха',
-    shortKindLabel: 'веха',
-    durationLabel: rawSpanYears === 1 ? `${ev.startYear}–${ev.endYear} · 1 год` : 'Точечное событие (≤ 1 года)',
-    compactDurationLabel: 'веха',
-    spanRangeLabel: `${ev.startYear}`,
-    trackStartPct: 0,
-    trackWidthPct: 0,
-  };
+function getStreamRowKey(item: StreamRow, idx: number): string {
+  if (item.rowType === 'ERA_START') return `era-${item.era.id}`;
+  if (item.rowType === 'TIME_TICK') return `tick-${item.sortKey}-${idx}`;
+  if (item.rowType === 'RULER_COMMIT') return `ruler-${item.rulerObj.id}`;
+  if (item.rowType === 'RULER_END') return `ruler-end-${item.rulerObj.id}-${idx}`;
+  if (item.rowType === 'EVENT_COMMIT') return `commit-${item.eventObj.id}-${idx}`;
+  return `end-${item.eventObj.id}-${idx}`;
 }
 
 export const GitTimeline = memo(function GitTimeline({
@@ -251,48 +194,65 @@ export const GitTimeline = memo(function GitTimeline({
   onOpenWindowModal,
   onSelectYearRange,
 }: GitTimelineProps) {
+  const isDesktopGraph = useIsSmUp();
   const streamContainerRef = useRef<HTMLDivElement | null>(null);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const graphHelpRef = useRef<HTMLDivElement | null>(null);
   const hoverClearTimerRef = useRef<number | null>(null);
   const tooltipOpenTimerRef = useRef<number | null>(null);
   const hoverActivateTimerRef = useRef<number | null>(null);
+  const localJumpTimerRef = useRef<number | null>(null);
+  const pendingScrollDomIdRef = useRef<string | null>(null);
+
   const [localHoveredEventId, setLocalHoveredEventId] = useState<string | null>(null);
   const [activeStickyRulerId, setActiveStickyRulerId] = useState<string | null>(null);
   const [hoveredCardTooltip, setHoveredCardTooltip] = useState<HoveredCardTooltipState | null>(null);
   const [isGraphHelpOpen, setIsGraphHelpOpen] = useState(false);
   const [pinnedHoverEventId, setPinnedHoverEventId] = useState<string | null>(null);
   const [localJumpDomId, setLocalJumpDomId] = useState<string | null>(null);
-  const localJumpTimerRef = useRef<number | null>(null);
+  const [visibleRowCount, setVisibleRowCount] = useState<number>(() =>
+    Math.min(stream.length, INITIAL_VISIBLE_ROWS),
+  );
 
-  const cancelScheduledTooltip = () => {
+  // Keep latest callbacks in ref so TimelineStreamRow memoization stays 100% stable
+  const propsRef = useRef({
+    onHoverEvent,
+    onOpenCardModal,
+    onOpenPeriodModal,
+    onOpenEraModal,
+    onSelectYearRange,
+    onToggleFocusEvent,
+    onRevealBranches,
+    onSelectMacroRegion,
+    cardDensity,
+    streamLength: stream.length,
+  });
+  propsRef.current = {
+    onHoverEvent,
+    onOpenCardModal,
+    onOpenPeriodModal,
+    onOpenEraModal,
+    onSelectYearRange,
+    onToggleFocusEvent,
+    onRevealBranches,
+    onSelectMacroRegion,
+    cardDensity,
+    streamLength: stream.length,
+  };
+
+  const cancelScheduledTooltip = useCallback(() => {
     if (tooltipOpenTimerRef.current !== null) {
       window.clearTimeout(tooltipOpenTimerRef.current);
       tooltipOpenTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const closeCardTooltip = () => {
+  const closeCardTooltip = useCallback(() => {
     cancelScheduledTooltip();
     setHoveredCardTooltip(null);
-  };
+  }, [cancelScheduledTooltip]);
 
-  const triggerScrollToDomRow = (domId: string, eventId: string) => {
-    const el = document.getElementById(domId);
-    if (!el) return;
-    closeCardTooltip();
-    activateHoverEvent(eventId);
-    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    setLocalJumpDomId(domId);
-    if (localJumpTimerRef.current !== null) {
-      window.clearTimeout(localJumpTimerRef.current);
-    }
-    localJumpTimerRef.current = window.setTimeout(() => {
-      setLocalJumpDomId(null);
-      localJumpTimerRef.current = null;
-    }, 2200);
-  };
-
-  const cancelScheduledHoverClear = () => {
+  const cancelScheduledHoverClear = useCallback(() => {
     if (hoverClearTimerRef.current !== null) {
       window.clearTimeout(hoverClearTimerRef.current);
       hoverClearTimerRef.current = null;
@@ -301,25 +261,119 @@ export const GitTimeline = memo(function GitTimeline({
       window.clearTimeout(hoverActivateTimerRef.current);
       hoverActivateTimerRef.current = null;
     }
-  };
+  }, []);
 
-  const activateHoverEvent = (eventId: string) => {
-    cancelScheduledHoverClear();
-    setLocalHoveredEventId((prev) => (prev === eventId ? prev : eventId));
-    hoverActivateTimerRef.current = window.setTimeout(() => {
-      onHoverEvent(eventId);
-      hoverActivateTimerRef.current = null;
-    }, 85);
-  };
+  const activateHoverEvent = useCallback(
+    (eventId: string) => {
+      cancelScheduledHoverClear();
+      setLocalHoveredEventId((prev) => (prev === eventId ? prev : eventId));
+      hoverActivateTimerRef.current = window.setTimeout(() => {
+        hoverActivateTimerRef.current = null;
+        startTransition(() => {
+          propsRef.current.onHoverEvent(eventId);
+        });
+      }, 140);
+    },
+    [cancelScheduledHoverClear],
+  );
 
-  const scheduleClearHoverEvent = () => {
+  const scheduleClearHoverEvent = useCallback(() => {
     cancelScheduledHoverClear();
     hoverClearTimerRef.current = window.setTimeout(() => {
-      setLocalHoveredEventId(null);
-      onHoverEvent(null);
       hoverClearTimerRef.current = null;
+      setLocalHoveredEventId(null);
+      startTransition(() => {
+        propsRef.current.onHoverEvent(null);
+      });
     }, 220);
-  };
+  }, [cancelScheduledHoverClear]);
+
+  const handleOpenCardTooltip = useCallback(
+    (
+      el: HTMLElement,
+      ev: EnrichedEvent,
+      branchLabel: string,
+      branchColor: string,
+      dateLabel: string,
+    ) => {
+      cancelScheduledTooltip();
+      const isCompact = propsRef.current.cardDensity === 'compact';
+      const hasExtraDetails = Boolean(
+        ev.details && ev.details !== ev.subtitle && !ev.outcome && ev.prerequisitesList.length === 0,
+      );
+      const hasSupplementalContent =
+        ev.prerequisitesList.length > 0 || Boolean(ev.outcome) || hasExtraDetails;
+
+      if (!isCompact && !hasSupplementalContent) {
+        setHoveredCardTooltip(null);
+        return;
+      }
+
+      const rect = el.getBoundingClientRect();
+      const delayMs = isCompact ? 140 : 350;
+      const mode: 'full' | 'supplemental' = isCompact ? 'full' : 'supplemental';
+
+      tooltipOpenTimerRef.current = window.setTimeout(() => {
+        tooltipOpenTimerRef.current = null;
+        setHoveredCardTooltip({
+          ev,
+          branchLabel,
+          branchColor,
+          dateLabel,
+          mode,
+          rect: {
+            top: rect.top,
+            bottom: rect.bottom,
+            left: rect.left,
+            width: rect.width,
+          },
+        });
+      }, delayMs);
+    },
+    [cancelScheduledTooltip],
+  );
+
+  const handleRowOpenCardModal = useCallback(
+    (eventId: string) => {
+      cancelScheduledHoverClear();
+      closeCardTooltip();
+      propsRef.current.onOpenCardModal(eventId);
+    },
+    [cancelScheduledHoverClear, closeCardTooltip],
+  );
+
+  const handleRowOpenPeriodModal = useCallback(
+    (rulerId: string) => {
+      cancelScheduledHoverClear();
+      closeCardTooltip();
+      propsRef.current.onOpenPeriodModal(rulerId);
+    },
+    [cancelScheduledHoverClear, closeCardTooltip],
+  );
+
+  const handleRowOpenEraModal = useCallback(
+    (eraId: string) => {
+      cancelScheduledHoverClear();
+      propsRef.current.onOpenEraModal(eraId);
+    },
+    [cancelScheduledHoverClear],
+  );
+
+  const handleRowSelectYearRange = useCallback((from: number, to: number) => {
+    propsRef.current.onSelectYearRange(from, to);
+  }, []);
+
+  const handleRowToggleFocusEvent = useCallback((eventId: string) => {
+    propsRef.current.onToggleFocusEvent(eventId);
+  }, []);
+
+  const handleRowRevealBranches = useCallback((branchIds: string[]) => {
+    propsRef.current.onRevealBranches?.(branchIds);
+  }, []);
+
+  const handleRowSelectMacroRegion = useCallback((region: MacroRegionId) => {
+    propsRef.current.onSelectMacroRegion?.(region);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -329,7 +383,7 @@ export const GitTimeline = memo(function GitTimeline({
         window.clearTimeout(localJumpTimerRef.current);
       }
     };
-  }, []);
+  }, [cancelScheduledHoverClear, cancelScheduledTooltip]);
 
   useEffect(() => {
     if (!pinnedHoverEventId) return;
@@ -369,7 +423,7 @@ export const GitTimeline = memo(function GitTimeline({
   useEffect(() => {
     setActiveStickyRulerId(defaultStickyRulerId);
     closeCardTooltip();
-  }, [defaultStickyRulerId, stream.length, cardDensity]);
+  }, [defaultStickyRulerId, stream.length, cardDensity, closeCardTooltip]);
 
   useEffect(() => {
     const handleClear = () => closeCardTooltip();
@@ -379,11 +433,188 @@ export const GitTimeline = memo(function GitTimeline({
       window.removeEventListener('scroll', handleClear);
       window.removeEventListener('resize', handleClear);
     };
-  }, []);
+  }, [closeCardTooltip]);
 
+  // Трёхзонная геометрия графа: [Правители (динамические рельсы)] | [Центральная ось времени] | [Тематические ветки]
+  const hasRulersLane = visibleLanes.some((l) => l.id === 'MAIN_RULERS');
+  const thematicLanes = useMemo(
+    () => visibleLanes.filter((l) => l.id !== 'MAIN_RULERS' && l.id !== 'TIME_AXIS'),
+    [visibleLanes],
+  );
+
+  const rulerLayout = useMemo(
+    () => computeRulerSubLaneLayout(matchingRulers, hasRulersLane),
+    [matchingRulers, hasRulersLane],
+  );
+
+  const timeSpineX = rulerLayout.timeSpineX;
+
+  const subLaneLayout = useMemo(
+    () =>
+      computeBranchSubLaneLayout(
+        matchingEvents,
+        thematicLanes,
+        branches,
+        axisResolution,
+        timeSpineX,
+        { collapsedParents },
+      ),
+    [matchingEvents, thematicLanes, branches, axisResolution, timeSpineX, collapsedParents],
+  );
+
+  const svgWidth = subLaneLayout.totalSvgWidth;
+
+  // O(N) sweep-line precomputation of rails, per-event metadata, ongoing/carry-over wars & jump indices
+  const precomputed = useMemo(
+    () =>
+      precomputeTimelineLayout({
+        stream,
+        matchingEvents,
+        matchingRulers,
+        branches,
+        activeBranches,
+        collapsedParents,
+        hasRulersLane,
+        rulerLayout,
+        subLaneLayout,
+        timeSpineX,
+        includeSpacers: timeScaleMode === 'proportional',
+      }),
+    [
+      stream,
+      matchingEvents,
+      matchingRulers,
+      branches,
+      activeBranches,
+      collapsedParents,
+      hasRulersLane,
+      rulerLayout,
+      subLaneLayout,
+      timeSpineX,
+      timeScaleMode,
+    ],
+  );
+
+  const {
+    rowRailsByIdx,
+    spacerRailsByIdx,
+    eventMetaById,
+    carryOverWarsByEraId,
+    ongoingWarsByRulerId,
+    rowIndexByEventId,
+    eventsWithEndRowInStream,
+    rowIndexByDomId,
+  } = precomputed;
+
+  const rowIndexByDomIdRef = useRef(rowIndexByDomId);
+  rowIndexByDomIdRef.current = rowIndexByDomId;
+
+  // Reset initial visible window when stream changes, ensuring active jump target stays mounted
+  const prevStreamRef = useRef<StreamRow[]>(stream);
+  useEffect(() => {
+    if (prevStreamRef.current === stream) return;
+    prevStreamRef.current = stream;
+
+    let minRequired = Math.min(stream.length, INITIAL_VISIBLE_ROWS);
+    if (highlightedJumpId) {
+      const jumpIdx =
+        rowIndexByDomId.get(`row-${highlightedJumpId}`) ??
+        rowIndexByDomId.get(highlightedJumpId);
+      if (jumpIdx !== undefined) {
+        minRequired = Math.max(minRequired, Math.min(stream.length, jumpIdx + 24));
+      }
+    }
+    setVisibleRowCount(minRequired);
+  }, [stream, highlightedJumpId, rowIndexByDomId]);
+
+  // Expand rendered slice on demand when an external jump (App.tsx) targets a row beyond visibleRowCount
+  useEffect(() => {
+    if (!highlightedJumpId) return;
+    const domId = rowIndexByDomId.has(`row-${highlightedJumpId}`)
+      ? `row-${highlightedJumpId}`
+      : rowIndexByDomId.has(highlightedJumpId)
+        ? highlightedJumpId
+        : null;
+    if (!domId) return;
+
+    const targetIdx = rowIndexByDomId.get(domId)!;
+    if (targetIdx >= visibleRowCount) {
+      pendingScrollDomIdRef.current = domId;
+      setVisibleRowCount(Math.min(stream.length, targetIdx + 24));
+    }
+  }, [highlightedJumpId, rowIndexByDomId, visibleRowCount, stream.length]);
+
+  // Execute deferred smooth scroll once target row has been mounted
+  useEffect(() => {
+    const domId = pendingScrollDomIdRef.current;
+    if (!domId) return;
+    const el = document.getElementById(domId);
+    if (!el) return;
+    pendingScrollDomIdRef.current = null;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [visibleRowCount, stream]);
+
+  // Progressive infinite expansion as user scrolls down (non-blocking via startTransition)
+  useEffect(() => {
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel || visibleRowCount >= stream.length) return;
+    if (typeof IntersectionObserver === 'undefined') return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          startTransition(() => {
+            setVisibleRowCount((prev) =>
+              prev >= stream.length ? prev : Math.min(stream.length, prev + LOAD_MORE_ROWS_STEP),
+            );
+          });
+        }
+      },
+      {
+        root: null,
+        rootMargin: '1200px 0px',
+        threshold: 0,
+      },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [visibleRowCount, stream.length]);
+
+  const triggerScrollToDomRow = useCallback(
+    (domId: string, eventId: string) => {
+      closeCardTooltip();
+      activateHoverEvent(eventId);
+
+      const el = document.getElementById(domId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else {
+        const targetIdx = rowIndexByDomIdRef.current.get(domId);
+        if (targetIdx !== undefined) {
+          pendingScrollDomIdRef.current = domId;
+          setVisibleRowCount((prev) =>
+            Math.max(prev, Math.min(propsRef.current.streamLength, targetIdx + 24)),
+          );
+        }
+      }
+
+      setLocalJumpDomId(domId);
+      if (localJumpTimerRef.current !== null) {
+        window.clearTimeout(localJumpTimerRef.current);
+      }
+      localJumpTimerRef.current = window.setTimeout(() => {
+        setLocalJumpDomId(null);
+        localJumpTimerRef.current = null;
+      }, 2200);
+    },
+    [activateHoverEvent, closeCardTooltip],
+  );
+
+  // Observe mounted ruler anchors for sticky context banner
   useEffect(() => {
     const container = streamContainerRef.current;
-    if (!container) return;
+    if (!container || typeof IntersectionObserver === 'undefined') return;
 
     const visibleMap = new Map<Element, { rId: string; top: number }>();
     const observer = new IntersectionObserver(
@@ -430,7 +661,7 @@ export const GitTimeline = memo(function GitTimeline({
     return () => {
       observer.disconnect();
     };
-  }, [stream, cardDensity]);
+  }, [stream, visibleRowCount, cardDensity]);
 
   const activeStickyRuler = useMemo(
     () => rulers.find((r) => r.id === (activeStickyRulerId || defaultStickyRulerId)) ?? null,
@@ -449,65 +680,10 @@ export const GitTimeline = memo(function GitTimeline({
 
   const activeStickyRulerEventCount = useMemo(() => {
     if (!activeStickyRuler) return 0;
-    return matchingEvents.filter((ev) => ev.overlappingRulers.some((r) => r.id === activeStickyRuler.id)).length;
+    return matchingEvents.filter((ev) =>
+      ev.overlappingRulers.some((r) => r.id === activeStickyRuler.id),
+    ).length;
   }, [activeStickyRuler, matchingEvents]);
-
-  // Трёхзонная геометрия графа: [Правители (динамические рельсы)] | [Центральная ось времени] | [Тематические ветки]
-  const hasRulersLane = visibleLanes.some((l) => l.id === 'MAIN_RULERS');
-  const thematicLanes = useMemo(
-    () => visibleLanes.filter((l) => l.id !== 'MAIN_RULERS' && l.id !== 'TIME_AXIS'),
-    [visibleLanes],
-  );
-
-  const rulerLayout = useMemo(
-    () => computeRulerSubLaneLayout(matchingRulers, hasRulersLane),
-    [matchingRulers, hasRulersLane],
-  );
-
-  const timeSpineX = rulerLayout.timeSpineX;
-
-  const subLaneLayout = useMemo(
-    () =>
-      computeBranchSubLaneLayout(
-        matchingEvents,
-        thematicLanes,
-        branches,
-        axisResolution,
-        timeSpineX,
-        { collapsedParents },
-      ),
-    [matchingEvents, thematicLanes, branches, axisResolution, timeSpineX, collapsedParents],
-  );
-
-  const svgWidth = subLaneLayout.totalSvgWidth;
-
-  const eventStreamBounds = useMemo(() => {
-    const byId = new Map<string, { commitIdx: number; endIdx: number; ev: EnrichedEvent }>();
-    stream.forEach((row, rowIdx) => {
-      if (row.rowType === 'EVENT_COMMIT' && !row.isAtomicInView) {
-        byId.set(row.eventObj.id, {
-          commitIdx: rowIdx,
-          endIdx: Number.POSITIVE_INFINITY,
-          ev: row.eventObj,
-        });
-      } else if (row.rowType === 'EVENT_END') {
-        const entry = byId.get(row.eventObj.id);
-        if (entry) {
-          entry.endIdx = rowIdx;
-        }
-      }
-    });
-    return Array.from(byId.values());
-  }, [stream]);
-
-  const getEventX = (ev: EnrichedEvent, isAtomic = false) => {
-    const branchObj = resolveEventBranch(ev, branches, collapsedParents);
-    const laneInfo = subLaneLayout.branchLayouts.get(branchObj.id);
-    const baseX = laneInfo?.baseX ?? timeSpineX + 28;
-    if (isAtomic) return baseX;
-    const slot = subLaneLayout.slotByEventId.get(ev.id) ?? 0;
-    return laneInfo?.subXs[slot] ?? baseX + slot * 10;
-  };
 
   const expandedCollapsibleParents = useMemo(
     () =>
@@ -520,22 +696,6 @@ export const GitTimeline = memo(function GitTimeline({
       }),
     [branches, activeBranches, collapsedParents],
   );
-
-  const rulerSortBounds = useMemo(() => {
-    const map = new Map<string, { startKey: number; endKey: number }>();
-    matchingRulers.forEach((r) => {
-      const startParts = parsePreciseDate(r.startDate, r.startYear, false, {
-        calendarStyle: r.calendarStyle,
-        task: 'MAIN_RULERS',
-      });
-      const endParts = parsePreciseDate(r.endDate, r.endYear, true, {
-        calendarStyle: r.calendarStyle,
-        task: 'MAIN_RULERS',
-      });
-      map.set(r.id, { startKey: startParts.sortKey, endKey: endParts.sortKey });
-    });
-    return map;
-  }, [matchingRulers]);
 
   const alreadyRunningEvents = useMemo(
     () =>
@@ -617,135 +777,134 @@ export const GitTimeline = memo(function GitTimeline({
     });
   }, [stream, axisResolution]);
 
-  const rowIndexByEventId = useMemo(() => {
-    const map = new Map<string, number>();
-    stream.forEach((row, idx) => {
-      if (row.rowType === 'EVENT_COMMIT') {
-        map.set(row.eventObj.id, idx);
-      }
-    });
+  const matchingEventById = useMemo(() => {
+    const map = new Map<string, EnrichedEvent>();
+    for (const ev of matchingEvents) {
+      map.set(ev.id, ev);
+    }
     return map;
-  }, [stream]);
-
-  const eventsWithEndRowInStream = useMemo(() => {
-    const set = new Set<string>();
-    stream.forEach((row) => {
-      if (row.rowType === 'EVENT_END') {
-        set.add(row.eventObj.id);
-      }
-    });
-    return set;
-  }, [stream]);
+  }, [matchingEvents]);
 
   const effectiveActiveEventId = pinnedHoverEventId || localHoveredEventId || hoveredEventId;
   const hoveredEvent = effectiveActiveEventId
-    ? (matchingEvents.find((e) => e.id === effectiveActiveEventId) ?? null)
+    ? (matchingEventById.get(effectiveActiveEventId) ?? null)
     : null;
-  const linkedEventIds = new Set<string>();
-  if (hoveredEvent) {
-    hoveredEvent.explicitLinks.forEach((lnk) => {
-      linkedEventIds.add(lnk.targetEvent.id);
-    });
-  } else if (effectiveActiveEventId) {
-    (manifest.crossLinks || []).forEach((lnk) => {
-      if (lnk.from === effectiveActiveEventId) linkedEventIds.add(lnk.to);
-      if (lnk.to === effectiveActiveEventId) linkedEventIds.add(lnk.from);
-    });
-  }
+  const hoveredEventMeta = hoveredEvent ? (eventMetaById.get(hoveredEvent.id) ?? null) : null;
 
-  const buildLinkGeometryForEvent = (sourceEvent: EnrichedEvent | null, requireInStream: boolean) => {
-    if (!sourceEvent) return null;
-    const sourceRowIdx = rowIndexByEventId.get(sourceEvent.id);
-    if (requireInStream && sourceRowIdx === undefined) return null;
-
-    let minSpanIdx = sourceRowIdx ?? Number.POSITIVE_INFINITY;
-    let maxSpanIdx = sourceRowIdx ?? -1;
-    const seenTargetIds = new Set<string>();
-    const items: Array<{
-      targetEvent: EnrichedEvent;
-      branchLabel: string;
-      branchShort: string;
-      branchColor: string;
-      targetRowIdx: number | undefined;
-      directionOnStream: 'up' | 'down' | 'same' | 'off_stream';
-      yearDelta: number;
-      rowDelta: number | null;
-      linkLabel: string;
-      isHiddenBranch: boolean;
-    }> = [];
-
-    const branchMap = new Map(branches.map((b) => [b.id, b]));
-
-    sourceEvent.explicitLinks.forEach((lnk) => {
-      const t = lnk.targetEvent;
-      if (seenTargetIds.has(t.id)) return;
-      seenTargetIds.add(t.id);
-
-      const tRowIdx = rowIndexByEventId.get(t.id);
-      if (tRowIdx !== undefined) {
-        if (tRowIdx < minSpanIdx) minSpanIdx = tRowIdx;
-        if (tRowIdx > maxSpanIdx) maxSpanIdx = tRowIdx;
-      }
-
-      const tb = branchMap.get(t.task);
-      const directionOnStream =
-        tRowIdx === undefined
-          ? 'off_stream'
-          : sourceRowIdx === undefined
-            ? 'down'
-            : tRowIdx < sourceRowIdx
-              ? 'up'
-              : tRowIdx > sourceRowIdx
-                ? 'down'
-                : 'same';
-
-      items.push({
-        targetEvent: t,
-        branchLabel: tb?.label || t.task,
-        branchShort: tb?.short || tb?.label || t.task,
-        branchColor: tb?.color || '#34d399',
-        targetRowIdx: tRowIdx,
-        directionOnStream,
-        yearDelta: t.startYear - sourceEvent.startYear,
-        rowDelta: sourceRowIdx !== undefined && tRowIdx !== undefined ? Math.abs(tRowIdx - sourceRowIdx) : null,
-        linkLabel: lnk.label,
-        isHiddenBranch: activeBranches[t.task] === false,
+  const linkedEventIds = useMemo(() => {
+    const set = new Set<string>();
+    if (hoveredEvent) {
+      hoveredEvent.explicitLinks.forEach((lnk) => {
+        set.add(lnk.targetEvent.id);
       });
-    });
+    } else if (effectiveActiveEventId) {
+      (manifest.crossLinks || []).forEach((lnk) => {
+        if (lnk.from === effectiveActiveEventId) set.add(lnk.to);
+        if (lnk.to === effectiveActiveEventId) set.add(lnk.from);
+      });
+    }
+    return set;
+  }, [hoveredEvent, effectiveActiveEventId, manifest.crossLinks]);
 
-    if (items.length === 0) return null;
+  const buildLinkGeometryForEvent = useCallback(
+    (sourceEvent: EnrichedEvent | null, requireInStream: boolean) => {
+      if (!sourceEvent) return null;
+      const sourceRowIdx = rowIndexByEventId.get(sourceEvent.id);
+      if (requireInStream && sourceRowIdx === undefined) return null;
 
-    items.sort((a, b) => {
-      if (a.targetRowIdx !== undefined && b.targetRowIdx !== undefined) {
-        return a.targetRowIdx - b.targetRowIdx;
-      }
-      if (a.targetRowIdx !== undefined) return -1;
-      if (b.targetRowIdx !== undefined) return 1;
-      return a.targetEvent.startYear - b.targetEvent.startYear;
-    });
+      let minSpanIdx = sourceRowIdx ?? Number.POSITIVE_INFINITY;
+      let maxSpanIdx = sourceRowIdx ?? -1;
+      const seenTargetIds = new Set<string>();
+      const items: Array<{
+        targetEvent: EnrichedEvent;
+        branchLabel: string;
+        branchShort: string;
+        branchColor: string;
+        targetRowIdx: number | undefined;
+        directionOnStream: 'up' | 'down' | 'same' | 'off_stream';
+        yearDelta: number;
+        rowDelta: number | null;
+        linkLabel: string;
+        isHiddenBranch: boolean;
+      }> = [];
 
-    return {
-      sourceEvent,
-      sourceRowIdx: sourceRowIdx ?? -1,
-      minSpanIdx,
-      maxSpanIdx,
-      hasSpanOnCanvas: sourceRowIdx !== undefined && minSpanIdx < maxSpanIdx,
-      upItems: items.filter((i) => i.directionOnStream === 'up'),
-      downItems: items.filter((i) => i.directionOnStream === 'down' || i.directionOnStream === 'same'),
-      offStreamItems: items.filter((i) => i.directionOnStream === 'off_stream'),
-      totalCount: items.length,
-    };
-  };
+      const branchMap = new Map(branches.map((b) => [b.id, b]));
+
+      sourceEvent.explicitLinks.forEach((lnk) => {
+        const t = lnk.targetEvent;
+        if (seenTargetIds.has(t.id)) return;
+        seenTargetIds.add(t.id);
+
+        const tRowIdx = rowIndexByEventId.get(t.id);
+        if (tRowIdx !== undefined) {
+          if (tRowIdx < minSpanIdx) minSpanIdx = tRowIdx;
+          if (tRowIdx > maxSpanIdx) maxSpanIdx = tRowIdx;
+        }
+
+        const tb = branchMap.get(t.task);
+        const directionOnStream =
+          tRowIdx === undefined
+            ? 'off_stream'
+            : sourceRowIdx === undefined
+              ? 'down'
+              : tRowIdx < sourceRowIdx
+                ? 'up'
+                : tRowIdx > sourceRowIdx
+                  ? 'down'
+                  : 'same';
+
+        items.push({
+          targetEvent: t,
+          branchLabel: tb?.label || t.task,
+          branchShort: tb?.short || tb?.label || t.task,
+          branchColor: tb?.color || '#34d399',
+          targetRowIdx: tRowIdx,
+          directionOnStream,
+          yearDelta: t.startYear - sourceEvent.startYear,
+          rowDelta:
+            sourceRowIdx !== undefined && tRowIdx !== undefined
+              ? Math.abs(tRowIdx - sourceRowIdx)
+              : null,
+          linkLabel: lnk.label,
+          isHiddenBranch: activeBranches[t.task] === false,
+        });
+      });
+
+      if (items.length === 0) return null;
+
+      items.sort((a, b) => {
+        if (a.targetRowIdx !== undefined && b.targetRowIdx !== undefined) {
+          return a.targetRowIdx - b.targetRowIdx;
+        }
+        if (a.targetRowIdx !== undefined) return -1;
+        if (b.targetRowIdx !== undefined) return 1;
+        return a.targetEvent.startYear - b.targetEvent.startYear;
+      });
+
+      return {
+        sourceEvent,
+        sourceRowIdx: sourceRowIdx ?? -1,
+        minSpanIdx,
+        maxSpanIdx,
+        hasSpanOnCanvas: sourceRowIdx !== undefined && minSpanIdx < maxSpanIdx,
+        upItems: items.filter((i) => i.directionOnStream === 'up'),
+        downItems: items.filter((i) => i.directionOnStream === 'down' || i.directionOnStream === 'same'),
+        offStreamItems: items.filter((i) => i.directionOnStream === 'off_stream'),
+        totalCount: items.length,
+      };
+    },
+    [rowIndexByEventId, branches, activeBranches],
+  );
 
   const activeLinkGeometry = useMemo(
     () => buildLinkGeometryForEvent(hoveredEvent, true),
-    [hoveredEvent, rowIndexByEventId, branches, activeBranches],
+    [buildLinkGeometryForEvent, hoveredEvent],
   );
 
   const inspectorSourceEvent = hoveredEvent ?? focusedEvent ?? null;
   const inspectorLinkGeometry = useMemo(
     () => buildLinkGeometryForEvent(inspectorSourceEvent, false),
-    [inspectorSourceEvent, rowIndexByEventId, branches, activeBranches],
+    [buildLinkGeometryForEvent, inspectorSourceEvent],
   );
 
   const linkedEventsInWindowCount = useMemo(
@@ -780,2451 +939,708 @@ export const GitTimeline = memo(function GitTimeline({
   }, [matchingEvents, branches, rowIndexByEventId]);
 
   const effectiveSliceEndYear = yearTo ?? windowRange?.to ?? yearFrom;
-
   const connectorBusX = timeSpineX + 9;
 
-  function renderRailsForRow(
-    rowIdx: number,
-    sortKey: number,
-    options?: {
-      skipRulerId?: string;
-    },
-  ) {
-    const showVerticalBusSegment =
-      activeLinkGeometry !== null &&
-      activeLinkGeometry.hasSpanOnCanvas &&
-      rowIdx >= activeLinkGeometry.minSpanIdx &&
-      rowIdx <= activeLinkGeometry.maxSpanIdx;
-
-    return (
-      <>
-        {hasRulersLane && (
-          <g>
-            {rulerLayout.railXs.map((rx, slotIdx) => {
-              const activeInSlot = matchingRulers.find((r) => {
-                if (r.id === options?.skipRulerId) return false;
-                if ((rulerLayout.slotByRulerId.get(r.id) ?? 0) !== slotIdx) return false;
-                const b = rulerSortBounds.get(r.id);
-                return b ? b.startKey <= sortKey && b.endKey >= sortKey : false;
-              });
-
-              if (activeInSlot) {
-                const slotColor = rulerLayout.colorByRulerId.get(activeInSlot.id) ?? '#f59e0b';
-                return (
-                  <line
-                    key={`ruler-rail-${slotIdx}`}
-                    x1={rx}
-                    y1={0}
-                    x2={rx}
-                    y2={420}
-                    stroke={slotColor}
-                    strokeWidth={3}
-                    strokeOpacity={0.65}
-                  />
-                );
-              }
-
-              return (
-                <line
-                  key={`ruler-rail-${slotIdx}`}
-                  x1={rx}
-                  y1={0}
-                  x2={rx}
-                  y2={420}
-                  stroke="#f59e0b"
-                  strokeWidth={1.1}
-                  strokeOpacity={0.14}
-                  strokeDasharray="3 4"
-                />
-              );
-            })}
-          </g>
-        )}
-
-        {/* Центральный ствол времени (time/main) */}
-        <line
-          x1={timeSpineX}
-          y1={0}
-          x2={timeSpineX}
-          y2={420}
-          stroke="#cbd5e1"
-          strokeWidth={3.2}
-          strokeOpacity={0.85}
-        />
-
-        {/* Вертикальная шина связей вдоль оси при наведении на карточку */}
-        {showVerticalBusSegment && activeLinkGeometry && (
-          <line
-            x1={connectorBusX}
-            y1={rowIdx === activeLinkGeometry.minSpanIdx ? 22 : 0}
-            x2={connectorBusX}
-            y2={rowIdx === activeLinkGeometry.maxSpanIdx ? 22 : 420}
-            stroke="#10b981"
-            strokeWidth={2.2}
-            strokeDasharray="4 3"
-            strokeOpacity={0.9}
-          />
-        )}
-
-        {/* Тематические ветки и их динамические под-нити справа от оси времени */}
-        {thematicLanes.map((lane) => {
-          const laneInfo = subLaneLayout.branchLayouts.get(lane.id);
-          const baseX = laneInfo?.baseX ?? timeSpineX + 28;
-
-          const passingEvents = eventStreamBounds.filter(
-            (entry) =>
-              resolveEventBranch(entry.ev, branches, collapsedParents).id === lane.id &&
-              entry.commitIdx < rowIdx &&
-              rowIdx < entry.endIdx,
-          );
-
-          const hasBasePassing = passingEvents.some(
-            (entry) => (subLaneLayout.slotByEventId.get(entry.ev.id) ?? 0) === 0,
-          );
-
-          return (
-            <g key={lane.id}>
-              {!hasBasePassing && (
-                <line
-                  x1={baseX}
-                  y1={0}
-                  x2={baseX}
-                  y2={420}
-                  stroke={lane.color}
-                  strokeWidth={1.3}
-                  strokeOpacity={0.22}
-                  strokeDasharray="4 4"
-                />
-              )}
-
-              {passingEvents.map((entry) => {
-                const slot = subLaneLayout.slotByEventId.get(entry.ev.id) ?? 0;
-                const x = laneInfo?.subXs[slot] ?? baseX + slot * 10;
-                const isBioRail = isBiographyNode(entry.ev, branches);
-                const isSelfHovered = effectiveActiveEventId === entry.ev.id;
-                const isLinkedHovered =
-                  effectiveActiveEventId !== null && linkedEventIds.has(entry.ev.id);
-                const isDimmed =
-                  effectiveActiveEventId !== null && !isSelfHovered && !isLinkedHovered;
-
-                return (
-                  <g key={`rail-${entry.ev.id}`}>
-                    {(isSelfHovered || isLinkedHovered) && (
-                      <line
-                        x1={x}
-                        y1={0}
-                        x2={x}
-                        y2={420}
-                        stroke={isLinkedHovered && !isSelfHovered ? '#34d399' : lane.color}
-                        strokeWidth={6.5}
-                        strokeOpacity={0.28}
-                      />
-                    )}
-                    <line
-                      x1={x}
-                      y1={0}
-                      x2={x}
-                      y2={420}
-                      stroke={isLinkedHovered && !isSelfHovered ? '#34d399' : lane.color}
-                      strokeWidth={
-                        isSelfHovered
-                          ? 3.6
-                          : isLinkedHovered
-                            ? 3.2
-                            : isBioRail
-                              ? 2.1
-                              : 2.6
-                      }
-                      strokeDasharray={isBioRail && !isSelfHovered && !isLinkedHovered ? '6 3' : undefined}
-                      strokeOpacity={
-                        isSelfHovered || isLinkedHovered
-                          ? 1
-                          : isDimmed
-                            ? 0.28
-                            : isBioRail
-                              ? 0.5
-                              : 0.65
-                      }
-                    />
-                  </g>
-                );
-              })}
-            </g>
-          );
-        })}
-      </>
-    );
-  }
-
-  const mobileSpineWidth = 36;
-  const mobileSpineX = 16;
-  const mobileConnectorBusX = 27;
-
-  function renderMobileSpineCell(
-    rowIdx: number,
-    options: {
-      kind: 'era' | 'tick' | 'ruler_start' | 'ruler_end' | 'event_commit' | 'event_end';
-      color?: string;
-      isAtomic?: boolean;
-      isBioNode?: boolean;
-      isCompact?: boolean;
-      isSelfHovered?: boolean;
-      isConnectedToBus?: boolean;
-      startedBeforeWindow?: boolean;
-    },
-  ) {
-    const showVerticalBusSegment =
-      activeLinkGeometry !== null &&
-      activeLinkGeometry.hasSpanOnCanvas &&
-      rowIdx >= activeLinkGeometry.minSpanIdx &&
-      rowIdx <= activeLinkGeometry.maxSpanIdx;
-    const nodeColor = options.color ?? '#f59e0b';
-    const commitY = options.kind === 'event_commit' ? (options.isCompact ? 22 : 28) : 22;
-
-    return (
-      <div className="sm:hidden w-[36px] shrink-0 relative select-none overflow-hidden">
-        <svg className="w-full h-full absolute inset-0" width={mobileSpineWidth} height="100%">
-          {/* Компактный центральный ствол времени */}
-          <line
-            x1={mobileSpineX}
-            y1={0}
-            x2={mobileSpineX}
-            y2={420}
-            stroke="#cbd5e1"
-            strokeWidth={2.6}
-            strokeOpacity={0.78}
-          />
-
-          {/* Шина активных связей при наведении / фокусе */}
-          {showVerticalBusSegment && activeLinkGeometry && (
-            <line
-              x1={mobileConnectorBusX}
-              y1={rowIdx === activeLinkGeometry.minSpanIdx ? 22 : 0}
-              x2={mobileConnectorBusX}
-              y2={rowIdx === activeLinkGeometry.maxSpanIdx ? 22 : 420}
-              stroke="#10b981"
-              strokeWidth={2}
-              strokeDasharray="4 3"
-              strokeOpacity={0.9}
-            />
-          )}
-
-          {options.kind === 'era' && (
-            <>
-              <line
-                x1={mobileSpineX + 8}
-                y1={36}
-                x2={mobileSpineWidth}
-                y2={36}
-                stroke="#f59e0b"
-                strokeWidth={1.5}
-                strokeDasharray="3 3"
-                strokeOpacity={0.7}
-              />
-              <circle cx={mobileSpineX} cy={36} r={9} fill="#050811" stroke="#cbd5e1" strokeWidth={2.6} />
-              <circle cx={mobileSpineX} cy={36} r={4} fill="#f59e0b" />
-            </>
-          )}
-
-          {options.kind === 'tick' && (
-            <>
-              <line
-                x1={mobileSpineX + 4}
-                y1={14}
-                x2={mobileSpineWidth}
-                y2={14}
-                stroke="#475569"
-                strokeWidth={1}
-                strokeDasharray="2 3"
-                strokeOpacity={0.55}
-              />
-              <circle cx={mobileSpineX} cy={14} r={3.2} fill="#050811" stroke="#94a3b8" strokeWidth={1.8} />
-            </>
-          )}
-
-          {options.kind === 'ruler_start' && (
-            <>
-              <line
-                x1={mobileSpineX - 7}
-                y1={options.startedBeforeWindow ? 0 : 28}
-                x2={mobileSpineX - 7}
-                y2={420}
-                stroke={nodeColor}
-                strokeWidth={2.4}
-                strokeOpacity={0.6}
-              />
-              <line
-                x1={mobileSpineX + 6}
-                y1={28}
-                x2={mobileSpineWidth}
-                y2={28}
-                stroke={nodeColor}
-                strokeWidth={1.4}
-                strokeDasharray="3 3"
-                strokeOpacity={0.55}
-              />
-              <circle cx={mobileSpineX} cy={28} r={5.5} fill="#050811" stroke={nodeColor} strokeWidth={2.6} />
-              <circle cx={mobileSpineX} cy={28} r={2.2} fill={nodeColor} />
-            </>
-          )}
-
-          {options.kind === 'ruler_end' && (
-            <>
-              <line
-                x1={mobileSpineX - 7}
-                y1={0}
-                x2={mobileSpineX - 7}
-                y2={22}
-                stroke={nodeColor}
-                strokeWidth={2.4}
-                strokeOpacity={0.6}
-              />
-              <rect
-                x={mobileSpineX - 4}
-                y={18}
-                width={8}
-                height={8}
-                rx={2}
-                fill="#050811"
-                stroke={nodeColor}
-                strokeWidth={2.2}
-              />
-            </>
-          )}
-
-          {options.kind === 'event_commit' && (
-            <>
-              {options.isConnectedToBus && (
-                <g>
-                  <line
-                    x1={mobileSpineX}
-                    y1={commitY}
-                    x2={mobileConnectorBusX}
-                    y2={commitY}
-                    stroke="#10b981"
-                    strokeWidth={1.8}
-                  />
-                  <circle
-                    cx={mobileConnectorBusX}
-                    cy={commitY}
-                    r={3.2}
-                    fill={options.isSelfHovered ? '#10b981' : '#050811'}
-                    stroke="#10b981"
-                    strokeWidth={1.8}
-                  />
-                </g>
-              )}
-
-              {!options.isAtomic && (
-                <line
-                  x1={mobileSpineX + 5}
-                  y1={options.startedBeforeWindow ? 0 : commitY}
-                  x2={mobileSpineX + 5}
-                  y2={420}
-                  stroke={nodeColor}
-                  strokeWidth={options.isSelfHovered ? 2.6 : 1.8}
-                  strokeDasharray={options.isBioNode ? '4 2' : undefined}
-                  strokeOpacity={options.isSelfHovered ? 0.95 : 0.45}
-                />
-              )}
-
-              <line
-                x1={mobileSpineX + 6}
-                y1={commitY}
-                x2={mobileSpineWidth}
-                y2={commitY}
-                stroke={nodeColor}
-                strokeWidth={1.5}
-                strokeDasharray="3 3"
-                strokeOpacity={options.isSelfHovered ? 1 : 0.6}
-              />
-
-              {options.isAtomic || options.isBioNode ? (
-                <g>
-                  <polygon
-                    points={`${mobileSpineX},${commitY - 6.5} ${mobileSpineX + 6.5},${commitY} ${mobileSpineX},${commitY + 6.5} ${mobileSpineX - 6.5},${commitY}`}
-                    fill="#050811"
-                    stroke={nodeColor}
-                    strokeWidth={2.3}
-                  />
-                  <circle cx={mobileSpineX} cy={commitY} r={1.8} fill={nodeColor} />
-                </g>
-              ) : (
-                <>
-                  <circle cx={mobileSpineX} cy={commitY} r={8.5} fill={nodeColor} fillOpacity={0.22} />
-                  <circle
-                    cx={mobileSpineX}
-                    cy={commitY}
-                    r={5}
-                    fill="#050811"
-                    stroke={nodeColor}
-                    strokeWidth={2.5}
-                  />
-                  <circle cx={mobileSpineX} cy={commitY} r={2} fill={nodeColor} />
-                </>
-              )}
-            </>
-          )}
-
-          {options.kind === 'event_end' && (
-            <>
-              <line
-                x1={mobileSpineX + 5}
-                y1={22}
-                x2={mobileSpineWidth}
-                y2={22}
-                stroke={nodeColor}
-                strokeWidth={1.3}
-                strokeDasharray="3 3"
-                strokeOpacity={0.5}
-              />
-              <rect
-                x={mobileSpineX - 4.5}
-                y={17.5}
-                width={9}
-                height={9}
-                rx={2}
-                fill="#050811"
-                stroke={nodeColor}
-                strokeWidth={2.3}
-              />
-            </>
-          )}
-        </svg>
-      </div>
-    );
-  }
+  const effectiveVisibleCount = Math.min(stream.length, Math.max(INITIAL_VISIBLE_ROWS, visibleRowCount));
+  const renderedStream = useMemo(
+    () => (effectiveVisibleCount < stream.length ? stream.slice(0, effectiveVisibleCount) : stream),
+    [stream, effectiveVisibleCount],
+  );
+  const remainingRowsCount = Math.max(0, stream.length - renderedStream.length);
 
   return (
     <div className="min-w-0 w-full xl:grid xl:grid-cols-[minmax(0,1fr)_316px] xl:gap-5 xl:items-start">
       <div className="min-w-0">
-      <div className="sticky top-[var(--top-bar-height,49px)] z-30 bg-[#050811]/95 backdrop-blur-md border border-slate-800/90 rounded-t-2xl shadow-md">
-        <div className="px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar min-w-0">
-            {visibleLanes.map((lane, laneIdx) => {
-              const isTimeAxis = lane.id === 'TIME_AXIS';
-              const subCount =
-                lane.id === 'MAIN_RULERS'
-                  ? rulerLayout.laneCount
-                  : (subLaneLayout.branchLayouts.get(lane.id)?.subLaneCount ?? 1);
-              const isCollapsedParentLane =
-                hasChildBranches(lane.id, branches) && Boolean(collapsedParents[lane.id]);
+        <div className="sticky top-[var(--top-bar-height,49px)] z-30 bg-[#050811]/95 backdrop-blur-md border border-slate-800/90 rounded-t-2xl shadow-md">
+          <div className="px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar min-w-0">
+              {visibleLanes.map((lane, laneIdx) => {
+                const isTimeAxis = lane.id === 'TIME_AXIS';
+                const subCount =
+                  lane.id === 'MAIN_RULERS'
+                    ? rulerLayout.laneCount
+                    : (subLaneLayout.branchLayouts.get(lane.id)?.subLaneCount ?? 1);
+                const isCollapsedParentLane =
+                  hasChildBranches(lane.id, branches) && Boolean(collapsedParents[lane.id]);
 
-              if (isCollapsedParentLane) {
-                const activeChildCount = getDirectChildBranches(lane.id, branches).filter((child) =>
-                  isBranchOrDescendantActive(child, branches, activeBranches),
-                ).length;
+                if (isCollapsedParentLane) {
+                  const activeChildCount = getDirectChildBranches(lane.id, branches).filter((child) =>
+                    isBranchOrDescendantActive(child, branches, activeBranches),
+                  ).length;
+
+                  return (
+                    <button
+                      key={lane.id}
+                      type="button"
+                      onClick={() => onToggleCollapseParent(lane.id)}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-xs font-sans text-amber-100 shrink-0 cursor-pointer transition-colors"
+                      title={`${lane.label}: свёрнуто веток (${activeChildCount}). Нажмите, чтобы развернуть в отдельные линии.`}
+                    >
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
+                      <span className="font-semibold">{lane.label}</span>
+                      {subCount > 1 && (
+                        <span className="font-mono text-amber-300 font-bold tabular-nums">×{subCount}</span>
+                      )}
+                      <GitBranch className="w-3 h-3 text-amber-300 ml-0.5 shrink-0" />
+                      <span className="text-amber-300 font-semibold">Развернуть ({activeChildCount})</span>
+                    </button>
+                  );
+                }
 
                 return (
-                  <button
+                  <div
                     key={lane.id}
-                    type="button"
-                    onClick={() => onToggleCollapseParent(lane.id)}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-xs font-sans text-amber-100 shrink-0 cursor-pointer transition-colors"
-                    title={`${lane.label}: свёрнуто веток (${activeChildCount}). Нажмите, чтобы развернуть в отдельные линии.`}
+                    className={`inline-flex items-center gap-1.5 text-xs font-sans shrink-0 whitespace-nowrap ${
+                      isTimeAxis ? 'text-white font-semibold' : 'text-slate-300'
+                    }`}
+                    title={
+                      subCount > 1
+                        ? `${lane.label}: до ${subCount} параллельных линий в окне`
+                        : lane.label
+                    }
                   >
+                    {laneIdx > 0 && (
+                      <span aria-hidden="true" className="text-slate-600 mr-0.5">
+                        ·
+                      </span>
+                    )}
                     <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
-                    <span className="font-semibold">{lane.label}</span>
+                    <span>{lane.label}</span>
                     {subCount > 1 && (
                       <span className="font-mono text-amber-300 font-bold tabular-nums">×{subCount}</span>
                     )}
-                    <GitBranch className="w-3 h-3 text-amber-300 ml-0.5 shrink-0" />
-                    <span className="text-amber-300 font-semibold">Развернуть ({activeChildCount})</span>
+                  </div>
+                );
+              })}
+
+              {expandedCollapsibleParents.map((parent) => {
+                const activeChildCount = getDirectChildBranches(parent.id, branches).filter((child) =>
+                  isBranchOrDescendantActive(child, branches, activeBranches),
+                ).length;
+                return (
+                  <button
+                    key={`collapse-${parent.id}`}
+                    type="button"
+                    onClick={() => onToggleCollapseParent(parent.id)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 hover:border-amber-400/50 text-xs font-sans text-slate-300 hover:text-amber-200 shrink-0 cursor-pointer transition-colors whitespace-nowrap"
+                    title={`Свернуть ${activeChildCount} веток группы «${parent.label}» в одну линию`}
+                  >
+                    <GitMerge className="w-3 h-3 text-amber-400 shrink-0" />
+                    <span>Свернуть «{parent.label}» ({activeChildCount} → 1)</span>
                   </button>
                 );
-              }
+              })}
+            </div>
 
-              return (
-                <div
-                  key={lane.id}
-                  className={`inline-flex items-center gap-1.5 text-xs font-sans shrink-0 whitespace-nowrap ${
-                    isTimeAxis ? 'text-white font-semibold' : 'text-slate-300'
-                  }`}
-                  title={
-                    subCount > 1
-                      ? `${lane.label}: до ${subCount} параллельных линий в окне`
-                      : lane.label
-                  }
-                >
-                  {laneIdx > 0 && (
-                    <span aria-hidden="true" className="text-slate-600 mr-0.5">
-                      ·
-                    </span>
-                  )}
-                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
-                  <span>{lane.label}</span>
-                  {subCount > 1 && (
-                    <span className="font-mono text-amber-300 font-bold tabular-nums">×{subCount}</span>
-                  )}
-                </div>
-              );
-            })}
-
-            {expandedCollapsibleParents.map((parent) => {
-              const activeChildCount = getDirectChildBranches(parent.id, branches).filter((child) =>
-                isBranchOrDescendantActive(child, branches, activeBranches),
-              ).length;
-              return (
-                <button
-                  key={`collapse-${parent.id}`}
-                  type="button"
-                  onClick={() => onToggleCollapseParent(parent.id)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 hover:border-amber-400/50 text-xs font-sans text-slate-300 hover:text-amber-200 shrink-0 cursor-pointer transition-colors whitespace-nowrap"
-                  title={`Свернуть ${activeChildCount} веток группы «${parent.label}» в одну линию`}
-                >
-                  <GitMerge className="w-3 h-3 text-amber-400 shrink-0" />
-                  <span>Свернуть «{parent.label}» ({activeChildCount} → 1)</span>
-                </button>
-              );
-            })}
-          </div>
-
-          <div ref={graphHelpRef} className="relative flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400">
-            {selectedMacroRegion !== 'all' && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-400/50 text-amber-200 font-semibold">
-                <MapPin className="w-3 h-3 text-amber-400 shrink-0" />
-                <span>{getMacroRegionOption(selectedMacroRegion).shortLabel}</span>
-                {onSelectMacroRegion && (
-                  <button
-                    type="button"
-                    onClick={() => onSelectMacroRegion('all')}
-                    aria-label="Сбросить фильтр по макрорегиону"
-                    title="Сбросить фильтр по макрорегиону"
-                    className="ml-0.5 text-amber-300 hover:text-white cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </span>
-            )}
-            <span className="hidden md:inline text-slate-300">
-              Масштаб оси: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
-            </span>
-            {timeScaleMode === 'proportional' && (
-              <>
-                <span aria-hidden="true" className="hidden lg:inline text-slate-400">
-                  ·
-                </span>
-                <span
-                  className="hidden lg:inline text-amber-300 font-semibold"
-                  title="Включена пропорциональная шкала времени: вертикальные промежутки отражают дистанцию в годах между событиями"
-                >
-                  шкала: по годам
-                </span>
-              </>
-            )}
-            {axisResolution !== 'year' && yearFrom <= 1918 && (yearTo === undefined || yearTo >= 1582) && (
-              <>
-                <span aria-hidden="true" className="hidden lg:inline text-slate-400">
-                  ·
-                </span>
-                <span
-                  className="hidden lg:inline text-amber-300/90 tabular-nums"
-                  title="В 1582–1918 годах события старого (юлианского) стиля сдвинуты на единую григорианскую шкалу (+10…+13 дн.) для точного сопоставления с Европой"
-                >
-                  единая шкала: н. ст.
-                </span>
-              </>
-            )}
-            <span aria-hidden="true" className="hidden md:inline text-slate-400">
-              ·
-            </span>
-            <span className="hidden sm:inline text-amber-300/90 font-semibold">Клик — паспорт события</span>
-            <button
-              type="button"
-              onClick={() => setIsGraphHelpOpen((prev) => !prev)}
-              className={`px-2.5 py-1 rounded-lg border text-xs font-sans inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                isGraphHelpOpen
-                  ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-bold'
-                  : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-slate-500 hover:text-white'
-              }`}
-              title="Памятка: как читать линии, события и связи хронографа"
+            <div
+              ref={graphHelpRef}
+              className="relative flex items-center gap-2 shrink-0 text-[11px] font-mono text-slate-400"
             >
-              <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
-              <span>Как читать схему</span>
-            </button>
-
-            {isGraphHelpOpen && (
-              <div className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[106px] sm:top-full sm:mt-2 max-w-md sm:max-w-none sm:w-96 mx-auto sm:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl p-3.5 z-50 text-left space-y-2.5">
-                <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
-                  <span className="text-xs font-bold text-white">Обозначения на хронографе</span>
-                  <button
-                    type="button"
-                    onClick={() => setIsGraphHelpOpen(false)}
-                    className="text-slate-400 hover:text-white cursor-pointer"
-                    aria-label="Закрыть памятку"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                <div className="text-[11px] font-sans text-slate-300 space-y-2 leading-snug">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-4 h-1 bg-slate-300 rounded shrink-0" />
-                    <span>
-                      <strong className="text-white">Ось времени (центр)</strong> — главный хронологический ствол (годы → месяцы → дни).
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-4 h-1 bg-amber-400 rounded shrink-0" />
-                    <span>
-                      <strong className="text-white">Сплошная линия</strong> — длительность правления или исторического процесса (параллельные центры власти и одновременные войны идут по соседним нитям).
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-2.5 h-2.5 rotate-45 border-2 border-sky-400 bg-slate-950 shrink-0 ml-0.5 mr-1" />
-                    <span>
-                      <strong className="text-white">Ромб на ветке</strong> — точечное историческое событие, публикация книги, открытие или биография.
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-4 h-2 rounded border border-emerald-400 bg-emerald-950/60 shrink-0" />
-                    <span>
-                      <strong className="text-emerald-300">Изумрудный контур</strong> — причинно-следственная или культурная связь при наведении.
-                    </span>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {activeStickyRuler && (
-          <div className="px-3 sm:px-5 py-1.5 border-t border-slate-800/80 bg-slate-950/90 flex items-center justify-between gap-2 text-[11px] font-mono">
-            <div className="flex items-center gap-2 min-w-0 truncate">
-              {activeStickyEra && (
+              {selectedMacroRegion !== 'all' && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-400/50 text-amber-200 font-semibold">
+                  <MapPin className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span>{getMacroRegionOption(selectedMacroRegion).shortLabel}</span>
+                  {onSelectMacroRegion && (
+                    <button
+                      type="button"
+                      onClick={() => onSelectMacroRegion('all')}
+                      aria-label="Сбросить фильтр по макрорегиону"
+                      title="Сбросить фильтр по макрорегиону"
+                      className="ml-0.5 text-amber-300 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </span>
+              )}
+              <span className="hidden md:inline text-slate-300">
+                Масштаб оси: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
+              </span>
+              {timeScaleMode === 'proportional' && (
                 <>
-                  <button
-                    type="button"
-                    onClick={() => onOpenEraModal(activeStickyEra.id)}
-                    title={`Открыть карточку периода «${activeStickyEra.displayShortTitle}» (${activeStickyEra.period})`}
-                    className="text-amber-400 hover:text-amber-200 underline decoration-amber-400/40 underline-offset-2 font-bold shrink-0 cursor-pointer truncate max-w-[200px]"
-                  >
-                    {activeStickyEra.displayShortTitle}
-                  </button>
-                  <span aria-hidden="true" className="text-slate-400 shrink-0">
+                  <span aria-hidden="true" className="hidden lg:inline text-slate-400">
                     ·
+                  </span>
+                  <span
+                    className="hidden lg:inline text-amber-300 font-semibold"
+                    title="Включена пропорциональная шкала времени: вертикальные промежутки отражают дистанцию в годах между событиями"
+                  >
+                    шкала: по годам
                   </span>
                 </>
               )}
-              <span className="inline-flex items-center gap-1 text-white font-bold truncate">
-                <Crown className="w-3 h-3 text-amber-400 shrink-0" />
-                <span className="truncate">{activeStickyRuler.shortRuler}</span>
-              </span>
-              <span className="text-amber-300/90 tabular-nums shrink-0">{activeStickyRuler.reignPeriod}</span>
-              <span className="hidden sm:inline text-slate-400 truncate">· {activeStickyRuler.reignTitle}</span>
-            </div>
-
-            <div className="flex items-center gap-2 shrink-0">
-              <span className="hidden sm:inline text-slate-400 tabular-nums">
-                {activeStickyRulerEventCount} соб.
-              </span>
-              {!focusedEvent && (
-                <button
-                  type="button"
-                  onClick={() => onSelectYearRange(activeStickyRuler.startYear, activeStickyRuler.endYear)}
-                  className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 transition-colors cursor-pointer"
-                  title="Отфильтровать временное окно по годам этого правителя"
-                >
-                  Окно
-                </button>
+              {axisResolution !== 'year' && yearFrom <= 1918 && (yearTo === undefined || yearTo >= 1582) && (
+                <>
+                  <span aria-hidden="true" className="hidden lg:inline text-slate-400">
+                    ·
+                  </span>
+                  <span
+                    className="hidden lg:inline text-amber-300/90 tabular-nums"
+                    title="В 1582–1918 годах события старого (юлианского) стиля сдвинуты на единую григорианскую шкалу (+10…+13 дн.) для точного сопоставления с Европой"
+                  >
+                    единая шкала: н. ст.
+                  </span>
+                </>
               )}
+              <span aria-hidden="true" className="hidden md:inline text-slate-400">
+                ·
+              </span>
+              <span className="hidden sm:inline text-amber-300/90 font-semibold">Клик — паспорт события</span>
               <button
                 type="button"
-                onClick={() => onOpenPeriodModal(activeStickyRuler.id)}
-                className="px-2 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 font-semibold transition-colors cursor-pointer"
+                onClick={() => setIsGraphHelpOpen((prev) => !prev)}
+                className={`px-2.5 py-1 rounded-lg border text-xs font-sans inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                  isGraphHelpOpen
+                    ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-bold'
+                    : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-slate-500 hover:text-white'
+                }`}
+                title="Памятка: как читать линии, события и связи хронографа"
               >
-                Сводка →
+                <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                <span>Как читать схему</span>
               </button>
+
+              {isGraphHelpOpen && (
+                <div className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[106px] sm:top-full sm:mt-2 max-w-md sm:max-w-none sm:w-96 mx-auto sm:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl p-3.5 z-50 text-left space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
+                    <span className="text-xs font-bold text-white">Обозначения на хронографе</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsGraphHelpOpen(false)}
+                      className="text-slate-400 hover:text-white cursor-pointer"
+                      aria-label="Закрыть памятку"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <div className="text-[11px] font-sans text-slate-300 space-y-2 leading-snug">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-4 h-1 bg-slate-300 rounded shrink-0" />
+                      <span>
+                        <strong className="text-white">Ось времени (центр)</strong> — главный хронологический ствол (годы → месяцы → дни).
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-4 h-1 bg-amber-400 rounded shrink-0" />
+                      <span>
+                        <strong className="text-white">Сплошная линия</strong> — длительность правления или исторического процесса (параллельные центры власти и одновременные войны идут по соседним нитям).
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-2.5 h-2.5 rotate-45 border-2 border-sky-400 bg-slate-950 shrink-0 ml-0.5 mr-1" />
+                      <span>
+                        <strong className="text-white">Ромб на ветке</strong> — точечное историческое событие, публикация книги, открытие или биография.
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-4 h-2 rounded border border-emerald-400 bg-emerald-950/60 shrink-0" />
+                      <span>
+                        <strong className="text-emerald-300">Изумрудный контур</strong> — причинно-следственная или культурная связь при наведении.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
-      </div>
 
-      <div
-        ref={streamContainerRef}
-        className="border-x border-b border-slate-800/90 rounded-b-2xl bg-slate-950/40 divide-y divide-slate-800/50 overflow-hidden"
-      >
-        {focusedEvent && (
-          <div className="bg-emerald-950/35 border-b border-emerald-500/40 px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-            <div className="space-y-1 min-w-0">
-              <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
-                <span className="inline-flex items-center gap-1.5 text-emerald-300 font-bold">
-                  <Crosshair className="w-3.5 h-3.5" />
-                  Режим фокуса связей
-                </span>
-                <span aria-hidden="true" className="text-slate-400">
-                  ·
-                </span>
-                <span className="text-slate-300 tabular-nums">
-                  Прямых: {focusedEvent.explicitLinks.length}
-                  {focusDepth > 1 && focusDistanceMap
-                    ? ` · в цепочке (${focusDepth} ш.): ${Math.max(0, focusDistanceMap.size - 1)}`
-                    : ''}
-                  {' · '}параллельных: {focusedEvent.concurrentCount ?? focusedEvent.concurrentEvents.length}
-                </span>
-                {focusKeepWindow && outOfWindowFocusCount > 0 && (
+          {activeStickyRuler && (
+            <div className="px-3 sm:px-5 py-1.5 border-t border-slate-800/80 bg-slate-950/90 flex items-center justify-between gap-2 text-[11px] font-mono">
+              <div className="flex items-center gap-2 min-w-0 truncate">
+                {activeStickyEra && (
                   <>
-                    <span aria-hidden="true" className="text-slate-400">
+                    <button
+                      type="button"
+                      onClick={() => onOpenEraModal(activeStickyEra.id)}
+                      title={`Открыть карточку периода «${activeStickyEra.displayShortTitle}» (${activeStickyEra.period})`}
+                      className="text-amber-400 hover:text-amber-200 underline decoration-amber-400/40 underline-offset-2 font-bold shrink-0 cursor-pointer truncate max-w-[200px]"
+                    >
+                      {activeStickyEra.displayShortTitle}
+                    </button>
+                    <span aria-hidden="true" className="text-slate-400 shrink-0">
                       ·
-                    </span>
-                    <span className="text-amber-300 font-semibold tabular-nums">
-                      за окном: {outOfWindowFocusCount}
                     </span>
                   </>
                 )}
-              </div>
-              <div className="text-sm font-bold text-white truncate">
-                {focusedEvent.period} — {focusedEvent.title}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2 shrink-0">
-              {onChangeFocusDepth && (
-                <div
-                  className="inline-flex items-center rounded-lg bg-slate-950 border border-emerald-500/35 p-0.5 text-[11px] font-mono"
-                  role="group"
-                  aria-label="Глубина цепочки фокуса"
-                >
-                  {([1, 2, 3] as FocusDepth[]).map((depth) => (
-                    <button
-                      key={depth}
-                      type="button"
-                      onClick={() => onChangeFocusDepth(depth)}
-                      className={`px-2 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
-                        focusDepth === depth
-                          ? 'bg-emerald-500 text-slate-950 font-bold'
-                          : 'text-slate-300 hover:text-white'
-                      }`}
-                      title={`Развернуть граф связей на ${depth} ${depth === 1 ? 'шаг' : 'шага'}`}
-                    >
-                      {depth} {depth === 1 ? 'шаг' : 'шага'}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <div className="inline-flex items-center rounded-lg bg-slate-950 border border-emerald-500/35 p-0.5 text-[11px] font-mono">
-                <button
-                  type="button"
-                  onClick={() => onChangeFocusScope('sync_only')}
-                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                    focusScope === 'sync_only'
-                      ? 'bg-emerald-500 text-slate-950 font-bold'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  Только связи ({focusedEvent.explicitLinks.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeFocusScope('sync_and_concurrent')}
-                  className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
-                    focusScope === 'sync_and_concurrent'
-                      ? 'bg-emerald-500 text-slate-950 font-bold'
-                      : 'text-slate-300 hover:text-white'
-                  }`}
-                >
-                  Связи и параллельные ({focusedEvent.concurrentCount ?? focusedEvent.concurrentEvents.length})
-                </button>
-              </div>
-
-              {onToggleFocusKeepWindow && (
-                <button
-                  type="button"
-                  onClick={onToggleFocusKeepWindow}
-                  className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
-                    focusKeepWindow
-                      ? 'bg-amber-500/15 border-amber-500/50 text-amber-200 hover:bg-amber-500/25'
-                      : 'bg-slate-950 border-slate-700 text-slate-300 hover:text-white hover:border-slate-500'
-                  }`}
-                  title={
-                    focusKeepWindow
-                      ? 'Текущее окно лет зафиксировано (масштаб оси сохранён). Нажмите, чтобы раскрыть все годы цепочки.'
-                      : 'Удерживать текущее окно лет и детализацию оси, отсекая дальние ретроспективные отсылки.'
-                  }
-                >
-                  {focusKeepWindow ? (
-                    <>
-                      <Lock className="w-3.5 h-3.5 text-amber-400" />
-                      <span>
-                        Окно: {windowRange ? `${windowRange.from}–${windowRange.to}` : 'удержано'}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <LockOpen className="w-3.5 h-3.5 text-slate-400" />
-                      <span>Удерживать окно</span>
-                    </>
-                  )}
-                </button>
-              )}
-
-              {focusKeepWindow && outOfWindowFocusCount > 0 && onToggleFocusKeepWindow && (
-                <button
-                  type="button"
-                  onClick={onToggleFocusKeepWindow}
-                  className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
-                  title="Снять удержание окна, чтобы увидеть дальние связи вне выбранного интервала"
-                >
-                  Раскрыть все годы
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={onExitFocusMode}
-                className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono font-semibold inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
-                title="Выйти из режима фокуса и вернуться к общему графику (Esc)"
-              >
-                <X className="w-3.5 h-3.5" />
-                <span>Выйти (Esc)</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {yearFrom > minYear && alreadyRunningGroups.length > 0 && (
-          <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 space-y-2 font-sans">
-            <div className="text-xs font-semibold text-amber-200 flex items-center gap-1.5">
-              <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span className="tabular-nums">
-                Сквозные процессы, начавшиеся до <span className="font-mono">{yearFrom}</span> г. и продолжающиеся в окне (
-                <span className="font-mono">{alreadyRunningEvents.length}</span>):
-              </span>
-            </div>
-            <div className="space-y-1.5">
-              {alreadyRunningGroups.map((group) => (
-                <div key={group.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-                  <span className="text-xs font-bold text-amber-300/90 shrink-0">
-                    {group.label}:
-                  </span>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-amber-100">
-                    {group.items.map((e) => (
-                      <button
-                        key={e.id}
-                        type="button"
-                        onClick={() => onOpenCardModal(e.id)}
-                        className="underline decoration-amber-400/50 hover:text-white cursor-pointer text-left"
-                      >
-                        {formatEventTitleWithPeriod(e)}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {contemporaryBioGroups.length > 0 && (
-          <div className="bg-fuchsia-950/20 border-b border-fuchsia-500/25 px-4 py-2.5 space-y-2 font-sans">
-            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-              <div className="flex items-center gap-1.5 font-semibold text-fuchsia-200">
-                <span className="w-2 h-2 rounded-full bg-fuchsia-400 shrink-0" />
-                <span className="tabular-nums">
-                  Деятели эпохи (активны в окне: <span className="font-mono">{totalContemporaryBios}</span>):
+                <span className="inline-flex items-center gap-1 text-white font-bold truncate">
+                  <Crown className="w-3 h-3 text-amber-400 shrink-0" />
+                  <span className="truncate">{activeStickyRuler.shortRuler}</span>
                 </span>
+                <span className="text-amber-300/90 tabular-nums shrink-0">{activeStickyRuler.reignPeriod}</span>
+                <span className="hidden sm:inline text-slate-400 truncate">· {activeStickyRuler.reignTitle}</span>
               </div>
-              <span className="text-xs text-slate-400 hidden sm:inline">
-                показаны по периоду зрелой творческой и научной активности (клик — биография и труды)
-              </span>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="hidden sm:inline text-slate-400 tabular-nums">
+                  {activeStickyRulerEventCount} соб.
+                </span>
+                {!focusedEvent && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectYearRange(activeStickyRuler.startYear, activeStickyRuler.endYear)}
+                    className="px-2 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 transition-colors cursor-pointer"
+                    title="Отфильтровать временное окно по годам этого правителя"
+                  >
+                    Окно
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onOpenPeriodModal(activeStickyRuler.id)}
+                  className="px-2 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/35 text-amber-300 font-semibold transition-colors cursor-pointer"
+                >
+                  Сводка →
+                </button>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              {contemporaryBioGroups.map((group) => (
-                <div key={group.id} className="flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-200 shrink-0 mr-1">
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-                    <span>
-                      {group.label} (<span className="font-mono tabular-nums">{group.items.length}</span>):
-                    </span>
+          )}
+        </div>
+
+        <div
+          ref={streamContainerRef}
+          className="border-x border-b border-slate-800/90 rounded-b-2xl bg-slate-950/40 divide-y divide-slate-800/50 overflow-hidden"
+        >
+          {focusedEvent && (
+            <div className="bg-emerald-950/35 border-b border-emerald-500/40 px-4 py-3 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="space-y-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-mono">
+                  <span className="inline-flex items-center gap-1.5 text-emerald-300 font-bold">
+                    <Crosshair className="w-3.5 h-3.5" />
+                    Режим фокуса связей
                   </span>
-                  {group.items.map((bio) => {
-                    const isHoveredBio = effectiveActiveEventId === bio.id;
-                    return (
-                      <button
-                        key={bio.id}
-                        type="button"
-                        onClick={() => onOpenCardModal(bio.id)}
-                        onMouseEnter={() => activateHoverEvent(bio.id)}
-                        onMouseLeave={() => scheduleClearHoverEvent()}
-                        title={`${bio.title} — годы жизни: ${bio.period}, активный период: ${bio.activeFrom}–${bio.activeTo} гг. Клик для паспорта деятеля`}
-                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-sans transition-colors cursor-pointer whitespace-nowrap ${
-                          isHoveredBio
-                            ? 'bg-fuchsia-500/25 border-fuchsia-400 text-white shadow-sm'
-                            : 'bg-slate-900/85 hover:bg-slate-800 border-slate-700/80 text-slate-200 hover:border-fuchsia-400/50'
-                        }`}
-                      >
-                        <span className="font-semibold text-white">{bio.title}</span>
-                        <span className="font-mono text-[11px] text-amber-300/95 tabular-nums">
-                          {bio.activeFrom}–{bio.activeTo}
-                        </span>
-                        <span className="font-mono text-[11px] text-slate-400 tabular-nums hidden md:inline">
-                          ({bio.period})
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {stream.map((item, idx) => {
-          const prevItem = idx > 0 ? stream[idx - 1] : null;
-          const deltaYears =
-            timeScaleMode === 'proportional' && prevItem
-              ? Math.max(0, item.year - prevItem.year)
-              : 0;
-          const spacerHeight =
-            deltaYears >= 2 ? Math.min(168, Math.max(22, Math.round(deltaYears * 4.5))) : 0;
-          const midSortKey = prevItem
-            ? Math.floor((prevItem.sortKey + item.sortKey) / 2)
-            : item.sortKey;
-          const showSpacerBus =
-            activeLinkGeometry !== null &&
-            activeLinkGeometry.hasSpanOnCanvas &&
-            idx - 0.5 >= activeLinkGeometry.minSpanIdx &&
-            idx - 0.5 <= activeLinkGeometry.maxSpanIdx;
-
-          const spacerEl =
-            spacerHeight > 0 && prevItem ? (
-              <div
-                aria-hidden="true"
-                className="relative flex items-stretch bg-slate-950/35 select-none"
-                style={{ height: `${spacerHeight}px` }}
-              >
-                <div
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/40 bg-slate-950/30 px-2 sm:px-2.5 items-center justify-end font-mono text-[10px] text-slate-500 tabular-nums whitespace-nowrap`}
-                >
-                  {deltaYears >= 3 ? `+${deltaYears} л.` : ''}
-                </div>
-
-                <div className="sm:hidden w-[36px] shrink-0 relative overflow-hidden">
-                  <svg className="w-full h-full absolute inset-0" width={mobileSpineWidth} height="100%">
-                    <line
-                      x1={mobileSpineX}
-                      y1={0}
-                      x2={mobileSpineX}
-                      y2={420}
-                      stroke="#cbd5e1"
-                      strokeWidth={2.6}
-                      strokeOpacity={0.78}
-                    />
-                    {showSpacerBus && (
-                      <line
-                        x1={mobileConnectorBusX}
-                        y1={0}
-                        x2={mobileConnectorBusX}
-                        y2={420}
-                        stroke="#10b981"
-                        strokeWidth={2}
-                        strokeDasharray="4 3"
-                        strokeOpacity={0.9}
-                      />
-                    )}
-                  </svg>
-                </div>
-
-                <div
-                  className="hidden sm:block shrink-0 relative overflow-hidden"
-                  style={{ width: `${svgWidth}px` }}
-                >
-                  <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                    {renderRailsForRow(idx - 0.5, midSortKey)}
-                  </svg>
-                </div>
-
-                <div className="flex-1 min-w-0 flex items-center gap-2 pr-3 sm:pr-6">
-                  <div className="h-px flex-1 border-t border-dashed border-slate-800/80" />
-                  {deltaYears >= 3 && (
-                    <span className="font-mono text-[10px] text-slate-500 tabular-nums whitespace-nowrap">
-                      ↕ {formatDurationYearsRu(deltaYears)} ({prevItem.year}–{item.year})
-                    </span>
-                  )}
-                  <div className="h-px w-8 border-t border-dashed border-slate-800/80" />
-                </div>
-              </div>
-            ) : null;
-
-          const rowEl = (() => {
-          const gutter = gutterMeta[idx];
-
-          if (item.rowType === 'ERA_START') {
-            const resolvedEra = resolveMacroEra(item.era);
-            const carryOverWars = matchingEvents.filter(
-              (ev) =>
-                ev.startYear < item.year &&
-                ev.endYear > item.year &&
-                isMajorCampaignOrConflictNode(ev, branches),
-            );
-
-            return (
-              <div
-                key={`era-${resolvedEra.id}`}
-                className="timeline-row-cv relative flex items-stretch bg-gradient-to-r from-slate-900/95 via-slate-900/70 to-slate-950 border-y border-amber-500/30"
-              >
-                <div
-                  title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/70 bg-slate-950/60 px-2 sm:px-2.5 pt-[27px] pb-2 items-start justify-end font-mono text-[11px] font-bold text-amber-300 tabular-nums whitespace-nowrap select-none`}
-                >
-                  {gutter.label}
-                </div>
-
-                {renderMobileSpineCell(idx, { kind: 'era' })}
-
-                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
-                  <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                    {renderRailsForRow(idx, item.sortKey)}
-                    <line
-                      x1={timeSpineX + 8}
-                      y1={36}
-                      x2={svgWidth}
-                      y2={36}
-                      stroke="#f59e0b"
-                      strokeWidth={1.5}
-                      strokeDasharray="3 3"
-                      strokeOpacity={0.7}
-                    />
-                    <circle cx={timeSpineX} cy={36} r={10} fill="#050811" stroke="#cbd5e1" strokeWidth={3} />
-                    <circle cx={timeSpineX} cy={36} r={4.5} fill="#f59e0b" />
-                  </svg>
-                </div>
-
-                <div className="flex-1 min-w-0 overflow-hidden py-4 pr-3 sm:pr-6">
-                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="px-2.5 py-0.5 rounded bg-amber-500 text-slate-950 font-black tabular-nums">
-                        {resolvedEra.displayShortTitle} · {resolvedEra.period}
-                      </span>
-                      <span className="text-slate-400">Макро-период на оси времени</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => onOpenEraModal(resolvedEra.id)}
-                      className="px-2.5 py-1 rounded-md bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                    >
-                      Карточка периода →
-                    </button>
-                  </div>
-                  <h2 className="font-serif text-lg sm:text-2xl font-bold tracking-tight text-white mt-1.5 [text-wrap:balance]">
-                    {resolvedEra.title}
-                  </h2>
-                  <p className="text-xs sm:text-sm text-slate-300 mt-1">{resolvedEra.thesis}</p>
-                  {carryOverWars.length > 0 && (
-                    <div className="mt-2 text-[11px] font-mono text-sky-300">
-                      Военные кампании, переходящие через рубеж периода:{' '}
-                      {carryOverWars.map((w) => formatEventTitleWithPeriod(w)).join(', ')}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          }
-
-          if (item.rowType === 'TIME_TICK') {
-            return (
-              <div
-                key={`tick-${item.sortKey}-${idx}`}
-                className="relative flex items-stretch bg-slate-950/75"
-              >
-                <div
-                  title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/40 px-2 sm:px-2.5 py-1 flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none ${
-                    gutter.isDuplicate ? 'text-slate-400/75' : 'text-slate-300'
-                  }`}
-                >
-                  <span>{gutter.label}</span>
-                  {gutter.styleLabel && (
-                    <span className="text-[9px] text-sky-400/80 font-normal">{gutter.styleLabel}</span>
-                  )}
-                </div>
-
-                {renderMobileSpineCell(idx, { kind: 'tick' })}
-
-                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
-                  <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                    {renderRailsForRow(idx, item.sortKey)}
-                    <line
-                      x1={timeSpineX + 4}
-                      y1={14}
-                      x2={svgWidth}
-                      y2={14}
-                      stroke="#475569"
-                      strokeWidth={1}
-                      strokeDasharray="2 3"
-                      strokeOpacity={0.55}
-                    />
-                    <circle cx={timeSpineX} cy={14} r={3.5} fill="#050811" stroke="#94a3b8" strokeWidth={2} />
-                  </svg>
-                </div>
-
-                <div className="flex-1 min-w-0 overflow-hidden py-1.5 sm:py-1 pr-3 sm:pr-6 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-sans text-slate-400">
-                  <span className="font-mono font-bold text-slate-200 tabular-nums">{item.label}</span>
-                  {gutter.styleLabel && (
-                    <span className="sm:hidden font-mono text-[10px] text-sky-400/85">{gutter.styleLabel}</span>
-                  )}
                   <span aria-hidden="true" className="text-slate-400">
                     ·
                   </span>
-                  <span className="text-slate-400">хронологический рубеж</span>
-                </div>
-              </div>
-            );
-          }
-
-          if (item.rowType === 'RULER_COMMIT') {
-            const r = item.rulerObj;
-            const rSlot = rulerLayout.slotByRulerId.get(r.id) ?? 0;
-            const rx = rulerLayout.railXs[rSlot] ?? 16;
-            const rColor = rulerLayout.colorByRulerId.get(r.id) ?? item.rulerColor;
-            const ongoingWarsAtAccession = matchingEvents.filter(
-              (ev) =>
-                ev.startYear < r.startYear &&
-                ev.endYear > r.startYear &&
-                isMajorCampaignOrConflictNode(ev, branches),
-            );
-
-            const isJumpedRuler = highlightedJumpId === r.id;
-
-            return (
-              <div
-                key={`ruler-${r.id}`}
-                id={r.id}
-                data-ruler-context={r.id}
-                className={`relative flex items-stretch transition-colors group ${
-                  isJumpedRuler
-                    ? 'bg-amber-500/20 ring-2 ring-inset ring-amber-400'
-                    : 'bg-slate-900/70 hover:bg-slate-900/95'
-                }`}
-              >
-                <div
-                  title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/40 px-2 sm:px-2.5 pt-[24px] pb-2 flex-col items-end justify-start font-mono text-[11px] leading-tight font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
-                    gutter.isDuplicate
-                      ? 'text-amber-300/75 group-hover:text-amber-200'
-                      : 'text-amber-200 group-hover:text-amber-100'
-                  }`}
-                >
-                  <span>{gutter.label}</span>
-                  {gutter.styleLabel && (
-                    <span
-                      className={`text-[9px] font-normal mt-0.5 ${
-                        gutter.styleTone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/75'
-                      }`}
-                    >
-                      {gutter.styleLabel}
-                    </span>
-                  )}
-                </div>
-
-                {renderMobileSpineCell(idx, {
-                  kind: 'ruler_start',
-                  color: rColor,
-                  startedBeforeWindow: item.startedBeforeWindow,
-                })}
-
-                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
-                  <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                    {renderRailsForRow(idx, item.sortKey, { skipRulerId: r.id })}
-
-                    {hasRulersLane && (
-                      <>
-                        {/* Ветка правления: ответвление (branch) от центральной оси времени влево к rx и продолжение вниз */}
-                        {!item.startedBeforeWindow && (
-                          <path
-                            d={`M ${timeSpineX} 16 C ${timeSpineX - 10} 18, ${rx} 20, ${rx} 36`}
-                            fill="none"
-                            stroke={rColor}
-                            strokeWidth={2.6}
-                            strokeOpacity={0.65}
-                          />
-                        )}
-                        <line
-                          x1={rx}
-                          y1={item.startedBeforeWindow ? 0 : 34}
-                          x2={rx}
-                          y2={420}
-                          stroke={rColor}
-                          strokeWidth={3}
-                          strokeOpacity={0.65}
-                        />
-                        <line
-                          x1={timeSpineX + 6}
-                          y1={28}
-                          x2={svgWidth}
-                          y2={28}
-                          stroke={rColor}
-                          strokeWidth={1.4}
-                          strokeDasharray="3 3"
-                          strokeOpacity={0.48}
-                        />
-                        <circle cx={timeSpineX} cy={16} r={4} fill="#050811" stroke="#cbd5e1" strokeWidth={2} />
-                        <circle
-                          cx={rx}
-                          cy={34}
-                          r={6.5}
-                          fill="#050811"
-                          stroke={rColor}
-                          strokeWidth={3}
-                        />
-                        <circle cx={rx} cy={34} r={2.5} fill={rColor} />
-                      </>
-                    )}
-                  </svg>
-                </div>
-
-                <div className="flex-1 min-w-0 overflow-hidden py-3.5 pr-2.5 sm:pr-6">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-                      <span
-                        className="inline-flex items-center gap-1.5 font-mono text-xs font-black tabular-nums shrink-0"
-                        style={{ color: rColor }}
-                      >
-                        <Crown className="w-3.5 h-3.5" />
-                        {item.dateLabel}
-                      </span>
-                      {axisResolution !== 'year' &&
-                        !item.startedBeforeWindow &&
-                        (() => {
-                          const marker = getCalendarStyleAxisMarker(
-                            parsePreciseDate(r.startDate, r.startYear, false, {
-                              calendarStyle: r.calendarStyle,
-                              task: 'MAIN_RULERS',
-                            }),
-                          );
-                          return marker ? (
-                            <span
-                              className={`text-[10px] font-mono shrink-0 ${
-                                marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
-                              }`}
-                            >
-                              {marker.label}
-                            </span>
-                          ) : null;
-                        })()}
-                      {r.center && (
-                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-slate-950/90 border border-slate-700/80 text-xs font-sans font-semibold text-slate-300 shrink-0">
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: rColor }} />
-                          <span>{r.center}</span>
-                        </span>
-                      )}
-                      <span aria-hidden="true" className="text-slate-400 hidden sm:inline">
-                        ·
-                      </span>
-                      <span className="font-serif text-base sm:text-lg font-bold text-white tracking-tight">
-                        {r.ruler}
-                      </span>
+                  <span className="text-slate-300 tabular-nums">
+                    Прямых: {focusedEvent.explicitLinks.length}
+                    {focusDepth > 1 && focusDistanceMap
+                      ? ` · в цепочке (${focusDepth} ш.): ${Math.max(0, focusDistanceMap.size - 1)}`
+                      : ''}
+                    {' · '}параллельных: {focusedEvent.concurrentCount ?? focusedEvent.concurrentEvents.length}
+                  </span>
+                  {focusKeepWindow && outOfWindowFocusCount > 0 && (
+                    <>
                       <span aria-hidden="true" className="text-slate-400">
                         ·
                       </span>
-                      <span className="text-xs font-sans text-slate-400">
-                        правление{' '}
-                        <span className="font-mono tabular-nums text-slate-300">{r.reignPeriod}</span>
+                      <span className="text-amber-300 font-semibold tabular-nums">
+                        за окном: {outOfWindowFocusCount}
                       </span>
-                    </div>
+                    </>
+                  )}
+                </div>
+                <div className="text-sm font-bold text-white truncate">
+                  {focusedEvent.period} — {focusedEvent.title}
+                </div>
+              </div>
 
-                    <div className="flex flex-wrap items-center gap-1.5">
-                      {!focusedEvent && (
-                        <button
-                          type="button"
-                          onClick={() => onSelectYearRange(r.startYear, r.endYear)}
-                          className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 text-xs font-sans font-semibold transition-colors cursor-pointer whitespace-nowrap"
-                          title="Отфильтровать таймлайн строго по годам этого правления"
-                        >
-                          Фокус: <span className="font-mono tabular-nums">{r.startYear}–{r.endYear}</span>
-                        </button>
-                      )}
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                {onChangeFocusDepth && (
+                  <div
+                    className="inline-flex items-center rounded-lg bg-slate-950 border border-emerald-500/35 p-0.5 text-[11px] font-mono"
+                    role="group"
+                    aria-label="Глубина цепочки фокуса"
+                  >
+                    {([1, 2, 3] as FocusDepth[]).map((depth) => (
                       <button
+                        key={depth}
                         type="button"
-                        onClick={() => onOpenPeriodModal(r.id)}
-                        className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-sans font-semibold transition-colors cursor-pointer whitespace-nowrap"
+                        onClick={() => onChangeFocusDepth(depth)}
+                        className={`px-2 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
+                          focusDepth === depth
+                            ? 'bg-emerald-500 text-slate-950 font-bold'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                        title={`Развернуть граф связей на ${depth} ${depth === 1 ? 'шаг' : 'шага'}`}
                       >
-                        Все события при правителе →
+                        {depth} {depth === 1 ? 'шаг' : 'шага'}
                       </button>
-                    </div>
+                    ))}
                   </div>
+                )}
 
-                  <p className="text-xs text-slate-300 mt-1">{r.reignThesis}</p>
+                <div className="inline-flex items-center rounded-lg bg-slate-950 border border-emerald-500/35 p-0.5 text-[11px] font-mono">
+                  <button
+                    type="button"
+                    onClick={() => onChangeFocusScope('sync_only')}
+                    className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                      focusScope === 'sync_only'
+                        ? 'bg-emerald-500 text-slate-950 font-bold'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Только связи ({focusedEvent.explicitLinks.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onChangeFocusScope('sync_and_concurrent')}
+                    className={`px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                      focusScope === 'sync_and_concurrent'
+                        ? 'bg-emerald-500 text-slate-950 font-bold'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    Связи и параллельные ({focusedEvent.concurrentCount ?? focusedEvent.concurrentEvents.length})
+                  </button>
+                </div>
 
-                  {ongoingWarsAtAccession.length > 0 && (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs font-sans text-amber-200/90">
-                      <span>Смена правителя в ходе военных кампаний:</span>
-                      {ongoingWarsAtAccession.map((w) => (
+                {onToggleFocusKeepWindow && (
+                  <button
+                    type="button"
+                    onClick={onToggleFocusKeepWindow}
+                    className={`px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
+                      focusKeepWindow
+                        ? 'bg-amber-500/15 border-amber-500/50 text-amber-200 hover:bg-amber-500/25'
+                        : 'bg-slate-950 border-slate-700 text-slate-300 hover:text-white hover:border-slate-500'
+                    }`}
+                    title={
+                      focusKeepWindow
+                        ? 'Текущее окно лет зафиксировано (масштаб оси сохранён). Нажмите, чтобы раскрыть все годы цепочки.'
+                        : 'Удерживать текущее окно лет и детализацию оси, отсекая дальние ретроспективные отсылки.'
+                    }
+                  >
+                    {focusKeepWindow ? (
+                      <>
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                        <span>
+                          Окно: {windowRange ? `${windowRange.from}–${windowRange.to}` : 'удержано'}
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <LockOpen className="w-3.5 h-3.5 text-slate-400" />
+                        <span>Удерживать окно</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {focusKeepWindow && outOfWindowFocusCount > 0 && onToggleFocusKeepWindow && (
+                  <button
+                    type="button"
+                    onClick={onToggleFocusKeepWindow}
+                    className="px-2.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-[11px] font-mono font-bold transition-colors cursor-pointer whitespace-nowrap"
+                    title="Снять удержание окна, чтобы увидеть дальние связи вне выбранного интервала"
+                  >
+                    Раскрыть все годы
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={onExitFocusMode}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-[11px] font-mono font-semibold inline-flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                  title="Выйти из режима фокуса и вернуться к общему графику (Esc)"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Выйти (Esc)</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {yearFrom > minYear && alreadyRunningGroups.length > 0 && (
+            <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 space-y-2 font-sans">
+              <div className="text-xs font-semibold text-amber-200 flex items-center gap-1.5">
+                <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span className="tabular-nums">
+                  Сквозные процессы, начавшиеся до <span className="font-mono">{yearFrom}</span> г. и продолжающиеся в окне (
+                  <span className="font-mono">{alreadyRunningEvents.length}</span>):
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {alreadyRunningGroups.map((group) => (
+                  <div key={group.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+                    <span className="text-xs font-bold text-amber-300/90 shrink-0">
+                      {group.label}:
+                    </span>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-amber-100">
+                      {group.items.map((e) => (
                         <button
-                          key={w.id}
+                          key={e.id}
                           type="button"
-                          onClick={() => onOpenCardModal(w.id)}
-                          className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-white hover:border-amber-400 cursor-pointer text-xs"
+                          onClick={() => onOpenCardModal(e.id)}
+                          className="underline decoration-amber-400/50 hover:text-white cursor-pointer text-left"
                         >
-                          {formatEventTitleWithPeriod(w)}
+                          {formatEventTitleWithPeriod(e)}
                         </button>
                       ))}
                     </div>
-                  )}
-                </div>
-              </div>
-            );
-          }
-
-          if (item.rowType === 'RULER_END') {
-            const r = item.rulerObj;
-            const rSlot = rulerLayout.slotByRulerId.get(r.id) ?? 0;
-            const rx = rulerLayout.railXs[rSlot] ?? 16;
-            const rColor = rulerLayout.colorByRulerId.get(r.id) ?? item.rulerColor;
-            const mergeY = 22;
-
-            return (
-              <div
-                key={`ruler-end-${r.id}-${idx}`}
-                role="button"
-                tabIndex={0}
-                aria-label={`Завершение правления: ${r.ruler} (${r.reignPeriod})`}
-                onClick={() => onOpenPeriodModal(r.id)}
-                onKeyDown={(e) => {
-                  if (e.target !== e.currentTarget) return;
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onOpenPeriodModal(r.id);
-                  }
-                }}
-                className="timeline-row-cv relative flex items-stretch bg-slate-950/55 hover:bg-slate-900/45 focus-visible:outline-2 focus-visible:outline-amber-400 transition-colors cursor-pointer group"
-              >
-                <div
-                  title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/30 px-2 sm:px-2.5 py-2 flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
-                    gutter.isDuplicate
-                      ? 'text-slate-400/75 group-hover:text-slate-200'
-                      : 'text-slate-300 group-hover:text-white'
-                  }`}
-                >
-                  <span className="inline-flex items-center gap-1">
-                    <span aria-hidden="true" className="text-[9px] text-slate-400 group-hover:text-slate-200">
-                      ↵
-                    </span>
-                    <span>{gutter.label}</span>
-                  </span>
-                  {gutter.styleLabel && (
-                    <span
-                      className={`text-[9px] font-normal ${
-                        gutter.styleTone === 'gregorian' ? 'text-sky-300/75' : 'text-amber-300/75'
-                      }`}
-                    >
-                      {gutter.styleLabel}
-                    </span>
-                  )}
-                </div>
-
-                {renderMobileSpineCell(idx, { kind: 'ruler_end', color: rColor })}
-
-                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
-                  <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                    {renderRailsForRow(idx, item.sortKey, { skipRulerId: r.id })}
-
-                    {hasRulersLane && (
-                      <>
-                        {/* Линия правления приходит сверху до mergeY и сливается обратно в timeSpineX */}
-                        <line
-                          x1={rx}
-                          y1={0}
-                          x2={rx}
-                          y2={mergeY - 6}
-                          stroke={rColor}
-                          strokeWidth={3}
-                          strokeOpacity={0.65}
-                        />
-                        <path
-                          d={`M ${rx} ${mergeY - 6} C ${rx} ${mergeY + 6}, ${timeSpineX - 10} ${mergeY + 2}, ${timeSpineX} ${mergeY + 6}`}
-                          fill="none"
-                          stroke={rColor}
-                          strokeWidth={2.4}
-                          strokeOpacity={0.65}
-                        />
-                        <circle cx={timeSpineX} cy={mergeY + 6} r={4} fill="#050811" stroke="#cbd5e1" strokeWidth={2} />
-                        <rect
-                          x={rx - 4}
-                          y={mergeY - 10}
-                          width={8}
-                          height={8}
-                          rx={2}
-                          fill="#050811"
-                          stroke={rColor}
-                          strokeWidth={2.2}
-                        />
-                      </>
-                    )}
-                  </svg>
-                </div>
-
-                <div className="flex-1 min-w-0 overflow-hidden py-2 pr-2.5 sm:pr-6">
-                  <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3 sm:px-3.5 min-h-[36px] py-1.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 gap-y-1 text-xs font-sans">
-                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-0.5 min-w-0 flex-1 overflow-hidden">
-                      <GitMerge className="w-3.5 h-3.5 shrink-0" style={{ color: rColor }} />
-                      <span className="font-mono font-bold text-slate-200 tabular-nums shrink-0">
-                        {item.dateLabel}
-                      </span>
-                      {gutter.styleLabel && (
-                        <span
-                          className={`sm:hidden font-mono text-[10px] shrink-0 ${
-                            gutter.styleTone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/80'
-                          }`}
-                        >
-                          {gutter.styleLabel}
-                        </span>
-                      )}
-                      {r.center && (
-                        <span className="hidden md:inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-950/80 border border-slate-800 text-xs text-slate-300 shrink-0">
-                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: rColor }} />
-                          <span>{r.center}</span>
-                        </span>
-                      )}
-                      <span className="text-slate-400 shrink-0 hidden sm:inline">Завершение правления:</span>
-                      <span className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 sm:truncate min-w-0">
-                        {r.shortRuler}{' '}
-                        <span className="font-mono text-slate-300 tabular-nums">({r.reignPeriod})</span>
-                      </span>
-                    </div>
-                    <span className="text-xs font-sans text-slate-400 shrink-0 tabular-nums ml-auto sm:ml-0">
-                      ~<span className="font-mono">{Math.max(1, r.endYear - r.startYear)}</span> л. у власти
-                    </span>
                   </div>
-                </div>
-              </div>
-            );
-          }
-
-          if (item.rowType === 'EVENT_COMMIT') {
-            const ev = item.eventObj;
-            const branchObj = resolveEventBranch(ev, branches, collapsedParents);
-            const origBranchObj = branches.find((b) => b.id === ev.task) || branchObj;
-            const isAtomic = item.isAtomicInView;
-            const laneInfo = subLaneLayout.branchLayouts.get(branchObj.id);
-            const baseX = laneInfo?.baseX ?? timeSpineX + 28;
-            const slot = isAtomic ? 0 : (subLaneLayout.slotByEventId.get(ev.id) ?? 0);
-            const commitX = getEventX(ev, isAtomic);
-            const hasBasePassingAtRow =
-              slot > 0 &&
-              eventStreamBounds.some(
-                (entry) =>
-                  entry.ev.id !== ev.id &&
-                  resolveEventBranch(entry.ev, branches, collapsedParents).id === branchObj.id &&
-                  (subLaneLayout.slotByEventId.get(entry.ev.id) ?? 0) === 0 &&
-                  entry.commitIdx < idx &&
-                  idx < entry.endIdx,
-              );
-            const forkOriginX = hasBasePassingAtRow ? baseX : timeSpineX;
-            const isCompact = cardDensity === 'compact';
-            const commitY = isCompact ? 22 : 34;
-            const isBioNode = isBiographyNode(ev, branches);
-            const effStartYear = getEventEffectiveStartYear(ev, branches);
-            const effEndYear = getEventEffectiveEndYear(ev, branches);
-            const hasMultipleRulers = ev.overlappingRulers.length > 1;
-            const bioPeriodBadge = item.startedBeforeWindow
-              ? `акт. с ${effStartYear} (${ev.period})`
-              : `акт. ${effStartYear}–${effEndYear} (${ev.period})`;
-            const dateSummary = isBioNode
-              ? bioPeriodBadge
-              : axisResolution === 'year'
-                ? ev.period
-                : `${item.dateLabel} (${ev.period})`;
-
-            const isCrossLinked = effectiveActiveEventId !== null && linkedEventIds.has(ev.id);
-            const isOverlapping =
-              hoveredEvent !== null &&
-              hoveredEvent.id !== ev.id &&
-              effStartYear <= getEventEffectiveEndYear(hoveredEvent, branches) &&
-              effEndYear >= getEventEffectiveStartYear(hoveredEvent, branches);
-            const isSelfHovered = effectiveActiveEventId === ev.id;
-            const isFocusedTarget = focusedEvent?.id === ev.id;
-            const focusDistance = focusedEvent ? focusDistanceMap?.get(ev.id) : undefined;
-            const isJumpHighlighted =
-              highlightedJumpId === ev.id || localJumpDomId === `row-${ev.id}`;
-            const hasEndRowInStream = eventsWithEndRowInStream.has(ev.id);
-            const nodeStatus = computeNodeVisualStatusMeta(
-              ev,
-              isBioNode,
-              isAtomic,
-              effStartYear,
-              effEndYear,
-            );
-
-            const hiddenBranchSummaries = getEventHiddenBranchSummaries(ev, activeBranches, branches);
-            const hiddenLinksTotal = hiddenBranchSummaries.reduce((sum, b) => sum + b.linkCount, 0);
-            const auditInfo = auditUnlinkedMode ? auditCandidateMap?.get(ev.id) : undefined;
-            const eventMacroRegions = classifyEventMacroRegions(ev);
-            const primaryMacroRegionId =
-              selectedMacroRegion !== 'all' && eventMacroRegions.includes(selectedMacroRegion)
-                ? selectedMacroRegion
-                : eventMacroRegions[0];
-            const primaryMacroRegionOpt = getMacroRegionOption(primaryMacroRegionId);
-            const isMacroRegionActive = selectedMacroRegion === primaryMacroRegionId;
-
-            let cardHighlightClass =
-              'border-slate-800/90 group-hover:border-slate-600 bg-slate-900/75 group-hover:bg-slate-900';
-            if (isJumpHighlighted) {
-              cardHighlightClass = 'jump-target-highlighted';
-            } else if (isFocusedTarget) {
-              cardHighlightClass = 'border-emerald-400/80 bg-emerald-950/25 shadow-lg';
-            } else if (isCrossLinked) {
-              cardHighlightClass = 'crosslink-highlighted';
-            } else if (isOverlapping || isSelfHovered) {
-              cardHighlightClass = 'overlap-highlighted';
-            }
-
-            const openCardTooltip = (el: HTMLElement) => {
-              cancelScheduledTooltip();
-              const hasExtraDetails = Boolean(
-                ev.details && ev.details !== ev.subtitle && !ev.outcome && ev.prerequisitesList.length === 0,
-              );
-              const hasSupplementalContent =
-                ev.prerequisitesList.length > 0 || Boolean(ev.outcome) || hasExtraDetails;
-
-              if (!isCompact && !hasSupplementalContent) {
-                setHoveredCardTooltip(null);
-                return;
-              }
-
-              const rect = el.getBoundingClientRect();
-              const delayMs = isCompact ? 120 : 350;
-              const mode: 'full' | 'supplemental' = isCompact ? 'full' : 'supplemental';
-
-              tooltipOpenTimerRef.current = window.setTimeout(() => {
-                tooltipOpenTimerRef.current = null;
-                setHoveredCardTooltip({
-                  ev,
-                  branchLabel: origBranchObj.label,
-                  branchColor: origBranchObj.color,
-                  dateLabel: dateSummary,
-                  mode,
-                  rect: {
-                    top: rect.top,
-                    bottom: rect.bottom,
-                    left: rect.left,
-                    width: rect.width,
-                  },
-                });
-              }, delayMs);
-            };
-
-            const isConnectedToBus =
-              activeLinkGeometry !== null &&
-              activeLinkGeometry.hasSpanOnCanvas &&
-              (isSelfHovered || isCrossLinked);
-
-            return (
-              <div
-                key={`commit-${ev.id}-${idx}`}
-                id={`row-${ev.id}`}
-                role="button"
-                tabIndex={0}
-                aria-label={`${ev.title} (${ev.period})`}
-                data-ruler-context={ev.overlappingRulers[0]?.id ?? ''}
-                onClick={() => {
-                  closeCardTooltip();
-                  onOpenCardModal(ev.id);
-                }}
-                onKeyDown={(e) => {
-                  if (e.target !== e.currentTarget) return;
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    closeCardTooltip();
-                    onOpenCardModal(ev.id);
-                  }
-                }}
-                onMouseEnter={() => activateHoverEvent(ev.id)}
-                onMouseLeave={() => {
-                  scheduleClearHoverEvent();
-                  closeCardTooltip();
-                }}
-                className="timeline-row-cv commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
-              >
-                <div
-                  title={gutter.title}
-                  className={`${gutterWidthClass} shrink-0 border-r border-slate-800/60 bg-slate-950/35 px-2 sm:px-2.5 ${
-                    isCompact ? 'py-1 flex-col items-end justify-center' : 'pt-[25px] pb-2 flex-col items-end justify-start'
-                  } font-mono text-[11px] leading-tight font-semibold tabular-nums whitespace-nowrap select-none transition-colors ${
-                    isSelfHovered || isFocusedTarget
-                      ? 'text-white'
-                      : gutter.isDuplicate
-                        ? 'text-slate-400/80 group-hover:text-slate-200'
-                        : 'text-slate-200 group-hover:text-white'
-                  }`}
-                >
-                  <span>{gutter.label}</span>
-                  {gutter.styleLabel && (
-                    <span
-                      className={`text-[9px] font-normal ${
-                        gutter.styleTone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/80'
-                      }`}
-                    >
-                      {gutter.styleLabel}
-                    </span>
-                  )}
-                </div>
-
-                {renderMobileSpineCell(idx, {
-                  kind: 'event_commit',
-                  color: branchObj.color,
-                  isAtomic,
-                  isBioNode,
-                  isCompact,
-                  isSelfHovered,
-                  isConnectedToBus,
-                  startedBeforeWindow: item.startedBeforeWindow,
-                })}
-
-                <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
-                  <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                    {renderRailsForRow(idx, item.sortKey)}
-
-                    {/* Горизонтальный отвод в вертикальную шину связей при наведении */}
-                    {isConnectedToBus && (
-                      <g>
-                        <path
-                          d={`M ${connectorBusX} ${commitY} C ${(connectorBusX + commitX) / 2} ${commitY}, ${(connectorBusX + commitX) / 2} ${commitY}, ${commitX} ${commitY}`}
-                          fill="none"
-                          stroke="#10b981"
-                          strokeWidth={2}
-                          strokeOpacity={0.95}
-                        />
-                        <circle
-                          cx={connectorBusX}
-                          cy={commitY}
-                          r={3.5}
-                          fill={isSelfHovered ? '#10b981' : '#050811'}
-                          stroke="#10b981"
-                          strokeWidth={2}
-                        />
-                        {isSelfHovered && activeLinkGeometry.upItems.length > 0 && (
-                          <polygon
-                            points={`${connectorBusX},${Math.max(4, commitY - 14)} ${connectorBusX - 3.5},${Math.max(9, commitY - 9)} ${connectorBusX + 3.5},${Math.max(9, commitY - 9)}`}
-                            fill="#34d399"
-                          />
-                        )}
-                        {isSelfHovered && activeLinkGeometry.downItems.length > 0 && (
-                          <polygon
-                            points={`${connectorBusX},${commitY + 14} ${connectorBusX - 3.5},${commitY + 9} ${connectorBusX + 3.5},${commitY + 9}`}
-                            fill="#34d399"
-                          />
-                        )}
-                      </g>
-                    )}
-
-                    {/* Длительный процесс или нить творческой активности: собственная нить от commitY (или сверху, если начался до окна) */}
-                    {!isAtomic && (
-                      <>
-                        {!item.startedBeforeWindow ? (
-                          <>
-                            <path
-                              d={`M ${forkOriginX} 10 C ${forkOriginX + 10} 10, ${commitX} 16, ${commitX} ${commitY}`}
-                              fill="none"
-                              stroke={branchObj.color}
-                              strokeWidth={isSelfHovered ? 3 : isBioNode ? 1.8 : 2}
-                              strokeDasharray={isBioNode && !isSelfHovered ? '4 2' : undefined}
-                              strokeOpacity={isSelfHovered ? 1 : isBioNode ? 0.5 : 0.65}
-                            />
-                            <circle
-                              cx={forkOriginX}
-                              cy={10}
-                              r={3.2}
-                              fill="#050811"
-                              stroke={hasBasePassingAtRow ? branchObj.color : '#cbd5e1'}
-                              strokeWidth={2}
-                            />
-                          </>
-                        ) : (
-                          <line
-                            x1={commitX}
-                            y1={0}
-                            x2={commitX}
-                            y2={commitY}
-                            stroke={branchObj.color}
-                            strokeWidth={isSelfHovered ? 3.6 : isBioNode ? 2.1 : 2.6}
-                            strokeDasharray={isBioNode && !isSelfHovered ? '6 3' : undefined}
-                            strokeOpacity={isSelfHovered ? 1 : isBioNode ? 0.5 : 0.65}
-                          />
-                        )}
-                        <line
-                          x1={commitX}
-                          y1={commitY}
-                          x2={commitX}
-                          y2={420}
-                          stroke={branchObj.color}
-                          strokeWidth={isSelfHovered ? 3.6 : isBioNode ? 2.1 : 2.6}
-                          strokeDasharray={isBioNode && !isSelfHovered ? '6 3' : undefined}
-                          strokeOpacity={isSelfHovered ? 1 : isBioNode ? 0.5 : 0.65}
-                        />
-                      </>
-                    )}
-
-                    {/* Для атомарных событий: точечный вынос прямо от оси времени к коммиту без fork-merge рельсы */}
-                    {isAtomic && (
-                      <>
-                        <line
-                          x1={timeSpineX + 4}
-                          y1={commitY}
-                          x2={commitX - 6}
-                          y2={commitY}
-                          stroke={branchObj.color}
-                          strokeWidth={1.6}
-                          strokeDasharray="2 2"
-                          strokeOpacity={isSelfHovered ? 1 : 0.55}
-                        />
-                        <circle cx={timeSpineX} cy={commitY} r={3.2} fill="#cbd5e1" />
-                      </>
-                    )}
-
-                    <line
-                      x1={commitX + 7}
-                      y1={commitY}
-                      x2={svgWidth}
-                      y2={commitY}
-                      stroke={branchObj.color}
-                      strokeWidth={1.5}
-                      strokeDasharray="3 3"
-                      strokeOpacity={isSelfHovered ? 1 : 0.52}
-                    />
-
-                    {isAtomic || isBioNode ? (
-                      <g className="commit-node-ring">
-                        <polygon
-                          points={`${commitX},${commitY - 7} ${commitX + 7},${commitY} ${commitX},${commitY + 7} ${commitX - 7},${commitY}`}
-                          fill="#050811"
-                          stroke={branchObj.color}
-                          strokeWidth={2.5}
-                        />
-                        <circle cx={commitX} cy={commitY} r={2} fill={branchObj.color} />
-                      </g>
-                    ) : (
-                      <>
-                        <circle
-                          className="commit-node-ring"
-                          cx={commitX}
-                          cy={commitY}
-                          r={isCompact ? 7.5 : 9.5}
-                          fill={branchObj.color}
-                          fillOpacity={0.22}
-                        />
-                        <circle
-                          cx={commitX}
-                          cy={commitY}
-                          r={isCompact ? 4.5 : 5.5}
-                          fill="#050811"
-                          stroke={branchObj.color}
-                          strokeWidth={isCompact ? 2.5 : 3}
-                        />
-                        <circle cx={commitX} cy={commitY} r={isCompact ? 1.8 : 2.2} fill={branchObj.color} />
-                      </>
-                    )}
-                  </svg>
-                </div>
-
-                {isCompact ? (
-                  <div className="flex-1 min-w-0 overflow-hidden py-1 pr-2.5 sm:pr-6">
-                    <div
-                      onMouseEnter={(e) => openCardTooltip(e.currentTarget)}
-                      onMouseLeave={closeCardTooltip}
-                      style={
-                        nodeStatus.kind === 'process'
-                          ? { borderLeftWidth: '3px', borderLeftColor: branchObj.color }
-                          : nodeStatus.kind === 'biography'
-                            ? {
-                                borderLeftWidth: '3px',
-                                borderLeftStyle: 'dashed',
-                                borderLeftColor: branchObj.color,
-                              }
-                            : undefined
-                      }
-                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-2.5 sm:px-3 min-h-[38px] py-1.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1.5 sm:gap-2.5 transition-all ${cardHighlightClass}`}
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0 flex-1 overflow-hidden">
-                        <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 shrink-0">
-                          <span className="font-mono text-xs font-extrabold text-slate-200 group-hover:text-white tabular-nums shrink-0">
-                            {isBioNode
-                              ? bioPeriodBadge
-                              : axisResolution === 'year'
-                                ? ev.period
-                                : item.dateLabel}
-                          </span>
-                          {axisResolution !== 'year' &&
-                            !isBioNode &&
-                            !item.startedBeforeWindow &&
-                            (() => {
-                              const marker = getCalendarStyleAxisMarker(ev.startPrecision);
-                              return marker ? (
-                                <span
-                                  className={`font-mono text-[10px] shrink-0 ${
-                                    marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
-                                  }`}
-                                  title={gutter.title}
-                                >
-                                  {marker.label}
-                                </span>
-                              ) : null;
-                            })()}
-                          <span
-                            className="inline-flex items-center gap-1 font-sans text-xs text-slate-400 shrink-0 tabular-nums"
-                            title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
-                          >
-                            <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
-                            <span className="font-mono text-[11px]">{nodeStatus.compactDurationLabel}</span>
-                            {nodeStatus.kind !== 'milestone' && (
-                              <span className="hidden sm:inline-block w-6 h-1 rounded-full bg-slate-800 overflow-hidden relative align-middle">
-                                <span
-                                  className="block h-full rounded-full opacity-80"
-                                  style={{
-                                    marginLeft: `${nodeStatus.trackStartPct}%`,
-                                    width: `${nodeStatus.trackWidthPct}%`,
-                                    backgroundColor: branchObj.color,
-                                  }}
-                                />
-                              </span>
-                            )}
-                          </span>
-                          <span className="sm:hidden inline-flex items-center gap-1 text-xs font-sans text-slate-300 min-w-0">
-                            <span aria-hidden="true" className="text-slate-400">
-                              ·
-                            </span>
-                            <span
-                              className="w-1.5 h-1.5 rounded-full shrink-0"
-                              style={{ backgroundColor: origBranchObj.color }}
-                            />
-                            <span className="truncate max-w-[140px]">
-                              {origBranchObj.short || origBranchObj.label}
-                            </span>
-                          </span>
-                        </div>
-                        <span aria-hidden="true" className="hidden sm:inline text-slate-400 shrink-0">
-                          ·
-                        </span>
-                        <span className="text-[13px] sm:text-sm font-bold text-white group-hover:text-amber-200 leading-snug line-clamp-2 sm:truncate min-w-0">
-                          {ev.title}
-                        </span>
-                        <span className="hidden md:inline-flex items-center gap-1.5 text-xs font-sans text-slate-300 shrink-0 max-w-[175px]">
-                          <span aria-hidden="true" className="text-slate-400">
-                            ·
-                          </span>
-                          <span
-                            className="w-1.5 h-1.5 rounded-full shrink-0"
-                            style={{ backgroundColor: origBranchObj.color }}
-                          />
-                          <span className="truncate">{origBranchObj.label}</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onSelectMacroRegion?.(
-                              isMacroRegionActive ? 'all' : primaryMacroRegionId,
-                            );
-                          }}
-                          title={`${primaryMacroRegionOpt.label}${ev.region ? ` (${ev.region})` : ''} — нажмите для фильтрации по макрорегиону`}
-                          className={`hidden sm:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[11px] font-mono shrink-0 transition-colors cursor-pointer ${
-                            isMacroRegionActive
-                              ? 'bg-amber-500/20 border-amber-400/70 text-amber-200 font-semibold'
-                              : 'bg-slate-950/75 border-slate-800 text-slate-300 hover:border-amber-400/50 hover:text-amber-200'
-                          }`}
-                        >
-                          <MapPin className="w-2.5 h-2.5 text-amber-400 shrink-0" />
-                          <span>{primaryMacroRegionOpt.shortLabel}</span>
-                        </button>
-                        {hasMultipleRulers && !isBioNode && (
-                          <span className="hidden lg:inline text-xs font-sans text-slate-300 shrink-0 tabular-nums">
-                            · <span className="font-mono">{ev.overlappingRulers.length}</span> правл.
-                          </span>
-                        )}
-                        {ev.explicitLinks.length > 0 && (
-                          <span className="hidden sm:inline-flex items-center gap-1 text-xs font-mono text-emerald-300 shrink-0 tabular-nums">
-                            · <Link2 className="w-3 h-3" /> {ev.explicitLinks.length}
-                          </span>
-                        )}
-                        {focusedEvent && focusDepth > 1 && focusDistance !== undefined && focusDistance >= 1 && (
-                          <span className="hidden sm:inline text-xs font-sans text-emerald-300 shrink-0 tabular-nums">
-                            · <span className="font-mono">{focusDistance}</span> шаг
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between sm:justify-end gap-2 shrink-0 text-xs font-sans pt-0.5 sm:pt-0">
-                        <div className="sm:hidden flex items-center gap-2 text-xs font-sans text-slate-400 min-w-0">
-                          {ev.explicitLinks.length > 0 && (
-                            <span className="inline-flex items-center gap-1 font-mono text-emerald-300 tabular-nums">
-                              <Link2 className="w-3 h-3" /> {ev.explicitLinks.length}
-                            </span>
-                          )}
-                          {ev.ruler && (
-                            <span className="truncate max-w-[130px] text-slate-300">{ev.ruler}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 ml-auto sm:ml-0">
-                        {hasEndRowInStream && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              triggerScrollToDomRow(`row-end-${ev.id}`, ev.id);
-                            }}
-                            className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 transition-colors cursor-pointer font-mono text-xs tabular-nums"
-                            title={`Быстрый переход к строке завершения (${effEndYear} г.)`}
-                          >
-                            <ArrowDown className="w-3 h-3 text-amber-400" />
-                            <span>{effEndYear}</span>
-                          </button>
-                        )}
-                        {hiddenLinksTotal > 0 && onRevealBranches && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onRevealBranches(hiddenBranchSummaries.map((b) => b.branchId));
-                            }}
-                            className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 font-sans text-xs transition-colors cursor-pointer whitespace-nowrap tabular-nums"
-                            title={`Скрытых связей: ${hiddenLinksTotal} (${hiddenBranchSummaries.map((b) => b.label).join(', ')}). Нажмите, чтобы раскрыть ветки.`}
-                          >
-                            <Eye className="w-3 h-3 text-amber-400" />
-                            <span>
-                              <span className="font-mono">+{hiddenLinksTotal}</span>:{' '}
-                              {hiddenBranchSummaries.slice(0, 2).map((b) => b.label).join(' · ')}
-                            </span>
-                          </button>
-                        )}
-                        {auditInfo && (
-                          <span className="hidden sm:inline-flex items-center gap-1 text-amber-300 font-mono text-xs font-semibold tabular-nums">
-                            <GitCompare className="w-3 h-3" /> {auditInfo.candidates.length}
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onToggleFocusEvent(ev.id);
-                          }}
-                          className={`px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-lg border font-sans text-xs transition-colors cursor-pointer whitespace-nowrap ${
-                            isFocusedTarget
-                              ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
-                              : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
-                          }`}
-                          title="Изолировать связи этого события"
-                        >
-                          {isFocusedTarget ? 'В фокусе' : 'Фокус'}
-                        </button>
-                        <span className="text-amber-400 font-sans text-xs font-semibold whitespace-nowrap">
-                          Паспорт →
-                        </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex-1 min-w-0 overflow-hidden py-2 pr-2.5 sm:pr-6">
-                    <div
-                      onMouseEnter={(e) => openCardTooltip(e.currentTarget)}
-                      onMouseLeave={closeCardTooltip}
-                      style={
-                        nodeStatus.kind === 'process'
-                          ? { borderLeftWidth: '3px', borderLeftColor: branchObj.color }
-                          : nodeStatus.kind === 'biography'
-                            ? {
-                                borderLeftWidth: '3px',
-                                borderLeftStyle: 'dashed',
-                                borderLeftColor: branchObj.color,
-                              }
-                            : undefined
-                      }
-                      className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-xl border px-3 sm:px-3.5 py-2.5 transition-all flex flex-col justify-between gap-2 ${cardHighlightClass}`}
-                    >
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2.5 min-w-0 min-h-[20px]">
-                        <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2 min-w-0 flex-1 overflow-hidden">
-                          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 shrink-0">
-                            <span className="font-mono text-xs font-extrabold text-slate-200 group-hover:text-white tabular-nums shrink-0">
-                              {isBioNode
-                                ? bioPeriodBadge
-                                : axisResolution === 'year'
-                                  ? ev.period
-                                  : item.dateLabel}
-                            </span>
-                            {axisResolution !== 'year' &&
-                              !isBioNode &&
-                              !item.startedBeforeWindow &&
-                              (() => {
-                                const marker = getCalendarStyleAxisMarker(ev.startPrecision);
-                                return marker ? (
-                                  <span
-                                    className={`font-mono text-[10px] shrink-0 whitespace-nowrap ${
-                                      marker.tone === 'gregorian' ? 'text-sky-300/85' : 'text-amber-300/85'
-                                    }`}
-                                    title={gutter.title}
-                                  >
-                                    {marker.label}
-                                  </span>
-                                ) : null;
-                              })()}
-                            <span className="sm:hidden inline-flex items-center gap-1.5 text-xs font-sans text-slate-300 min-w-0">
-                              <span aria-hidden="true" className="text-slate-400">
-                                ·
-                              </span>
-                              <span
-                                className="w-1.5 h-1.5 rounded-full shrink-0"
-                                style={{ backgroundColor: origBranchObj.color }}
-                              />
-                              <span className="truncate max-w-[155px]">
-                                {origBranchObj.short || origBranchObj.label}
-                              </span>
-                            </span>
-                          </div>
-                          <span aria-hidden="true" className="hidden sm:inline text-slate-400 shrink-0">
-                            ·
-                          </span>
-                          <h4 className="text-[15px] leading-snug font-bold text-white group-hover:text-amber-200 transition-colors line-clamp-2 sm:truncate min-w-0">
-                            {ev.title}
-                          </h4>
-                          {!isAtomic && !isBioNode && item.startedBeforeWindow && (
-                            <span className="hidden lg:inline text-xs font-sans text-amber-300 shrink-0 whitespace-nowrap">
-                              · с <span className="font-mono tabular-nums">{ev.startYear}</span> г.
-                            </span>
-                          )}
-                          {focusedEvent && focusDepth > 1 && focusDistance !== undefined && focusDistance >= 1 && (
-                            <span className="hidden sm:inline text-xs font-sans text-emerald-300 shrink-0 whitespace-nowrap tabular-nums">
-                              · <span className="font-mono">{focusDistance}</span> шаг
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="hidden sm:flex items-center gap-1.5 text-xs font-sans text-slate-400 shrink-0 whitespace-nowrap">
-                          <span
-                            className="inline-flex items-center gap-1.5 text-xs text-slate-300 tabular-nums"
-                            title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
-                          >
-                            <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
-                            <span>
-                              {nodeStatus.kind === 'milestone'
-                                ? 'Веха'
-                                : nodeStatus.kind === 'biography'
-                                  ? `Биогр. · ${nodeStatus.compactDurationLabel}`
-                                  : `Процесс · ${formatDurationYearsRu(Math.max(1, ev.endYear - ev.startYear))}`}
-                            </span>
-                            {nodeStatus.kind !== 'milestone' && (
-                              <span
-                                aria-hidden="true"
-                                className="w-10 h-1.5 rounded-full bg-slate-800/95 border border-slate-700/70 overflow-hidden inline-block align-middle"
-                              >
-                                <span
-                                  className="block h-full rounded-full opacity-80"
-                                  style={{
-                                    marginLeft: `${nodeStatus.trackStartPct}%`,
-                                    width: `${nodeStatus.trackWidthPct}%`,
-                                    backgroundColor: branchObj.color,
-                                  }}
-                                />
-                              </span>
-                            )}
-                          </span>
-                          <span aria-hidden="true" className="text-slate-400">
-                            ·
-                          </span>
-                          <span className="inline-flex items-center gap-1.5 max-w-[180px] font-semibold text-slate-300">
-                            <span
-                              className="w-2 h-2 rounded-full shrink-0"
-                              style={{ backgroundColor: origBranchObj.color }}
-                            />
-                            <span className="truncate">{origBranchObj.label}</span>
-                          </span>
-                          <span aria-hidden="true" className="text-slate-400">
-                            ·
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectMacroRegion?.(
-                                isMacroRegionActive ? 'all' : primaryMacroRegionId,
-                              );
-                            }}
-                            title={`${primaryMacroRegionOpt.label}${ev.region ? ` (${ev.region})` : ''} — нажмите для фильтрации ленты по макрорегиону`}
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer ${
-                              isMacroRegionActive
-                                ? 'bg-amber-500/20 border-amber-400/70 text-amber-200 font-semibold'
-                                : 'bg-slate-950/80 border-slate-800 text-slate-300 hover:border-amber-400/55 hover:text-amber-200'
-                            }`}
-                          >
-                            <MapPin className="w-3 h-3 text-amber-400 shrink-0" />
-                            <span>{primaryMacroRegionOpt.shortLabel}</span>
-                            {ev.region &&
-                              ev.region.toLowerCase() !== primaryMacroRegionOpt.shortLabel.toLowerCase() && (
-                                <span className="text-slate-400 max-w-[105px] truncate hidden lg:inline">
-                                  · {ev.region}
-                                </span>
-                              )}
-                          </button>
-                        </div>
-                      </div>
-
-                      <p className="text-xs text-slate-300 leading-[18px] min-h-[36px] overflow-hidden line-clamp-2">
-                        {ev.subtitle}
-                      </p>
-
-                      {hiddenLinksTotal > 0 && (
-                        <div className="rounded-lg bg-amber-500/10 px-2.5 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs font-sans">
-                          <div className="flex items-center gap-1.5 text-amber-200/95 min-w-0">
-                            <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                            <span className="truncate tabular-nums">
-                              Скрыто связей:{' '}
-                              <strong className="font-mono">{hiddenLinksTotal}</strong> (
-                              {hiddenBranchSummaries.slice(0, 3).map((b) => b.label).join(' · ')}
-                              {hiddenBranchSummaries.length > 3 ? ` +${hiddenBranchSummaries.length - 3}` : ''})
-                            </span>
-                          </div>
-                          {onRevealBranches && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onRevealBranches(hiddenBranchSummaries.map((b) => b.branchId));
-                              }}
-                              className="px-2.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500 hover:text-slate-950 text-amber-200 text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                            >
-                              Раскрыть ветки →
-                            </button>
-                          )}
-                        </div>
-                      )}
-
-                      {auditInfo && (
-                        <div className="rounded-lg bg-slate-800/55 px-2.5 py-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-sans">
-                          <span className="inline-flex items-center gap-1 text-amber-300 font-semibold shrink-0 tabular-nums">
-                            <GitCompare className="w-3 h-3" />
-                            <span>
-                              Без связи: <span className="font-mono">{auditInfo.candidates.length}</span>
-                              {auditInfo.sameYearCandidatesCount > 0
-                                ? ` (в том же году: ${auditInfo.sameYearCandidatesCount})`
-                                : ''}
-                            </span>
-                          </span>
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-slate-300 min-w-0">
-                            {auditInfo.candidates.slice(0, 2).map((cand) => (
-                              <button
-                                key={cand.id}
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onOpenCardModal(cand.id);
-                                }}
-                                className="underline decoration-slate-600 hover:text-amber-200 truncate max-w-[230px] cursor-pointer text-left"
-                              >
-                                <span className="font-mono tabular-nums">{cand.period}</span> {cand.title}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      <div className="pt-1.5 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-xs font-sans text-slate-400 min-w-0 min-h-[26px]">
-                        <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 min-w-0 flex-1">
-                          <span
-                            className="sm:hidden inline-flex items-center gap-1 text-xs text-slate-300 shrink-0 tabular-nums"
-                            title={`${nodeStatus.kindLabel}: ${nodeStatus.durationLabel}`}
-                          >
-                            <span style={{ color: branchObj.color }}>{nodeStatus.symbol}</span>
-                            <span className="font-mono text-[11px]">{nodeStatus.compactDurationLabel}</span>
-                          </span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onSelectMacroRegion?.(
-                                isMacroRegionActive ? 'all' : primaryMacroRegionId,
-                              );
-                            }}
-                            title={`${primaryMacroRegionOpt.label}${ev.region ? ` (${ev.region})` : ''} — нажмите для фильтрации по макрорегиону`}
-                            className={`sm:hidden inline-flex items-center gap-1 px-1.5 py-0.5 rounded border text-[11px] font-mono shrink-0 transition-colors cursor-pointer ${
-                              isMacroRegionActive
-                                ? 'bg-amber-500/20 border-amber-400/70 text-amber-200 font-semibold'
-                                : 'bg-slate-950/75 border-slate-800 text-slate-300 hover:border-amber-400/50 hover:text-amber-200'
-                            }`}
-                          >
-                            <MapPin className="w-2.5 h-2.5 text-amber-400 shrink-0" />
-                            <span>{primaryMacroRegionOpt.shortLabel}</span>
-                          </button>
-                          {ev.ruler && (
-                            <span
-                              className={`inline-flex items-center gap-1 min-w-0 truncate ${
-                                hasMultipleRulers && !isBiographyNode(ev, branches)
-                                  ? 'text-slate-200 font-semibold'
-                                  : 'text-slate-300'
-                              }`}
-                            >
-                              <Crown className="w-3 h-3 text-slate-400 shrink-0" />
-                              <span className="truncate">
-                                {isBiographyNode(ev, branches)
-                                  ? `Эпоха: ${ev.overlappingRulers[0]?.shortRuler}${
-                                      ev.overlappingRulers.length > 1
-                                        ? ` — ${ev.overlappingRulers[ev.overlappingRulers.length - 1]?.shortRuler}`
-                                        : ''
-                                    }`
-                                  : hasMultipleRulers
-                                    ? `${ev.overlappingRulers.length} правл.`
-                                    : ev.ruler}
-                              </span>
-                            </span>
-                          )}
-
-                          {ev.explicitLinks.length > 0 && (
-                            <span className="inline-flex items-center gap-1 font-mono text-xs text-emerald-300 font-semibold shrink-0 tabular-nums">
-                              <Link2 className="w-3 h-3 shrink-0" />
-                              <span>{ev.explicitLinks.length}</span>
-                            </span>
-                          )}
-
-                          {(ev.concurrentCount ?? ev.concurrentEvents.length) > 0 && (
-                            <span className="hidden md:inline font-mono text-xs text-slate-300 shrink-0 tabular-nums">
-                              ∥ {ev.concurrentCount ?? ev.concurrentEvents.length}
-                            </span>
-                          )}
-
-                          {ev.subEvents && ev.subEvents.length > 0 && (
-                            <span className="hidden md:inline font-mono text-xs text-slate-300 shrink-0 tabular-nums">
-                              ↳ {ev.subEvents.length}
-                            </span>
-                          )}
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0 font-sans text-xs whitespace-nowrap ml-auto sm:ml-0">
-                          {hasEndRowInStream && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                triggerScrollToDomRow(`row-end-${ev.id}`, ev.id);
-                              }}
-                              className="px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer tabular-nums"
-                              title={`Прокрутить ленту к точке завершения (${effEndYear} г.)`}
-                            >
-                              <ArrowDown className="w-3 h-3 text-amber-400" />
-                              <span className="hidden sm:inline">К концу</span>
-                              <span className="font-mono">({effEndYear})</span>
-                            </button>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onToggleFocusEvent(ev.id);
-                            }}
-                            className={`px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-lg border inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                              isFocusedTarget
-                                ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
-                                : 'bg-slate-950/70 border-slate-700/80 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
-                            }`}
-                            title="Изолировать событие, его прямые связи и параллельные процессы"
-                          >
-                            <Crosshair className="w-3 h-3" />
-                            <span>{isFocusedTarget ? 'В фокусе' : 'Фокус'}</span>
-                          </button>
-
-                          <span className="px-1.5 py-1 sm:p-0 text-amber-400 font-semibold group-hover:underline inline-flex items-center gap-1">
-                            <GitCommitHorizontal className="w-3.5 h-3.5" />
-                            <span>Паспорт →</span>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          }
-
-          // EVENT_END: точка завершения и обратное слияние (merge) под-нити обратно в ветку или ось времени
-          const ev = item.eventObj;
-          const branchObj = resolveEventBranch(ev, branches, collapsedParents);
-          const laneInfo = subLaneLayout.branchLayouts.get(branchObj.id);
-          const baseX = laneInfo?.baseX ?? timeSpineX + 28;
-          const slot = subLaneLayout.slotByEventId.get(ev.id) ?? 0;
-          const commitX = getEventX(ev, false);
-          const hasBaseContinuingAfter =
-            slot > 0 &&
-            eventStreamBounds.some(
-              (entry) =>
-                entry.ev.id !== ev.id &&
-                resolveEventBranch(entry.ev, branches, collapsedParents).id === branchObj.id &&
-                (subLaneLayout.slotByEventId.get(entry.ev.id) ?? 0) === 0 &&
-                entry.commitIdx < idx &&
-                idx < entry.endIdx,
-            );
-          const mergeTargetX = hasBaseContinuingAfter ? baseX : timeSpineX;
-          const isEndSelfHovered = effectiveActiveEventId === ev.id;
-          const isEndJumpHighlighted = localJumpDomId === `row-end-${ev.id}`;
-          const hasStartRowInStream = rowIndexByEventId.has(ev.id);
-          const effStartYearForEnd = getEventEffectiveStartYear(ev, branches);
-          const mergeY = 22;
-
-          return (
-            <div
-              key={`end-${ev.id}-${idx}`}
-              id={`row-end-${ev.id}`}
-              role="button"
-              tabIndex={0}
-              aria-label={`Окончание: ${ev.title} (${item.dateLabel})`}
-              onClick={() => onOpenCardModal(ev.id)}
-              onKeyDown={(e) => {
-                if (e.target !== e.currentTarget) return;
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onOpenCardModal(ev.id);
-                }
-              }}
-              onMouseEnter={() => activateHoverEvent(ev.id)}
-              onMouseLeave={() => scheduleClearHoverEvent()}
-              className="timeline-row-cv relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
-            >
-              <div
-                title={gutter.title}
-                className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/25 px-2 sm:px-2.5 py-2 flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
-                  isEndSelfHovered
-                    ? 'text-slate-100'
-                    : gutter.isDuplicate
-                      ? 'text-slate-400/75 group-hover:text-slate-200'
-                      : 'text-slate-300 group-hover:text-white'
-                }`}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <span aria-hidden="true" className="text-[9px] text-slate-400 group-hover:text-slate-200">
-                    ↵
-                  </span>
-                  <span>{gutter.label}</span>
-                </span>
-                {gutter.styleLabel && (
-                  <span
-                    className={`text-[9px] font-normal ${
-                      gutter.styleTone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/80'
-                    }`}
-                  >
-                    {gutter.styleLabel}
-                  </span>
-                )}
-              </div>
-
-              {renderMobileSpineCell(idx, { kind: 'event_end', color: branchObj.color })}
-
-              <div className="hidden sm:block shrink-0 relative select-none overflow-hidden" style={{ width: `${svgWidth}px` }}>
-                <svg className="w-full h-full absolute inset-0" width={svgWidth} height="100%">
-                  {renderRailsForRow(idx, item.sortKey)}
-                  <line
-                    x1={commitX}
-                    y1={0}
-                    x2={commitX}
-                    y2={mergeY - 4}
-                    stroke={branchObj.color}
-                    strokeWidth={isEndSelfHovered ? 3.6 : 2.6}
-                    strokeOpacity={isEndSelfHovered ? 1 : 0.65}
-                  />
-                  <path
-                    d={`M ${commitX} ${mergeY - 4} C ${commitX} ${mergeY + 10}, ${mergeTargetX + 12} ${mergeY + 4}, ${mergeTargetX} ${mergeY + 10}`}
-                    fill="none"
-                    stroke={branchObj.color}
-                    strokeWidth={isEndSelfHovered ? 2.6 : 1.9}
-                    strokeDasharray="3 2"
-                    strokeOpacity={isEndSelfHovered ? 1 : 0.65}
-                  />
-                  <circle
-                    cx={mergeTargetX}
-                    cy={mergeY + 10}
-                    r={3.2}
-                    fill="#050811"
-                    stroke={hasBaseContinuingAfter ? branchObj.color : '#cbd5e1'}
-                    strokeWidth={2}
-                  />
-                  <rect
-                    x={commitX - 4.5}
-                    y={mergeY - 8.5}
-                    width={9}
-                    height={9}
-                    rx={2}
-                    fill="#050811"
-                    stroke={branchObj.color}
-                    strokeWidth={2.5}
-                  />
-                </svg>
-              </div>
-
-              <div className="flex-1 min-w-0 overflow-hidden py-2 pr-2.5 sm:pr-6">
-                <div
-                  className={`w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg border px-3 sm:px-3.5 min-h-[36px] py-1.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 gap-y-1.5 text-xs transition-all ${
-                    isEndJumpHighlighted
-                      ? 'jump-target-highlighted'
-                      : 'bg-slate-900/40 border-slate-800/70 group-hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-0.5 min-w-0 flex-1 overflow-hidden">
-                    <Flag className="w-3.5 h-3.5 shrink-0" style={{ color: branchObj.color }} />
-                    <span className="font-mono font-bold text-slate-200 tabular-nums shrink-0">
-                      {item.dateLabel}
-                    </span>
-                    {axisResolution !== 'year' &&
-                      (() => {
-                        const marker = getCalendarStyleAxisMarker(ev.endPrecision);
-                        return marker ? (
-                          <span
-                            className={`font-mono text-[10px] shrink-0 whitespace-nowrap ${
-                              marker.tone === 'gregorian' ? 'text-sky-300/80' : 'text-amber-300/80'
-                            }`}
-                          >
-                            {marker.label}
-                          </span>
-                        ) : null;
-                      })()}
-                    <span className="text-slate-400 font-sans text-xs shrink-0 hidden sm:inline">
-                      {isBiographyNode(ev, branches)
-                        ? 'Завершение жизненного и творческого пути:'
-                        : branchObj.isMilitary || ev.task.startsWith('WAR_')
-                          ? 'Окончание кампании:'
-                          : 'Завершение процесса:'}
-                    </span>
-                    <span className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 sm:truncate min-w-0">
-                      {formatEventTitleWithPeriod(ev)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 font-sans text-xs tabular-nums whitespace-nowrap ml-auto sm:ml-0">
-                    <span className="text-slate-400 hidden sm:inline">
-                      {ev.overlappingRulers.length > 1
-                        ? `Правлений: ${ev.overlappingRulers.length}`
-                        : ev.duration > 0
-                          ? formatDurationYearsRu(ev.duration)
-                          : 'Завершение'}
-                    </span>
-                    {hasStartRowInStream && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          triggerScrollToDomRow(`row-${ev.id}`, ev.id);
-                        }}
-                        className="px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
-                        title={`Вернуться к началу процесса (${effStartYearForEnd} г.)`}
-                      >
-                        <ArrowUp className="w-3 h-3 text-amber-400" />
-                        <span className="hidden md:inline">К началу</span>
-                        <span className="font-mono">({effStartYearForEnd})</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
-          );
-          })();
+          )}
 
-          return spacerEl ? (
-            <Fragment key={`prop-wrap-${idx}-${item.rowType}-${item.sortKey}`}>
-              {spacerEl}
-              {rowEl}
-            </Fragment>
-          ) : (
-            rowEl
-          );
-        })}
-      </div>
+          {contemporaryBioGroups.length > 0 && (
+            <div className="bg-fuchsia-950/20 border-b border-fuchsia-500/25 px-4 py-2.5 space-y-2 font-sans">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-1.5 font-semibold text-fuchsia-200">
+                  <span className="w-2 h-2 rounded-full bg-fuchsia-400 shrink-0" />
+                  <span className="tabular-nums">
+                    Деятели эпохи (активны в окне: <span className="font-mono">{totalContemporaryBios}</span>):
+                  </span>
+                </div>
+                <span className="text-xs text-slate-400 hidden sm:inline">
+                  показаны по периоду зрелой творческой и научной активности (клик — биография и труды)
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {contemporaryBioGroups.map((group) => (
+                  <div key={group.id} className="flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-200 shrink-0 mr-1">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
+                      <span>
+                        {group.label} (<span className="font-mono tabular-nums">{group.items.length}</span>):
+                      </span>
+                    </span>
+                    {group.items.map((bio) => {
+                      const isHoveredBio = effectiveActiveEventId === bio.id;
+                      return (
+                        <button
+                          key={bio.id}
+                          type="button"
+                          onClick={() => onOpenCardModal(bio.id)}
+                          onMouseEnter={() => activateHoverEvent(bio.id)}
+                          onMouseLeave={() => scheduleClearHoverEvent()}
+                          title={`${bio.title} — годы жизни: ${bio.period}, активный период: ${bio.activeFrom}–${bio.activeTo} гг. Клик для паспорта деятеля`}
+                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-sans transition-colors cursor-pointer whitespace-nowrap ${
+                            isHoveredBio
+                              ? 'bg-fuchsia-500/25 border-fuchsia-400 text-white shadow-sm'
+                              : 'bg-slate-900/85 hover:bg-slate-800 border-slate-700/80 text-slate-200 hover:border-fuchsia-400/50'
+                          }`}
+                        >
+                          <span className="font-semibold text-white">{bio.title}</span>
+                          <span className="font-mono text-[11px] text-amber-300/95 tabular-nums">
+                            {bio.activeFrom}–{bio.activeTo}
+                          </span>
+                          <span className="font-mono text-[11px] text-slate-400 tabular-nums hidden md:inline">
+                            ({bio.period})
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {renderedStream.map((item, idx) => {
+            const prevItem = idx > 0 ? stream[idx - 1] : null;
+            const deltaYears =
+              timeScaleMode === 'proportional' && prevItem
+                ? Math.max(0, item.year - prevItem.year)
+                : 0;
+            const spacerHeight =
+              deltaYears >= 2 ? Math.min(168, Math.max(22, Math.round(deltaYears * 4.5))) : 0;
+
+            const showSpacerBus =
+              spacerHeight > 0 &&
+              activeLinkGeometry !== null &&
+              activeLinkGeometry.hasSpanOnCanvas &&
+              idx - 0.5 >= activeLinkGeometry.minSpanIdx &&
+              idx - 0.5 <= activeLinkGeometry.maxSpanIdx;
+
+            const showBusSegment =
+              activeLinkGeometry !== null &&
+              activeLinkGeometry.hasSpanOnCanvas &&
+              idx >= activeLinkGeometry.minSpanIdx &&
+              idx <= activeLinkGeometry.maxSpanIdx;
+            const busY1 =
+              showBusSegment && activeLinkGeometry && idx === activeLinkGeometry.minSpanIdx ? 22 : 0;
+            const busY2 =
+              showBusSegment && activeLinkGeometry && idx === activeLinkGeometry.maxSpanIdx ? 22 : 420;
+
+            const rowRails = rowRailsByIdx[idx];
+            const spacerRails = spacerRailsByIdx[idx];
+
+            // Compute minimal per-row passing rail hover state so untouched rows skip re-rendering
+            let hoveredPassingRailId: string | null = null;
+            let linkedPassingRailIdsKey = '';
+            const hasPassingRails = rowRails.passingByLane.size > 0;
+            const dimOtherPassingRails = hasPassingRails && effectiveActiveEventId !== null;
+
+            if (hasPassingRails && effectiveActiveEventId !== null) {
+              let linkedHits: string[] | null = null;
+              rowRails.passingByLane.forEach((bucket) => {
+                for (const rail of bucket.rails) {
+                  if (rail.eventId === effectiveActiveEventId) {
+                    hoveredPassingRailId = rail.eventId;
+                  } else if (linkedEventIds.has(rail.eventId)) {
+                    if (!linkedHits) linkedHits = [];
+                    linkedHits.push(rail.eventId);
+                  }
+                }
+              });
+              if (linkedHits) {
+                linkedPassingRailIdsKey = (linkedHits as string[]).join(',');
+              }
+            }
+
+            let eventMeta = undefined;
+            let isSelfHovered = false;
+            let isCrossLinked = false;
+            let isOverlapping = false;
+            let isFocusedTarget = false;
+            let focusDistance: number | undefined = undefined;
+            let isJumpHighlighted = false;
+            let isConnectedToBus = false;
+            let showUpArrow = false;
+            let showDownArrow = false;
+            let hasEndRowInStream = false;
+            let hasStartRowInStream = false;
+            let auditInfo: AuditCandidateInfo | undefined = undefined;
+            let carryOverWars: EnrichedEvent[] | undefined = undefined;
+            let ongoingWars: EnrichedEvent[] | undefined = undefined;
+
+            if (item.rowType === 'ERA_START') {
+              carryOverWars = carryOverWarsByEraId.get(item.era.id);
+            } else if (item.rowType === 'RULER_COMMIT') {
+              ongoingWars = ongoingWarsByRulerId.get(item.rulerObj.id);
+              isJumpHighlighted = highlightedJumpId === item.rulerObj.id;
+            } else if (item.rowType === 'EVENT_COMMIT') {
+              const ev = item.eventObj;
+              eventMeta = eventMetaById.get(ev.id);
+              isSelfHovered = effectiveActiveEventId === ev.id;
+              isCrossLinked = effectiveActiveEventId !== null && linkedEventIds.has(ev.id);
+              isOverlapping = Boolean(
+                hoveredEvent &&
+                  hoveredEventMeta &&
+                  hoveredEvent.id !== ev.id &&
+                  eventMeta &&
+                  eventMeta.effStartYear <= hoveredEventMeta.effEndYear &&
+                  eventMeta.effEndYear >= hoveredEventMeta.effStartYear,
+              );
+              isFocusedTarget = focusedEvent?.id === ev.id;
+              focusDistance = focusedEvent ? focusDistanceMap?.get(ev.id) : undefined;
+              isJumpHighlighted =
+                highlightedJumpId === ev.id || localJumpDomId === `row-${ev.id}`;
+              hasEndRowInStream = eventsWithEndRowInStream.has(ev.id);
+              auditInfo = auditUnlinkedMode ? auditCandidateMap?.get(ev.id) : undefined;
+              isConnectedToBus = Boolean(
+                activeLinkGeometry &&
+                  activeLinkGeometry.hasSpanOnCanvas &&
+                  (isSelfHovered || isCrossLinked),
+              );
+              showUpArrow = Boolean(
+                isConnectedToBus &&
+                  isSelfHovered &&
+                  activeLinkGeometry &&
+                  activeLinkGeometry.upItems.length > 0,
+              );
+              showDownArrow = Boolean(
+                isConnectedToBus &&
+                  isSelfHovered &&
+                  activeLinkGeometry &&
+                  activeLinkGeometry.downItems.length > 0,
+              );
+            } else if (item.rowType === 'EVENT_END') {
+              const ev = item.eventObj;
+              eventMeta = eventMetaById.get(ev.id);
+              isSelfHovered = effectiveActiveEventId === ev.id;
+              isJumpHighlighted = localJumpDomId === `row-end-${ev.id}`;
+              hasStartRowInStream = rowIndexByEventId.has(ev.id);
+            }
+
+            return (
+              <TimelineStreamRow
+                key={getStreamRowKey(item, idx)}
+                item={item}
+                idx={idx}
+                gutter={gutterMeta[idx]}
+                gutterWidthClass={gutterWidthClass}
+                isDesktopGraph={isDesktopGraph}
+                svgWidth={svgWidth}
+                timeSpineX={timeSpineX}
+                connectorBusX={connectorBusX}
+                hasRulersLane={hasRulersLane}
+                rulerLayout={rulerLayout}
+                thematicLanes={thematicLanes}
+                subLaneLayout={subLaneLayout}
+                rowRails={rowRails}
+                spacerRails={spacerRails}
+                spacerHeight={spacerHeight}
+                deltaYears={deltaYears}
+                prevYear={prevItem ? prevItem.year : null}
+                showSpacerBus={showSpacerBus}
+                axisResolution={axisResolution}
+                cardDensity={cardDensity}
+                selectedMacroRegion={selectedMacroRegion}
+                hasFocusedEvent={Boolean(focusedEvent)}
+                focusDepth={focusDepth}
+                eventMeta={eventMeta}
+                carryOverWars={carryOverWars}
+                ongoingWars={ongoingWars}
+                auditInfo={auditInfo}
+                hasEndRowInStream={hasEndRowInStream}
+                hasStartRowInStream={hasStartRowInStream}
+                isSelfHovered={isSelfHovered}
+                isCrossLinked={isCrossLinked}
+                isOverlapping={isOverlapping}
+                isFocusedTarget={isFocusedTarget}
+                focusDistance={focusDistance}
+                isJumpHighlighted={isJumpHighlighted}
+                isConnectedToBus={isConnectedToBus}
+                showBusSegment={showBusSegment}
+                busY1={busY1}
+                busY2={busY2}
+                showUpArrow={showUpArrow}
+                showDownArrow={showDownArrow}
+                dimOtherPassingRails={dimOtherPassingRails}
+                hoveredPassingRailId={hoveredPassingRailId}
+                linkedPassingRailIdsKey={linkedPassingRailIdsKey}
+                onActivateHoverEvent={activateHoverEvent}
+                onScheduleClearHoverEvent={scheduleClearHoverEvent}
+                onOpenCardTooltip={handleOpenCardTooltip}
+                onCloseCardTooltip={closeCardTooltip}
+                onScrollToDomRow={triggerScrollToDomRow}
+                onOpenCardModal={handleRowOpenCardModal}
+                onOpenPeriodModal={handleRowOpenPeriodModal}
+                onOpenEraModal={handleRowOpenEraModal}
+                onSelectYearRange={handleRowSelectYearRange}
+                onToggleFocusEvent={handleRowToggleFocusEvent}
+                onRevealBranches={onRevealBranches ? handleRowRevealBranches : undefined}
+                onSelectMacroRegion={onSelectMacroRegion ? handleRowSelectMacroRegion : undefined}
+              />
+            );
+          })}
+
+          {remainingRowsCount > 0 && (
+            <div
+              ref={loadMoreSentinelRef}
+              className="px-4 py-4 bg-slate-950/75 flex flex-wrap items-center justify-center gap-3 text-xs font-sans text-slate-300"
+            >
+              <button
+                type="button"
+                onClick={() =>
+                  startTransition(() => {
+                    setVisibleRowCount((prev) => Math.min(stream.length, prev + LOAD_MORE_ROWS_STEP));
+                  })
+                }
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-amber-400/60 text-amber-200 font-semibold transition-colors cursor-pointer tabular-nums"
+              >
+                <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
+                <span>
+                  Показать следующие{' '}
+                  <span className="font-mono">{Math.min(LOAD_MORE_ROWS_STEP, remainingRowsCount)}</span>{' '}
+                  строк (осталось <span className="font-mono">{remainingRowsCount}</span>)
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  startTransition(() => {
+                    setVisibleRowCount(stream.length);
+                  })
+                }
+                className="px-3 py-2 rounded-lg bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+              >
+                Раскрыть всю ленту
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Липкий правый инспектор среза и быстрых связей на широких экранах (xl) */}
@@ -3385,6 +1801,7 @@ export const GitTimeline = memo(function GitTimeline({
                     type="button"
                     onClick={() => {
                       setPinnedHoverEventId(null);
+                      setLocalHoveredEventId(null);
                       cancelScheduledHoverClear();
                       onHoverEvent(null);
                     }}
@@ -3837,6 +2254,7 @@ export const GitTimeline = memo(function GitTimeline({
                 type="button"
                 onClick={() => {
                   setPinnedHoverEventId(null);
+                  setLocalHoveredEventId(null);
                   cancelScheduledHoverClear();
                   onHoverEvent(null);
                 }}

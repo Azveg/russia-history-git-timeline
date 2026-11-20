@@ -97,6 +97,97 @@ type ActiveModalState =
   | { type: 'WINDOW'; from: number; to: number }
   | { type: 'COMPARE'; pair: { left: ComparisonTarget; right: ComparisonTarget } };
 
+function parseRequestedBranchIds(initialParams: URLSearchParams): Set<string> | null {
+  const urlBranchesRaw = initialParams.get('branches');
+  if (!urlBranchesRaw) return null;
+  const ids = new Set(
+    urlBranchesRaw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  );
+  return ids.size > 0 ? ids : null;
+}
+
+function resolveInitialActiveBranches(
+  branches: BranchDefinition[],
+  initialParams: URLSearchParams,
+): Record<string, boolean> {
+  if (branches.length === 0) return {};
+  const overviewMap = computeBranchPresetMap(branches, 'overview');
+  const requestedIds = parseRequestedBranchIds(initialParams);
+  if (!requestedIds) return overviewMap;
+
+  const leafBranches = branches.filter((b) => !b.isGroup);
+  const hasValidMatch = leafBranches.some((b) => requestedIds.has(b.id));
+  if (!hasValidMatch) return overviewMap;
+
+  const customMap: Record<string, boolean> = {};
+  leafBranches.forEach((b) => {
+    customMap[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
+  });
+  return customMap;
+}
+
+function mergeMissingActiveBranches(
+  prev: Record<string, boolean>,
+  branches: BranchDefinition[],
+  initialParams: URLSearchParams,
+): Record<string, boolean> {
+  if (branches.length === 0) return prev;
+  if (Object.keys(prev).length === 0) {
+    return resolveInitialActiveBranches(branches, initialParams);
+  }
+  let hasMissing = false;
+  for (let i = 0; i < branches.length; i += 1) {
+    const b = branches[i];
+    if (!b.isGroup && prev[b.id] === undefined) {
+      hasMissing = true;
+      break;
+    }
+  }
+  if (!hasMissing) return prev;
+
+  const requestedIds = parseRequestedBranchIds(initialParams);
+  const overviewMap = computeBranchPresetMap(branches, 'overview');
+  const next: Record<string, boolean> = { ...prev };
+  for (let i = 0; i < branches.length; i += 1) {
+    const b = branches[i];
+    if (b.isGroup || next[b.id] !== undefined) continue;
+    if (requestedIds) {
+      next[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
+    } else {
+      next[b.id] = overviewMap[b.id] ?? false;
+    }
+  }
+  return next;
+}
+
+function mergeMissingCollapsedParents(
+  prev: Record<string, boolean>,
+  branches: BranchDefinition[],
+): Record<string, boolean> {
+  if (branches.length === 0) return prev;
+  let hasMissing = false;
+  for (let i = 0; i < branches.length; i += 1) {
+    const b = branches[i];
+    if (b.defaultCollapsedOnTimeline && prev[b.id] === undefined) {
+      hasMissing = true;
+      break;
+    }
+  }
+  if (!hasMissing) return prev;
+
+  const next: Record<string, boolean> = { ...prev };
+  for (let i = 0; i < branches.length; i += 1) {
+    const b = branches[i];
+    if (b.defaultCollapsedOnTimeline && next[b.id] === undefined) {
+      next[b.id] = true;
+    }
+  }
+  return next;
+}
+
 export default function App() {
   const initialParams = useMemo(() => new URLSearchParams(window.location.search), []);
 
@@ -197,9 +288,9 @@ export default function App() {
     }
   }, [searchQuery, selectedPersonKey, activeModal.type, ensureAllModulesLoaded]);
 
-  // Фоновая предзагрузка чанков модальных окон во время простоя браузера
+  // Фоновая предзагрузка чанков модальных окон во время простоя браузера (после завершения фоновой гидратации веток)
   useEffect(() => {
-    if (loading || loadError || !manifest) return;
+    if (loading || loadError || !manifest || !isFullyHydrated) return;
     let cancelled = false;
     const loaders = [
       loadCardDetailModal,
@@ -245,7 +336,7 @@ export default function App() {
         idleIds.forEach((id) => win.cancelIdleCallback!(id));
       }
     };
-  }, [loading, loadError, manifest]);
+  }, [loading, loadError, manifest, isFullyHydrated]);
 
   // Отложенная сборка индекса персон после первого рендера ленты
   useEffect(() => {
@@ -306,57 +397,25 @@ export default function App() {
     [manifest],
   );
 
-  // Динамическая инициализация состояния веток: учет ?branches= из URL или дефолтный пресет «Обзор истории» ('overview')
+  // Синхронное разрешение состояния веток и свёрнутых групп:
+  // гарантирует отсутствие промежуточного рендера с пустой картой activeBranches или неинициализированными ветками Phase 2
+  const resolvedActiveBranches = useMemo(
+    () => mergeMissingActiveBranches(activeBranches, branches, initialParams),
+    [activeBranches, branches, initialParams],
+  );
+
+  const resolvedCollapsedParents = useMemo(
+    () => mergeMissingCollapsedParents(collapsedParents, branches),
+    [collapsedParents, branches],
+  );
+
+  // Динамическая синхронизация состояния веток в React-state при первичном монтировании и фоновой догрузке Phase 2
   useEffect(() => {
     if (branches.length === 0) return;
 
     const applyBranchSync = () => {
-      setActiveBranches((prev) => {
-        if (Object.keys(prev).length === 0) {
-          const overviewMap = computeBranchPresetMap(branches, 'overview');
-          const urlBranchesRaw = initialParams.get('branches');
-          if (!urlBranchesRaw) return overviewMap;
-
-          const requestedIds = new Set(
-            urlBranchesRaw
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean),
-          );
-          const leafBranches = branches.filter((b) => !b.isGroup);
-          const hasValidMatch = leafBranches.some((b) => requestedIds.has(b.id));
-          if (!hasValidMatch) return overviewMap;
-
-          const customMap: Record<string, boolean> = {};
-          leafBranches.forEach((b) => {
-            customMap[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
-          });
-          return customMap;
-        }
-        let changed = false;
-        const next = { ...prev };
-        const overviewMap = computeBranchPresetMap(branches, 'overview');
-        branches.forEach((b) => {
-          if (b.isGroup) return;
-          if (next[b.id] === undefined) {
-            next[b.id] = overviewMap[b.id] ?? false;
-            changed = true;
-          }
-        });
-        return changed ? next : prev;
-      });
-
-      setCollapsedParents((prev) => {
-        let changed = false;
-        const next = { ...prev };
-        branches.forEach((b) => {
-          if (b.defaultCollapsedOnTimeline && next[b.id] === undefined) {
-            next[b.id] = true;
-            changed = true;
-          }
-        });
-        return changed ? next : prev;
-      });
+      setActiveBranches((prev) => mergeMissingActiveBranches(prev, branches, initialParams));
+      setCollapsedParents((prev) => mergeMissingCollapsedParents(prev, branches));
     };
 
     if (!hasInitializedBranchesRef.current) {
@@ -429,7 +488,7 @@ export default function App() {
     activePersonModalKey,
     activeEraModalId,
     activeWindowModalRange,
-    activeBranches,
+    activeBranches: resolvedActiveBranches,
     branches,
     setYearFrom,
     setYearTo,
@@ -439,10 +498,20 @@ export default function App() {
     onPopModalFromUrl: handlePopModalFromUrl,
   });
 
+  const rulersMetaPath = useMemo(() => {
+    if (!manifest) return null;
+    const rulersMeta = manifest.mountedFiles.find(
+      (m) => m.role === 'trunk' || m.role === 'rulers_branch' || m.fileId === 'rulers',
+    );
+    return rulersMeta && rulersMeta.enabled ? rulersMeta.path : null;
+  }, [manifest]);
+
+  const rulersFile = rulersMetaPath ? filesMap[rulersMetaPath] : undefined;
+
   const rulers = useMemo(() => {
-    if (!manifest) return [];
-    return extractRulersFromStore(manifest, filesMap);
-  }, [manifest, filesMap]);
+    if (!manifest || !rulersMetaPath || !rulersFile) return [];
+    return extractRulersFromStore(manifest, { [rulersMetaPath]: rulersFile });
+  }, [manifest, rulersMetaPath, rulersFile]);
 
   const enrichedEvents = useMemo(() => {
     if (!manifest) return [];
@@ -534,22 +603,22 @@ export default function App() {
   const thematicLeafBranches = useMemo(() => getLeafBranches(branches), [branches]);
 
   const effectiveActiveBranches = useMemo(() => {
-    if (!branchPairFilter) return activeBranches;
+    if (!branchPairFilter) return resolvedActiveBranches;
     const next: Record<string, boolean> = {};
     branches.forEach((b) => {
       if (b.isGroup) return;
       if (b.id === 'MAIN_RULERS') {
-        next[b.id] = activeBranches.MAIN_RULERS !== false;
+        next[b.id] = resolvedActiveBranches.MAIN_RULERS !== false;
       } else {
         next[b.id] = b.id === branchPairFilter.branchA || b.id === branchPairFilter.branchB;
       }
     });
     return next;
-  }, [activeBranches, branchPairFilter, branches]);
+  }, [resolvedActiveBranches, branchPairFilter, branches]);
 
   const visibleLanes = useMemo(
-    () => getVisibleLanes(branches, effectiveActiveBranches, collapsedParents),
-    [branches, effectiveActiveBranches, collapsedParents],
+    () => getVisibleLanes(branches, effectiveActiveBranches, resolvedCollapsedParents),
+    [branches, effectiveActiveBranches, resolvedCollapsedParents],
   );
 
   const {
@@ -649,14 +718,14 @@ export default function App() {
     const laneIds = new Set(visibleLanes.map((l) => l.id));
     const extras: BranchDefinition[] = [];
     matchingEvents.forEach((ev) => {
-      const b = resolveEventBranch(ev, branches, collapsedParents);
+      const b = resolveEventBranch(ev, branches, resolvedCollapsedParents);
       if (!laneIds.has(b.id)) {
         laneIds.add(b.id);
         extras.push(b);
       }
     });
     return extras.length > 0 ? [...visibleLanes, ...extras] : visibleLanes;
-  }, [focusedEvent, visibleLanes, matchingEvents, branches, collapsedParents]);
+  }, [focusedEvent, visibleLanes, matchingEvents, branches, resolvedCollapsedParents]);
 
   const branchControls = useMemo(() => {
     const byBranchCount: Record<string, number> = {};
@@ -1277,7 +1346,7 @@ export default function App() {
     if (!tag) return;
     const option = syncTagOptions.find((o) => o.tag === tag);
     if (option) {
-      const hiddenBranches = option.branchIds.filter((id) => activeBranches[id] === false);
+      const hiddenBranches = option.branchIds.filter((id) => resolvedActiveBranches[id] === false);
       if (hiddenBranches.length > 0) {
         handleRevealBranches(hiddenBranches);
       }
@@ -1323,12 +1392,15 @@ export default function App() {
 
     const adjustments: string[] = [];
 
-    if (!isEventBranchActive(target, activeBranches)) {
-      setActiveBranches((prev) => ({ ...prev, [target.task]: true }));
+    if (!isEventBranchActive(target, resolvedActiveBranches)) {
+      setActiveBranches((prev) => ({
+        ...mergeMissingActiveBranches(prev, branches, initialParams),
+        [target.task]: true,
+      }));
       const branch = branches.find((b) => b.id === target.task);
       if (branch?.parentBranchId) {
         setCollapsedParents((prev) => {
-          const updated = { ...prev };
+          const updated = { ...mergeMissingCollapsedParents(prev, branches) };
           let cur: BranchDefinition | undefined = branch;
           while (cur?.parentBranchId) {
             updated[cur.parentBranchId] = false;
@@ -1383,8 +1455,11 @@ export default function App() {
 
     const adjustments: string[] = [];
 
-    if (activeBranches.MAIN_RULERS === false) {
-      setActiveBranches((prev) => ({ ...prev, MAIN_RULERS: true }));
+    if (resolvedActiveBranches.MAIN_RULERS === false) {
+      setActiveBranches((prev) => ({
+        ...mergeMissingActiveBranches(prev, branches, initialParams),
+        MAIN_RULERS: true,
+      }));
       adjustments.push('включена ветка правителей');
     }
 
@@ -1431,10 +1506,10 @@ export default function App() {
     preserveViewportScrollAnchor(() => {
       const descendants = getDescendantBranchIds(branchId, branches);
       if (descendants.length > 0) {
-        const currentlyActive = isBranchOrDescendantActive(target, branches, activeBranches);
+        const currentlyActive = isBranchOrDescendantActive(target, branches, resolvedActiveBranches);
         const nextEnable = !currentlyActive;
         setActiveBranches((prev) => {
-          const next = { ...prev };
+          const next = { ...mergeMissingActiveBranches(prev, branches, initialParams) };
           if (!target.isGroup) {
             next[target.id] = nextEnable;
           }
@@ -1449,10 +1524,13 @@ export default function App() {
         return;
       }
 
-      setActiveBranches((prev) => ({
-        ...prev,
-        [branchId]: prev[branchId] === false,
-      }));
+      setActiveBranches((prev) => {
+        const base = mergeMissingActiveBranches(prev, branches, initialParams);
+        return {
+          ...base,
+          [branchId]: base[branchId] === false,
+        };
+      });
     });
   }
 
@@ -1623,10 +1701,13 @@ export default function App() {
   function handleToggleCollapseParent(parentId: string) {
     if (!hasChildBranches(parentId, branches)) return;
     preserveViewportScrollAnchor(() => {
-      setCollapsedParents((prev) => ({
-        ...prev,
-        [parentId]: !prev[parentId],
-      }));
+      setCollapsedParents((prev) => {
+        const base = mergeMissingCollapsedParents(prev, branches);
+        return {
+          ...base,
+          [parentId]: !base[parentId],
+        };
+      });
     });
   }
 
@@ -1911,8 +1992,8 @@ export default function App() {
 
       <TopControlBar
         branchControls={branchControls}
-        activeBranches={activeBranches}
-        collapsedParents={collapsedParents}
+        activeBranches={resolvedActiveBranches}
+        collapsedParents={resolvedCollapsedParents}
         expectedTotalBranches={expectedTotalBranches}
         isHydratingBranches={isHydrating}
         onRequestAllBranches={handleRequestAllBranches}
@@ -2078,7 +2159,7 @@ export default function App() {
             visibleLanes={displayLanes}
             branches={branches}
             activeBranches={effectiveActiveBranches}
-            collapsedParents={collapsedParents}
+            collapsedParents={resolvedCollapsedParents}
             manifest={manifest}
             yearFrom={effectiveYearFrom}
             yearTo={effectiveYearTo}
@@ -2142,7 +2223,7 @@ export default function App() {
               enrichedEvents={enrichedEvents}
               matchingEvents={matchingEvents}
               branches={branches}
-              activeBranches={activeBranches}
+              activeBranches={resolvedActiveBranches}
               eras={manifest.macroEras}
               personDossiers={personDossiers}
               focusedEventId={focusedEventId}
@@ -2207,7 +2288,7 @@ export default function App() {
             <PersonDossierModal
               dossier={activePersonObj}
               branches={branches}
-              activeBranches={activeBranches}
+              activeBranches={resolvedActiveBranches}
               modalHistory={modalHistory}
               onClose={handleCloseAllModals}
               onNavigateBack={handleModalNavigateBack}
@@ -2246,7 +2327,7 @@ export default function App() {
               rulers={rulers}
               enrichedEvents={enrichedEvents}
               branches={branches}
-              activeBranches={activeBranches}
+              activeBranches={resolvedActiveBranches}
               personDossiers={personDossiers}
               modalHistory={modalHistory}
               onClose={handleCloseAllModals}
