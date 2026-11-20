@@ -22,6 +22,7 @@ const VALID_LINK_TYPES = new Set([
 ]);
 const VALID_CALENDAR_STYLES = new Set(['julian', 'gregorian', 'both']);
 const VALID_SOURCE_TYPES = new Set(['primary', 'document', 'historiography', 'reference']);
+const VALID_RULER_RELATION_TYPES = new Set(['ally', 'opponent', 'diplomacy', 'family', 'military']);
 const HTTPS_URL_REGEX = /^https:\/\/\S+$/i;
 const DATE_REGEX = /^\d{3,4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
@@ -343,6 +344,20 @@ function auditRecordAcademicStyle(file, entityLabel, record, isRuler = false) {
   if (isRuler) {
     auditStyleText(file, entityLabel, 'reignTitle', record.reignTitle);
     auditStyleText(file, entityLabel, 'reignThesis', record.reignThesis);
+    auditStyleText(file, entityLabel, 'biography', record.biography);
+    auditStyleText(file, entityLabel, 'legacy', record.legacy);
+    if (Array.isArray(record.keyActions)) {
+      record.keyActions.forEach((ka, idx) => {
+        auditStyleText(file, entityLabel, `keyActions[${idx}].title`, ka?.title);
+        auditStyleText(file, entityLabel, `keyActions[${idx}].summary`, ka?.summary);
+      });
+    }
+    if (Array.isArray(record.innerCircle)) {
+      record.innerCircle.forEach((ic, idx) => {
+        auditStyleText(file, entityLabel, `innerCircle[${idx}].role`, ic?.role);
+        auditStyleText(file, entityLabel, `innerCircle[${idx}].connection`, ic?.connection);
+      });
+    }
     return;
   }
   for (const fld of ['title', 'subtitle', 'details', 'outcome']) {
@@ -441,6 +456,7 @@ function main() {
   const allRulersById = new Map();
   const collectedLinks = [];
   const collectedNodes = [];
+  const collectedRulerActionLinks = [];
   const syncTagsSet = new Set();
   const sourcesStats = { total: 0, withSources: 0, byFile: new Map() };
 
@@ -602,6 +618,64 @@ function main() {
 
         if (r.center !== undefined && (typeof r.center !== 'string' || !r.center.trim())) {
           addError(relFromPublic, `Правитель "${rId}": поле "center" должно быть непустой строкой.`);
+        }
+
+        for (const optStr of ['lifeYears', 'dynastyOrTitle', 'biography', 'legacy']) {
+          if (r[optStr] !== undefined && (typeof r[optStr] !== 'string' || !r[optStr].trim())) {
+            addError(relFromPublic, `Правитель "${rId}": поле "${optStr}" должно быть непустой строкой.`);
+          }
+        }
+
+        if (r.keyActions !== undefined) {
+          if (!Array.isArray(r.keyActions)) {
+            addError(relFromPublic, `Правитель "${rId}": поле "keyActions" должно быть массивом.`);
+          } else {
+            r.keyActions.forEach((ka, kIdx) => {
+              if (!isPlainObject(ka) || typeof ka.title !== 'string' || !ka.title.trim() || typeof ka.summary !== 'string' || !ka.summary.trim()) {
+                addError(relFromPublic, `Правитель "${rId}": keyActions[${kIdx}] должен содержать непустые "title" и "summary".`);
+                return;
+              }
+              if (ka.eventId !== undefined) {
+                if (typeof ka.eventId !== 'string' || !ka.eventId.trim()) {
+                  addError(relFromPublic, `Правитель "${rId}": keyActions[${kIdx}].eventId должен быть непустой строкой.`);
+                } else {
+                  collectedRulerActionLinks.push({
+                    file: relFromPublic,
+                    rulerId: rId,
+                    actionIndex: kIdx,
+                    eventId: ka.eventId.trim(),
+                  });
+                }
+              }
+            });
+          }
+        }
+
+        if (r.innerCircle !== undefined) {
+          if (!Array.isArray(r.innerCircle)) {
+            addError(relFromPublic, `Правитель "${rId}": поле "innerCircle" должно быть массивом.`);
+          } else {
+            r.innerCircle.forEach((ic, cIdx) => {
+              if (
+                !isPlainObject(ic) ||
+                typeof ic.name !== 'string' ||
+                !ic.name.trim() ||
+                typeof ic.role !== 'string' ||
+                !ic.role.trim() ||
+                typeof ic.connection !== 'string' ||
+                !ic.connection.trim()
+              ) {
+                addError(relFromPublic, `Правитель "${rId}": innerCircle[${cIdx}] должен содержать непустые "name", "role" и "connection".`);
+                return;
+              }
+              if (!VALID_RULER_RELATION_TYPES.has(ic.relationType)) {
+                addError(
+                  relFromPublic,
+                  `Правитель "${rId}": innerCircle[${cIdx}].relationType ("${ic.relationType}") недопустим. Ожидается: ${Array.from(VALID_RULER_RELATION_TYPES).join(', ')}.`,
+                );
+              }
+            });
+          }
         }
       });
     }
@@ -806,6 +880,16 @@ function main() {
       addWarning(item.file, `Узел "${item.id}" ссылается на ветку "${item.task}", не объявленную в "branch"/"branches" (будет создана авто-ветка).`);
     } else if (br.isGroup) {
       addError(item.file, `Узел "${item.id}" привязан к группе "${item.task}" (isGroup: true). Привязывайте узлы к дочерним/листовым веткам.`);
+    }
+  }
+
+  // Проверка целостности eventId в ключевых деяниях правителей
+  for (const item of collectedRulerActionLinks) {
+    if (!allNodesById.has(item.eventId)) {
+      addError(
+        item.file,
+        `Правитель "${item.rulerId}": keyActions[${item.actionIndex}].eventId ссылается на несуществующий узел "${item.eventId}".`,
+      );
     }
   }
 

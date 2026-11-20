@@ -322,6 +322,14 @@ export function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): Timel
   };
 }
 
+const VALID_RULER_RELATION_TYPES = new Set([
+  'ally',
+  'opponent',
+  'diplomacy',
+  'family',
+  'military',
+]);
+
 export function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
   if (!isPlainRecord(raw)) return null;
   const id = typeof raw.id === 'string' ? raw.id.trim() : '';
@@ -333,12 +341,67 @@ export function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
   const shortRuler =
     typeof raw.shortRuler === 'string' && raw.shortRuler.trim() ? raw.shortRuler.trim() : ruler;
 
+  const lifeYears =
+    typeof raw.lifeYears === 'string' && raw.lifeYears.trim() ? raw.lifeYears.trim() : undefined;
+  const dynastyOrTitle =
+    typeof raw.dynastyOrTitle === 'string' && raw.dynastyOrTitle.trim()
+      ? raw.dynastyOrTitle.trim()
+      : undefined;
+  const biography =
+    typeof raw.biography === 'string' && raw.biography.trim() ? raw.biography.trim() : undefined;
+  const legacy =
+    typeof raw.legacy === 'string' && raw.legacy.trim() ? raw.legacy.trim() : undefined;
+
+  const keyActions = Array.isArray(raw.keyActions)
+    ? raw.keyActions
+        .filter((item): item is Record<string, unknown> => isPlainRecord(item))
+        .map((item) => {
+          const year = typeof item.year === 'string' ? item.year.trim() : String(item.year ?? '').trim();
+          const title = typeof item.title === 'string' ? item.title.trim() : '';
+          const summary = typeof item.summary === 'string' ? item.summary.trim() : '';
+          const eventId =
+            typeof item.eventId === 'string' && item.eventId.trim() ? item.eventId.trim() : undefined;
+          if (!title || !summary) return null;
+          return {
+            year: year || `${startYear}`,
+            title,
+            summary,
+            ...(eventId ? { eventId } : {}),
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+    : undefined;
+
+  const innerCircle = Array.isArray(raw.innerCircle)
+    ? raw.innerCircle
+        .filter((item): item is Record<string, unknown> => isPlainRecord(item))
+        .map((item) => {
+          const name = typeof item.name === 'string' ? item.name.trim() : '';
+          const rawRel = typeof item.relationType === 'string' ? item.relationType.trim() : '';
+          const relationType = VALID_RULER_RELATION_TYPES.has(rawRel)
+            ? (rawRel as 'ally' | 'opponent' | 'diplomacy' | 'family' | 'military')
+            : 'ally';
+          const role = typeof item.role === 'string' ? item.role.trim() : '';
+          const connection = typeof item.connection === 'string' ? item.connection.trim() : '';
+          if (!name || !connection) return null;
+          return {
+            name,
+            relationType,
+            role: role || 'Деятель правления',
+            connection,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+    : undefined;
+
   return {
     id,
     eraId: typeof raw.eraId === 'string' && raw.eraId.trim() ? raw.eraId.trim() : 'ERA_1',
     center: typeof raw.center === 'string' && raw.center.trim() ? raw.center.trim() : undefined,
     ruler,
     shortRuler,
+    ...(lifeYears ? { lifeYears } : {}),
+    ...(dynastyOrTitle ? { dynastyOrTitle } : {}),
     reignPeriod:
       typeof raw.reignPeriod === 'string' && raw.reignPeriod.trim()
         ? raw.reignPeriod.trim()
@@ -353,6 +416,10 @@ export function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
         : undefined,
     reignTitle: typeof raw.reignTitle === 'string' ? raw.reignTitle : ruler,
     reignThesis: typeof raw.reignThesis === 'string' ? raw.reignThesis : '',
+    ...(biography ? { biography } : {}),
+    ...(keyActions && keyActions.length > 0 ? { keyActions } : {}),
+    ...(innerCircle && innerCircle.length > 0 ? { innerCircle } : {}),
+    ...(legacy ? { legacy } : {}),
     sources: sanitizeSourcesList(raw.sources),
   };
 }

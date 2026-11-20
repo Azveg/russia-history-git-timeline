@@ -76,12 +76,45 @@ export interface SourceEntry {
   url?: string;
 }
 
+export type RulerRelationType =
+  | 'ally'
+  | 'opponent'
+  | 'diplomacy'
+  | 'family'
+  | 'military';
+
+export interface RulerKeyAction {
+  year: string;
+  title: string;
+  summary: string;
+  eventId?: string;
+}
+
+export interface RulerInnerCircleMember {
+  name: string;
+  relationType: RulerRelationType;
+  role: string;
+  connection: string;
+}
+
+export interface ResolvedRulerInnerCircleMember extends RulerInnerCircleMember {
+  personKey: string | null;
+  reignEventCount: number;
+  totalEventCount: number;
+}
+
+export interface ResolvedRulerKeyAction extends RulerKeyAction {
+  linkedEvent: EnrichedEvent | null;
+}
+
 export interface RulerPeriod {
   id: string;
   eraId: string;
   center?: string;
   ruler: string;
   shortRuler: string;
+  lifeYears?: string;
+  dynastyOrTitle?: string;
   reignPeriod: string;
   startYear: number;
   endYear: number;
@@ -90,6 +123,10 @@ export interface RulerPeriod {
   calendarStyle?: CalendarStyle;
   reignTitle: string;
   reignThesis: string;
+  biography?: string;
+  keyActions?: RulerKeyAction[];
+  innerCircle?: RulerInnerCircleMember[];
+  legacy?: string;
   sources?: SourceEntry[];
 }
 

@@ -18,6 +18,8 @@ import type {
   ReignBranchPairSummary,
   ReignCrossBranchLink,
   ResolvedMacroEra,
+  ResolvedRulerInnerCircleMember,
+  ResolvedRulerKeyAction,
   RulerBoundaryTick,
   RulerParticipantEntry,
   RulerPeriod,
@@ -918,6 +920,8 @@ export interface RulerPeriodSummaryData {
   inheritedEvents: EnrichedEvent[];
   carryOverEvents: EnrichedEvent[];
   reignParticipants: RulerParticipantEntry[];
+  resolvedInnerCircle: ResolvedRulerInnerCircleMember[];
+  resolvedKeyActions: ResolvedRulerKeyAction[];
   topConnectedEvents: EnrichedEvent[];
   crossBranchLinks: ReignCrossBranchLink[];
   crossBranchPairs: ReignBranchPairSummary[];
@@ -1196,6 +1200,42 @@ export function getRulerPeriodSummaryData(
 
   const dossierMap = personDossiers ?? buildPersonDossierIndex(enrichedEvents, [ruler]).dossiers;
   const reignParticipants = buildWindowParticipantsRanking(reignEvents, [ruler], dossierMap);
+  const participantByKey = new Map(reignParticipants.map((p) => [p.personKey, p]));
+  const eventById = new Map(enrichedEvents.map((ev) => [ev.id, ev]));
+
+  const resolvedInnerCircle: ResolvedRulerInnerCircleMember[] = (ruler.innerCircle || []).map(
+    (member) => {
+      let candidateKey = resolvePersonKey(member.name, dossierMap);
+      let dossier = candidateKey ? dossierMap.get(candidateKey) ?? null : null;
+      if (!dossier) {
+        const fragments = member.name
+          .split(/\s+и\s+|,\s+/)
+          .map((part) => part.trim())
+          .filter(Boolean);
+        for (const fragment of fragments) {
+          const fragKey = resolvePersonKey(fragment, dossierMap);
+          const fragDossier = fragKey ? dossierMap.get(fragKey) ?? null : null;
+          if (fragDossier) {
+            candidateKey = fragKey;
+            dossier = fragDossier;
+            break;
+          }
+        }
+      }
+      const participant = candidateKey ? participantByKey.get(candidateKey) ?? null : null;
+      return {
+        ...member,
+        personKey: dossier ? dossier.key : null,
+        reignEventCount: participant?.reignEventCount ?? 0,
+        totalEventCount: dossier?.events.length ?? 0,
+      };
+    },
+  );
+
+  const resolvedKeyActions: ResolvedRulerKeyAction[] = (ruler.keyActions || []).map((action) => ({
+    ...action,
+    linkedEvent: action.eventId ? (eventById.get(action.eventId) ?? null) : null,
+  }));
 
   const topConnectedEvents = [...reignEvents]
     .filter((ev) => ev.explicitLinks.length > 0)
@@ -1224,6 +1264,8 @@ export function getRulerPeriodSummaryData(
     inheritedEvents,
     carryOverEvents,
     reignParticipants,
+    resolvedInnerCircle,
+    resolvedKeyActions,
     topConnectedEvents,
     crossBranchLinks,
     crossBranchPairs,
