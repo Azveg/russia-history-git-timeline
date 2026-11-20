@@ -17,7 +17,7 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { MACRO_REGION_OPTIONS, searchPersonDossiers } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
@@ -69,7 +69,7 @@ interface FilterPanelProps {
   onResetFilters: () => void;
 }
 
-export function FilterPanel({
+export const FilterPanel = memo(function FilterPanel({
   yearFrom,
   yearTo,
   minYear,
@@ -831,4 +831,4 @@ export function FilterPanel({
       )}
     </section>
   );
-}
+});

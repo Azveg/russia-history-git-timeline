@@ -19,7 +19,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { classifyEventMacroRegions, getMacroRegionOption } from '../engine/regionFilter';
 import {
   computeBranchSubLaneLayout,
@@ -207,7 +207,7 @@ function computeNodeVisualStatusMeta(
   };
 }
 
-export function GitTimeline({
+export const GitTimeline = memo(function GitTimeline({
   stream,
   matchingEvents,
   matchingRulers,
@@ -385,33 +385,35 @@ export function GitTimeline({
     const container = streamContainerRef.current;
     if (!container) return;
 
-    const visibleMap = new Map<Element, string>();
+    const visibleMap = new Map<Element, { rId: string; top: number }>();
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
           const rId = entry.target.getAttribute('data-ruler-context');
           if (!rId) return;
           if (entry.isIntersecting) {
-            visibleMap.set(entry.target, rId);
+            visibleMap.set(entry.target, {
+              rId,
+              top: entry.boundingClientRect.top,
+            });
           } else {
             visibleMap.delete(entry.target);
           }
         });
 
         if (visibleMap.size > 0) {
-          let bestEl: Element | null = null;
+          let matchedId: string | null = null;
           let bestDist = Number.POSITIVE_INFINITY;
-          visibleMap.forEach((_, el) => {
-            const rect = el.getBoundingClientRect();
-            const dist = Math.abs(rect.top - 132);
+          visibleMap.forEach((meta) => {
+            const dist = Math.abs(meta.top - 132);
             if (dist < bestDist) {
               bestDist = dist;
-              bestEl = el;
+              matchedId = meta.rId;
             }
           });
-          if (bestEl) {
-            const matchedId = visibleMap.get(bestEl);
-            if (matchedId) setActiveStickyRulerId(matchedId);
+          if (matchedId) {
+            const nextId = matchedId;
+            setActiveStickyRulerId((prev) => (prev === nextId ? prev : nextId));
           }
         }
       },
@@ -1458,7 +1460,7 @@ export function GitTimeline({
                   {focusDepth > 1 && focusDistanceMap
                     ? ` · в цепочке (${focusDepth} ш.): ${Math.max(0, focusDistanceMap.size - 1)}`
                     : ''}
-                  {' · '}параллельных: {focusedEvent.concurrentEvents.length}
+                  {' · '}параллельных: {focusedEvent.concurrentCount ?? focusedEvent.concurrentEvents.length}
                 </span>
                 {focusKeepWindow && outOfWindowFocusCount > 0 && (
                   <>
@@ -1522,7 +1524,7 @@ export function GitTimeline({
                       : 'text-slate-300 hover:text-white'
                   }`}
                 >
-                  Связи и параллельные ({focusedEvent.concurrentEvents.length})
+                  Связи и параллельные ({focusedEvent.concurrentCount ?? focusedEvent.concurrentEvents.length})
                 </button>
               </div>
 
@@ -2973,9 +2975,9 @@ export function GitTimeline({
                             </span>
                           )}
 
-                          {ev.concurrentEvents.length > 0 && (
+                          {(ev.concurrentCount ?? ev.concurrentEvents.length) > 0 && (
                             <span className="hidden md:inline font-mono text-xs text-slate-300 shrink-0 tabular-nums">
-                              ∥ {ev.concurrentEvents.length}
+                              ∥ {ev.concurrentCount ?? ev.concurrentEvents.length}
                             </span>
                           )}
 
@@ -3959,4 +3961,4 @@ export function GitTimeline({
       )}
     </div>
   );
-}
+});

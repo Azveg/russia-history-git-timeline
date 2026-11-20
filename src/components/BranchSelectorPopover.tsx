@@ -18,6 +18,9 @@ interface BranchSelectorPopoverProps {
   branchControls: BranchControlItem[];
   activeBranches: Record<string, boolean>;
   collapsedParents: Record<string, boolean>;
+  expectedTotalBranches?: number;
+  isHydratingBranches?: boolean;
+  onRequestAllBranches?: () => void;
   onToggleBranch: (branchId: string) => void;
   onToggleCategory: (branchIds: string[], enable: boolean) => void;
   onApplyPreset: (presetId: BranchPresetId) => void;
@@ -29,6 +32,9 @@ export function BranchSelectorPopover({
   branchControls,
   activeBranches,
   collapsedParents,
+  expectedTotalBranches,
+  isHydratingBranches = false,
+  onRequestAllBranches,
   onToggleBranch,
   onToggleCategory,
   onApplyPreset,
@@ -54,8 +60,9 @@ export function BranchSelectorPopover({
     [leafControls, activeBranches],
   );
   const totalCount = leafControls.length;
+  const displayTotalCount = Math.max(totalCount, expectedTotalBranches ?? 0);
   const activeCount = activeItems.length;
-  const hasFilteredBranches = activeCount < totalCount;
+  const hasFilteredBranches = activeCount < displayTotalCount;
 
   const filteredControls = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -92,6 +99,9 @@ export function BranchSelectorPopover({
 
   useEffect(() => {
     if (!isOpen) return;
+    if (isHydratingBranches) {
+      onRequestAllBranches?.();
+    }
     const timer = window.setTimeout(() => {
       searchInputRef.current?.focus({ preventScroll: true });
     }, 30);
@@ -117,7 +127,7 @@ export function BranchSelectorPopover({
       document.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [isOpen]);
+  }, [isOpen, isHydratingBranches, onRequestAllBranches]);
 
   const allGroupsExpanded =
     groupedCategories.length > 0 &&
@@ -302,7 +312,7 @@ export function BranchSelectorPopover({
               : 'text-slate-400 font-normal'
           }`}
         >
-          {activeCount}/{totalCount}
+          {activeCount}/{displayTotalCount}
         </span>
 
         <ChevronDown
@@ -473,6 +483,12 @@ export function BranchSelectorPopover({
                   </div>
                 );
               })
+            )}
+            {isHydratingBranches && (
+              <div className="px-3 py-2 bg-slate-950/80 text-[11px] font-mono text-amber-300/90 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <span>Догрузка остальных веток в фоне ({totalCount}/{displayTotalCount})…</span>
+              </div>
             )}
           </div>
         </div>

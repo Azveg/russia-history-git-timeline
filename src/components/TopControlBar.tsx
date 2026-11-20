@@ -17,7 +17,7 @@ import {
   Undo2,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MACRO_REGION_OPTIONS,
   computeMacroRegionCounts,
@@ -42,6 +42,9 @@ interface TopControlBarProps {
   branchControls: Array<BranchDefinition & { count: number }>;
   activeBranches: Record<string, boolean>;
   collapsedParents: Record<string, boolean>;
+  expectedTotalBranches?: number;
+  isHydratingBranches?: boolean;
+  onRequestAllBranches?: () => void;
   onToggleBranch: (branchId: string) => void;
   onToggleCategory: (branchIds: string[], enable: boolean) => void;
   onApplyPreset: (presetId: BranchPresetId) => void;
@@ -112,10 +115,13 @@ const QUICK_PRESETS: Array<{ id: BranchPresetId; label: string; shortLabel: stri
   },
 ];
 
-export function TopControlBar({
+export const TopControlBar = memo(function TopControlBar({
   branchControls,
   activeBranches,
   collapsedParents,
+  expectedTotalBranches,
+  isHydratingBranches = false,
+  onRequestAllBranches,
   onToggleBranch,
   onToggleCategory,
   onApplyPreset,
@@ -342,6 +348,9 @@ export function TopControlBar({
             branchControls={branchControls}
             activeBranches={activeBranches}
             collapsedParents={collapsedParents}
+            expectedTotalBranches={expectedTotalBranches}
+            isHydratingBranches={isHydratingBranches}
+            onRequestAllBranches={onRequestAllBranches}
             onToggleBranch={onToggleBranch}
             onToggleCategory={onToggleCategory}
             onApplyPreset={onApplyPreset}
@@ -930,6 +939,6 @@ export function TopControlBar({
       </div>
     </div>
   );
-}
+});
 
 

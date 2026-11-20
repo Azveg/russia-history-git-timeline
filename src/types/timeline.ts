@@ -327,6 +327,7 @@ export interface EnrichedEvent extends TimelineNode {
   reignPeriod: string;
   prerequisitesList: string[];
   concurrentEvents: EnrichedEvent[];
+  concurrentCount?: number;
   explicitLinks: ExplicitLinkInfo[];
   retrospectiveLinks: RetrospectiveLinkInfo[];
 }
@@ -473,6 +474,7 @@ export interface FilterState {
   selectedMacroRegion?: MacroRegionId;
   branchPairFilter?: BranchPairFilter | null;
   auditUnlinkedMode?: boolean;
+  computeAuditMap?: boolean;
   onlyWithSyncLinks: boolean;
   syncLinkTypeFilter?: SyncLinkTypeFilter;
   focusedEventId: string | null;

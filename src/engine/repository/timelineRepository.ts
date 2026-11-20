@@ -485,9 +485,21 @@ const CORE_INITIAL_MODULE_PATHS = new Set<string>([
   'data/wars.json',
   'data/economics.json',
   'data/diplomacy.json',
-  'data/writers_bio.json',
-  'data/writers_works.json',
 ]);
+
+export function countExpectedLeafBranchesFromManifest(manifest: SyncManifest | null): number {
+  if (!manifest || !Array.isArray(manifest.mountedFiles)) return 0;
+  const leafIds = new Set<string>();
+  manifest.mountedFiles.forEach((meta) => {
+    if (!meta?.enabled || !Array.isArray(meta.branchIds)) return;
+    meta.branchIds.forEach((id) => {
+      if (typeof id === 'string' && id.trim() && !id.endsWith('_ALL')) {
+        leafIds.add(id.trim());
+      }
+    });
+  });
+  return leafIds.size;
+}
 
 function normalizeDataPath(rawPath: string): string {
   return rawPath.trim().replace(/^(?:\.\/|\/)+/, '');
@@ -761,7 +773,17 @@ function selectInitialModulePaths(
   return initialPaths.length > 0 ? initialPaths : bootstrap.orderedCandidatePaths;
 }
 
-export async function hydrateRemainingTimelineModules(): Promise<TimelineRepositorySnapshot | null> {
+function yieldToMainThread(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve();
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
+export async function hydrateRemainingTimelineModules(options?: {
+  priority?: boolean;
+  batchSize?: number;
+}): Promise<TimelineRepositorySnapshot | null> {
   if (!cachedBootstrapState || !cachedRepositorySnapshot) {
     return cachedRepositorySnapshot;
   }
@@ -784,13 +806,20 @@ export async function hydrateRemainingTimelineModules(): Promise<TimelineReposit
     return cachedRepositorySnapshot;
   }
 
-  inFlightHydrationPromise = Promise.all(
-    remainingPaths.map((normPath) =>
-      fetchDataModuleFile(normPath, bootstrap.fileHashes, bootstrap.fallbackVersion),
-    ),
-  )
-    .then((fetchedEntries) => {
-      const mergedFiles: Record<string, TimelineDataFile> = { ...existingFiles };
+  const batchSize = Math.max(1, options?.batchSize ?? (options?.priority ? remainingPaths.length : 5));
+  const shouldYield = !options?.priority && typeof window !== 'undefined';
+
+  inFlightHydrationPromise = (async () => {
+    const mergedFiles: Record<string, TimelineDataFile> = { ...existingFiles };
+
+    for (let i = 0; i < remainingPaths.length; i += batchSize) {
+      const batch = remainingPaths.slice(i, i + batchSize);
+      const fetchedEntries = await Promise.all(
+        batch.map((normPath) =>
+          fetchDataModuleFile(normPath, bootstrap.fileHashes, bootstrap.fallbackVersion),
+        ),
+      );
+
       fetchedEntries.forEach(({ normPath, data }) => {
         if (!data) return;
         const existingMeta = bootstrap.manifestMetaByNormPath.get(normPath);
@@ -798,15 +827,20 @@ export async function hydrateRemainingTimelineModules(): Promise<TimelineReposit
         const storeKey = existingMeta?.path || rawDataPath || normPath;
         mergedFiles[storeKey] = data;
       });
-      const fullSnapshot = buildSnapshotFromFiles(bootstrap, mergedFiles, true);
-      cachedRepositorySnapshot = fullSnapshot;
-      inFlightHydrationPromise = null;
-      return fullSnapshot;
-    })
-    .catch((err) => {
-      inFlightHydrationPromise = null;
-      throw err;
-    });
+
+      if (shouldYield && i + batchSize < remainingPaths.length) {
+        await yieldToMainThread();
+      }
+    }
+
+    const fullSnapshot = buildSnapshotFromFiles(bootstrap, mergedFiles, true);
+    cachedRepositorySnapshot = fullSnapshot;
+    inFlightHydrationPromise = null;
+    return fullSnapshot;
+  })().catch((err) => {
+    inFlightHydrationPromise = null;
+    throw err;
+  });
 
   return inFlightHydrationPromise;
 }

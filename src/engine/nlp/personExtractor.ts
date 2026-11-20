@@ -321,6 +321,48 @@ export function doesRawMatchPersonKey(raw: string, canonicalKey: string): boolea
   return targetInitStr.startsWith(parsedInitStr) || parsedInitStr.startsWith(targetInitStr);
 }
 
+interface DossierLookupIndex {
+  exactVariantToKey: Map<string, string>;
+  bySurname: Map<string, Array<{ key: string; targetInitStr: string }>>;
+}
+
+const dossierLookupIndexCache = new WeakMap<Map<string, PersonDossier>, DossierLookupIndex>();
+
+function getOrBuildDossierLookupIndex(
+  dossiers: Map<string, PersonDossier>,
+): DossierLookupIndex {
+  const cached = dossierLookupIndexCache.get(dossiers);
+  if (cached) return cached;
+
+  const exactVariantToKey = new Map<string, string>();
+  const bySurname = new Map<string, Array<{ key: string; targetInitStr: string }>>();
+
+  for (const [key, dossier] of dossiers.entries()) {
+    for (let i = 0; i < dossier.variants.length; i++) {
+      const variant = dossier.variants[i];
+      if (!exactVariantToKey.has(variant)) {
+        exactVariantToKey.set(variant, key);
+      }
+    }
+    if (key.startsWith('person:')) {
+      const targetBody = key.slice('person:'.length);
+      const sepIdx = targetBody.indexOf('|');
+      const targetSurname = sepIdx >= 0 ? targetBody.slice(0, sepIdx) : targetBody;
+      const targetInitStr = sepIdx >= 0 ? targetBody.slice(sepIdx + 1) : '';
+      let bucket = bySurname.get(targetSurname);
+      if (!bucket) {
+        bucket = [];
+        bySurname.set(targetSurname, bucket);
+      }
+      bucket.push({ key, targetInitStr });
+    }
+  }
+
+  const index: DossierLookupIndex = { exactVariantToKey, bySurname };
+  dossierLookupIndexCache.set(dossiers, index);
+  return index;
+}
+
 export function buildPersonDossierIndex(
   enrichedEvents: EnrichedEvent[],
   rulers: RulerPeriod[],
@@ -330,54 +372,80 @@ export function buildPersonDossierIndex(
 } {
   const initialsBySurname = new Map<string, Set<string>>();
   const twoInitialsBySurnameFirst = new Map<string, Set<string>>();
+  const parsedByRaw = new Map<string, PreliminaryPersonParsed | null>();
+
+  const getParsed = (raw: string): PreliminaryPersonParsed | null => {
+    if (parsedByRaw.has(raw)) {
+      return parsedByRaw.get(raw) ?? null;
+    }
+    const parsed = extractPreliminaryPersonKey(raw);
+    parsedByRaw.set(raw, parsed);
+    return parsed;
+  };
 
   enrichedEvents.forEach((ev) => {
-    (ev.keyFigures || []).forEach((raw) => {
-      const parsed = extractPreliminaryPersonKey(raw);
-      if (!parsed || parsed.isMonarchOrAlias || parsed.initials.length === 0) return;
+    const figures = ev.keyFigures;
+    if (!figures || figures.length === 0) return;
+    for (let i = 0; i < figures.length; i++) {
+      const parsed = getParsed(figures[i]);
+      if (!parsed || parsed.isMonarchOrAlias || parsed.initials.length === 0) continue;
       const initKey = parsed.initials.join('.');
-      if (!initialsBySurname.has(parsed.surname)) {
-        initialsBySurname.set(parsed.surname, new Set());
+      let initSet = initialsBySurname.get(parsed.surname);
+      if (!initSet) {
+        initSet = new Set<string>();
+        initialsBySurname.set(parsed.surname, initSet);
       }
-      initialsBySurname.get(parsed.surname)!.add(initKey);
+      initSet.add(initKey);
 
       if (parsed.initials.length >= 2) {
         const prefixKey = `${parsed.surname}|${parsed.initials[0]}`;
-        if (!twoInitialsBySurnameFirst.has(prefixKey)) {
-          twoInitialsBySurnameFirst.set(prefixKey, new Set());
+        let twoSet = twoInitialsBySurnameFirst.get(prefixKey);
+        if (!twoSet) {
+          twoSet = new Set<string>();
+          twoInitialsBySurnameFirst.set(prefixKey, twoSet);
         }
-        twoInitialsBySurnameFirst.get(prefixKey)!.add(initKey);
+        twoSet.add(initKey);
       }
-    });
+    }
   });
 
   const rawToKey = new Map<string, string>();
+  const resolvedByRaw = new Map<string, { key: string; preferred?: string } | null>();
+
   const resolveCanonical = (raw: string): { key: string; preferred?: string } | null => {
-    const parsed = extractPreliminaryPersonKey(raw);
-    if (!parsed) return null;
+    if (resolvedByRaw.has(raw)) {
+      return resolvedByRaw.get(raw) ?? null;
+    }
+    const parsed = getParsed(raw);
+    if (!parsed) {
+      resolvedByRaw.set(raw, null);
+      return null;
+    }
+    let result: { key: string; preferred?: string };
     if (parsed.isMonarchOrAlias) {
-      return { key: parsed.preliminaryKey, preferred: parsed.preferredDisplay };
-    }
-
-    const allForSurname = initialsBySurname.get(parsed.surname);
-    if (parsed.initials.length === 0) {
+      result = { key: parsed.preliminaryKey, preferred: parsed.preferredDisplay };
+    } else if (parsed.initials.length === 0) {
+      const allForSurname = initialsBySurname.get(parsed.surname);
       if (allForSurname && allForSurname.size === 1) {
-        const onlyInit = Array.from(allForSurname)[0];
-        return { key: `person:${parsed.surname}|${onlyInit}` };
+        const onlyInit = allForSurname.values().next().value as string;
+        result = { key: `person:${parsed.surname}|${onlyInit}` };
+      } else {
+        result = { key: `surname:${parsed.surname}` };
       }
-      return { key: `surname:${parsed.surname}` };
-    }
-
-    if (parsed.initials.length === 1) {
+    } else if (parsed.initials.length === 1) {
       const prefixKey = `${parsed.surname}|${parsed.initials[0]}`;
       const twoInitMatches = twoInitialsBySurnameFirst.get(prefixKey);
       if (twoInitMatches && twoInitMatches.size === 1) {
-        const onlyTwoInit = Array.from(twoInitMatches)[0];
-        return { key: `person:${parsed.surname}|${onlyTwoInit}` };
+        const onlyTwoInit = twoInitMatches.values().next().value as string;
+        result = { key: `person:${parsed.surname}|${onlyTwoInit}` };
+      } else {
+        result = { key: `person:${parsed.surname}|${parsed.initials.join('.')}` };
       }
+    } else {
+      result = { key: `person:${parsed.surname}|${parsed.initials.join('.')}` };
     }
-
-    return { key: `person:${parsed.surname}|${parsed.initials.join('.')}` };
+    resolvedByRaw.set(raw, result);
+    return result;
   };
 
   interface Accumulator {
@@ -390,10 +458,13 @@ export function buildPersonDossierIndex(
   const acc = new Map<string, Accumulator>();
 
   enrichedEvents.forEach((ev) => {
+    const figures = ev.keyFigures;
+    if (!figures || figures.length === 0) return;
     const isBio = isBiographyNode(ev);
-    (ev.keyFigures || []).forEach((raw, idx) => {
+    for (let idx = 0; idx < figures.length; idx++) {
+      const raw = figures[idx];
       const res = resolveCanonical(raw);
-      if (!res) return;
+      if (!res) continue;
       rawToKey.set(raw, res.key);
 
       let entry = acc.get(res.key);
@@ -412,7 +483,7 @@ export function buildPersonDossierIndex(
       if (isBio && idx === 0 && !entry.bioCard) {
         entry.bioCard = ev;
       }
-    });
+    }
   });
 
   const rulerById = new Map(rulers.map((r) => [r.id, r]));
@@ -472,16 +543,38 @@ export function resolvePersonKey(
   if (rawToKey && rawToKey.has(rawName)) {
     return rawToKey.get(rawName) ?? null;
   }
+
+  const lookupIndex = getOrBuildDossierLookupIndex(dossiers);
+  const exactVariantHit = lookupIndex.exactVariantToKey.get(rawName);
+  if (exactVariantHit !== undefined) {
+    return exactVariantHit;
+  }
+
   const prelim = extractPreliminaryPersonKey(rawName);
-  if (prelim && dossiers.has(prelim.preliminaryKey)) {
+  if (!prelim) return null;
+  if (dossiers.has(prelim.preliminaryKey)) {
     return prelim.preliminaryKey;
   }
-  for (const [key, dossier] of dossiers.entries()) {
+
+  if (prelim.isMonarchOrAlias) {
+    return null;
+  }
+
+  const candidates = lookupIndex.bySurname.get(prelim.surname);
+  if (!candidates || candidates.length === 0) return null;
+
+  if (prelim.initials.length === 0) {
+    return candidates[0].key;
+  }
+
+  const parsedInitStr = prelim.initials.join('.');
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i];
     if (
-      dossier.variants.includes(rawName) ||
-      doesRawMatchPersonKey(rawName, key)
+      candidate.targetInitStr.startsWith(parsedInitStr) ||
+      parsedInitStr.startsWith(candidate.targetInitStr)
     ) {
-      return key;
+      return candidate.key;
     }
   }
   return null;

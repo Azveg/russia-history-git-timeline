@@ -18,7 +18,7 @@ import {
   Undo2,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   computeDensityBins,
@@ -65,7 +65,7 @@ interface ScanCursorState {
 const POPOVER_WIDTH = 344;
 const POPOVER_MAX_HEIGHT = 360;
 
-export function OverlapMapSection({
+export const OverlapMapSection = memo(function OverlapMapSection({
   matchingEvents,
   rulers,
   branches,
@@ -135,10 +135,10 @@ export function OverlapMapSection({
     [globalDensityBins],
   );
 
-  // Локальная гистограмма плотности для выбранного окна
+  // Локальная гистограмма плотности для выбранного окна (вычисляется только при раскрытой карте)
   const densityBins = useMemo(
-    () => computeDensityBins(matchingEvents, yearFrom, yearTo, 28),
-    [matchingEvents, yearFrom, yearTo],
+    () => (isExpanded ? computeDensityBins(matchingEvents, yearFrom, yearTo, 28) : []),
+    [isExpanded, matchingEvents, yearFrom, yearTo],
   );
 
   const maxBinCount = useMemo(
@@ -1345,4 +1345,4 @@ export function OverlapMapSection({
       )}
     </section>
   );
-}
+});

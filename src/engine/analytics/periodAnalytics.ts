@@ -771,12 +771,36 @@ export interface MacroEraSummaryData {
   totalSyncLinks: number;
 }
 
+const macroEraSummaryCache = new WeakMap<
+  EnrichedEvent[],
+  Map<
+    string,
+    {
+      era: ResolvedMacroEra;
+      rulers: RulerPeriod[];
+      branches: BranchDefinition[];
+      result: MacroEraSummaryData;
+    }
+  >
+>();
+
 export function getMacroEraSummaryData(
   era: ResolvedMacroEra,
   rulers: RulerPeriod[],
   enrichedEvents: EnrichedEvent[],
   branches: BranchDefinition[],
 ): MacroEraSummaryData {
+  let byEraId = macroEraSummaryCache.get(enrichedEvents);
+  const cached = byEraId?.get(era.id);
+  if (
+    cached &&
+    cached.era === era &&
+    cached.rulers === rulers &&
+    cached.branches === branches
+  ) {
+    return cached.result;
+  }
+
   const allBelongingEvents = enrichedEvents.filter((ev) =>
     doesIntervalBelongToEra(
       getEventEffectiveStartYear(ev, branches),
@@ -889,7 +913,7 @@ export function getMacroEraSummaryData(
     .sort((a, b) => b.explicitLinks.length - a.explicitLinks.length)
     .slice(0, 6);
 
-  return {
+  const result: MacroEraSummaryData = {
     era,
     eraRulers,
     eraEvents,
@@ -907,6 +931,13 @@ export function getMacroEraSummaryData(
     totalDurationYears: Math.max(1, era.endYear - era.startYear),
     totalSyncLinks,
   };
+
+  if (!byEraId) {
+    byEraId = new Map();
+    macroEraSummaryCache.set(enrichedEvents, byEraId);
+  }
+  byEraId.set(era.id, { era, rulers, branches, result });
+  return result;
 }
 
 export interface RulerPeriodSummaryData {
@@ -1165,6 +1196,20 @@ function normalizeRulerLookupName(value: string): string {
     .toLowerCase();
 }
 
+const rulerSummaryCache = new WeakMap<
+  EnrichedEvent[],
+  Map<
+    string,
+    {
+      ruler: RulerPeriod;
+      branches?: BranchDefinition[];
+      personDossiers?: Map<string, PersonDossier>;
+      allRulers?: RulerPeriod[];
+      result: RulerPeriodSummaryData;
+    }
+  >
+>();
+
 export function getRulerPeriodSummaryData(
   ruler: RulerPeriod,
   enrichedEvents: EnrichedEvent[],
@@ -1172,6 +1217,18 @@ export function getRulerPeriodSummaryData(
   personDossiers?: Map<string, PersonDossier>,
   allRulers?: RulerPeriod[],
 ): RulerPeriodSummaryData {
+  let byRulerId = rulerSummaryCache.get(enrichedEvents);
+  const cached = byRulerId?.get(ruler.id);
+  if (
+    cached &&
+    cached.ruler === ruler &&
+    cached.branches === branches &&
+    cached.personDossiers === personDossiers &&
+    cached.allRulers === allRulers
+  ) {
+    return cached.result;
+  }
+
   const overlappingAll = enrichedEvents.filter((ev) =>
     ev.overlappingRulers.some((or) => or.id === ruler.id),
   );
@@ -1321,7 +1378,7 @@ export function getRulerPeriodSummaryData(
 
   const { crossBranchLinks, crossBranchPairs } = buildCrossBranchSummary(overlappingAll, branches);
 
-  return {
+  const result: RulerPeriodSummaryData = {
     ruler,
     reignEvents,
     contemporaryWriters,
@@ -1340,6 +1397,13 @@ export function getRulerPeriodSummaryData(
     crossBranchLinks,
     crossBranchPairs,
   };
+
+  if (!byRulerId) {
+    byRulerId = new Map();
+    rulerSummaryCache.set(enrichedEvents, byRulerId);
+  }
+  byRulerId.set(ruler.id, { ruler, branches, personDossiers, allRulers, result });
+  return result;
 }
 
 export interface CustomWindowSummaryData {
@@ -1368,6 +1432,21 @@ export interface CustomWindowSummaryData {
   totalUniqueLinks: number;
 }
 
+const customWindowSummaryCache = new WeakMap<
+  EnrichedEvent[],
+  Map<
+    string,
+    {
+      rulers: RulerPeriod[];
+      branches: BranchDefinition[];
+      eras: MacroEra[];
+      personDossiers?: Map<string, PersonDossier>;
+      activeBranches?: Record<string, boolean>;
+      result: CustomWindowSummaryData;
+    }
+  >
+>();
+
 export function getCustomWindowSummaryData(
   rawYearFrom: number,
   rawYearTo: number,
@@ -1380,6 +1459,19 @@ export function getCustomWindowSummaryData(
 ): CustomWindowSummaryData {
   const yearFrom = Math.min(rawYearFrom, rawYearTo);
   const yearTo = Math.max(rawYearFrom, rawYearTo);
+  const windowCacheKey = `${yearFrom}-${yearTo}`;
+  let byWindowKey = customWindowSummaryCache.get(enrichedEvents);
+  const cached = byWindowKey?.get(windowCacheKey);
+  if (
+    cached &&
+    cached.rulers === rulers &&
+    cached.branches === branches &&
+    cached.eras === eras &&
+    cached.personDossiers === personDossiers &&
+    cached.activeBranches === activeBranches
+  ) {
+    return cached.result;
+  }
 
   const overlappingAll = enrichedEvents.filter((ev) =>
     intersectsTimeWindow(
@@ -1506,7 +1598,7 @@ export function getCustomWindowSummaryData(
     dossierMap,
   );
 
-  return {
+  const result: CustomWindowSummaryData = {
     yearFrom,
     yearTo,
     totalDurationYears: Math.max(1, yearTo - yearFrom),
@@ -1531,6 +1623,20 @@ export function getCustomWindowSummaryData(
     windowParticipants,
     totalUniqueLinks: uniqueLinkIds.size,
   };
+
+  if (!byWindowKey) {
+    byWindowKey = new Map();
+    customWindowSummaryCache.set(enrichedEvents, byWindowKey);
+  }
+  byWindowKey.set(windowCacheKey, {
+    rulers,
+    branches,
+    eras,
+    personDossiers,
+    activeBranches,
+    result,
+  });
+  return result;
 }
 
 export function getWindowLinksVisibilitySummary(

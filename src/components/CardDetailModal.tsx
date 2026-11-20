@@ -123,6 +123,10 @@ export function CardDetailModal({
   const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
 
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
+  const eventById = useMemo(
+    () => new Map(enrichedEvents.map((ev) => [ev.id, ev])),
+    [enrichedEvents],
+  );
 
   const explicitOtherIdSet = useMemo(
     () => new Set(card ? card.explicitLinks.map((l) => l.otherId) : []),
@@ -202,7 +206,7 @@ export function CardDetailModal({
   }> = [];
 
   card.retrospectiveLinks.forEach((rLink) => {
-    const otherEv = enrichedEvents.find((e) => e.id === rLink.otherId);
+    const otherEv = eventById.get(rLink.otherId);
     if (otherEv && !culturalReflectionIds.has(otherEv.id)) {
       culturalReflectionIds.add(otherEv.id);
       culturalReflectionItems.push({
@@ -235,7 +239,7 @@ export function CardDetailModal({
   }> = [];
 
   card.explicitLinks.forEach((link) => {
-    const otherEv = enrichedEvents.find((e) => e.id === link.otherId);
+    const otherEv = link.targetEvent ?? eventById.get(link.otherId);
     if (!otherEv) return;
 
     const isOtherCulturalOrScientific =

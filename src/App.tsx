@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DashboardHeader } from './components/DashboardHeader';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import type { EpochSlicePreset } from './components/EraSelectorPopover';
@@ -9,24 +9,26 @@ import { OverlapMapSection } from './components/OverlapMapSection';
 import { TopControlBar } from './components/TopControlBar';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
-const CardDetailModal = lazyWithRetry(() =>
-  import('./components/CardDetailModal').then((m) => ({ default: m.CardDetailModal })),
-);
-const ComparePeriodsModal = lazyWithRetry(() =>
-  import('./components/ComparePeriodsModal').then((m) => ({ default: m.ComparePeriodsModal })),
-);
-const EraSummaryModal = lazyWithRetry(() =>
-  import('./components/EraSummaryModal').then((m) => ({ default: m.EraSummaryModal })),
-);
-const PeriodSummaryModal = lazyWithRetry(() =>
-  import('./components/PeriodSummaryModal').then((m) => ({ default: m.PeriodSummaryModal })),
-);
-const PersonDossierModal = lazyWithRetry(() =>
-  import('./components/PersonDossierModal').then((m) => ({ default: m.PersonDossierModal })),
-);
-const WindowSummaryModal = lazyWithRetry(() =>
-  import('./components/WindowSummaryModal').then((m) => ({ default: m.WindowSummaryModal })),
-);
+const loadCardDetailModal = () =>
+  import('./components/CardDetailModal').then((m) => ({ default: m.CardDetailModal }));
+const loadComparePeriodsModal = () =>
+  import('./components/ComparePeriodsModal').then((m) => ({ default: m.ComparePeriodsModal }));
+const loadEraSummaryModal = () =>
+  import('./components/EraSummaryModal').then((m) => ({ default: m.EraSummaryModal }));
+const loadPeriodSummaryModal = () =>
+  import('./components/PeriodSummaryModal').then((m) => ({ default: m.PeriodSummaryModal }));
+const loadPersonDossierModal = () =>
+  import('./components/PersonDossierModal').then((m) => ({ default: m.PersonDossierModal }));
+const loadWindowSummaryModal = () =>
+  import('./components/WindowSummaryModal').then((m) => ({ default: m.WindowSummaryModal }));
+
+const CardDetailModal = lazyWithRetry(loadCardDetailModal);
+const ComparePeriodsModal = lazyWithRetry(loadComparePeriodsModal);
+const EraSummaryModal = lazyWithRetry(loadEraSummaryModal);
+const PeriodSummaryModal = lazyWithRetry(loadPeriodSummaryModal);
+const PersonDossierModal = lazyWithRetry(loadPersonDossierModal);
+const WindowSummaryModal = lazyWithRetry(loadWindowSummaryModal);
+
 import { useTimelineData } from './hooks/useTimelineData';
 import {
   parseInitialYearBound,
@@ -45,6 +47,7 @@ import {
   computeBranchPresetMap,
   computeMacroRegionCounts,
   computeTimelineYearBounds,
+  countExpectedLeafBranchesFromManifest,
   doesIntervalBelongToEra,
   extractBranchesFromStore,
   extractRulersFromStore,
@@ -74,10 +77,16 @@ import type {
   FocusScope,
   MacroRegionId,
   ModalHistoryItem,
+  PersonDossier,
   SyncLinkTypeFilter,
+  SyncTagOption,
   TimeScaleMode,
   YearRangeStep,
 } from './types/timeline';
+
+const EMPTY_PERSON_DOSSIERS = new Map<string, PersonDossier>();
+const EMPTY_PERSON_RAW_TO_KEY = new Map<string, string>();
+const EMPTY_SYNC_TAG_OPTIONS: SyncTagOption[] = [];
 
 type ActiveModalState =
   | { type: 'NONE' }
@@ -96,9 +105,22 @@ export default function App() {
     filesMap,
     loading,
     loadError,
+    isFullyHydrated,
+    isHydrating,
     reloadRepository,
     ensureAllModulesLoaded,
   } = useTimelineData({ initialParams });
+
+  const [isPersonIndexReady, setIsPersonIndexReady] = useState<boolean>(() =>
+    Boolean(
+      initialParams.get('card') ||
+        initialParams.get('ruler') ||
+        initialParams.get('person') ||
+        initialParams.get('window') ||
+        initialParams.get('search'),
+    ),
+  );
+  const hasInitializedBranchesRef = useRef(false);
 
   const [activeBranches, setActiveBranches] = useState<Record<string, boolean>>({});
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
@@ -171,9 +193,83 @@ export default function App() {
 
   useEffect(() => {
     if (searchQuery.trim() || selectedPersonKey || activeModal.type !== 'NONE') {
-      void ensureAllModulesLoaded();
+      void ensureAllModulesLoaded({ priority: true });
     }
   }, [searchQuery, selectedPersonKey, activeModal.type, ensureAllModulesLoaded]);
+
+  // Фоновая предзагрузка чанков модальных окон во время простоя браузера
+  useEffect(() => {
+    if (loading || loadError || !manifest) return;
+    let cancelled = false;
+    const loaders = [
+      loadCardDetailModal,
+      loadPeriodSummaryModal,
+      loadPersonDossierModal,
+      loadEraSummaryModal,
+      loadWindowSummaryModal,
+      loadComparePeriodsModal,
+    ];
+    const timers: number[] = [];
+    const idleIds: number[] = [];
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+
+    const scheduleStep = (index: number) => {
+      if (cancelled || index >= loaders.length) return;
+      const run = () => {
+        if (cancelled) return;
+        void loaders[index]().catch(() => {
+          // Ошибка фонового prefetch не критична: lazyWithRetry подгрузит чанк по клику
+        });
+        const nextTimer = window.setTimeout(() => scheduleStep(index + 1), 180);
+        timers.push(nextTimer);
+      };
+      if (typeof win.requestIdleCallback === 'function') {
+        const id = win.requestIdleCallback(run, { timeout: 2500 });
+        idleIds.push(id);
+      } else {
+        const id = window.setTimeout(run, 350 + index * 220);
+        timers.push(id);
+      }
+    };
+
+    const initialDelay = window.setTimeout(() => scheduleStep(0), 600);
+    timers.push(initialDelay);
+
+    return () => {
+      cancelled = true;
+      timers.forEach((id) => window.clearTimeout(id));
+      if (typeof win.cancelIdleCallback === 'function') {
+        idleIds.forEach((id) => win.cancelIdleCallback!(id));
+      }
+    };
+  }, [loading, loadError, manifest]);
+
+  // Отложенная сборка индекса персон после первого рендера ленты
+  useEffect(() => {
+    if (loading || !manifest || isPersonIndexReady) return;
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    const trigger = () => {
+      startTransition(() => {
+        setIsPersonIndexReady(true);
+      });
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      const id = win.requestIdleCallback(trigger, { timeout: 900 });
+      return () => win.cancelIdleCallback?.(id);
+    }
+    const timer = window.setTimeout(trigger, 160);
+    return () => window.clearTimeout(timer);
+  }, [loading, manifest, isPersonIndexReady]);
+
+  const handleRequestAllBranches = useCallback(() => {
+    void ensureAllModulesLoaded({ priority: true });
+  }, [ensureAllModulesLoaded]);
 
   useEffect(() => {
     if (!highlightedJumpId) return;
@@ -205,56 +301,70 @@ export default function App() {
     return extractBranchesFromStore(manifest, filesMap);
   }, [manifest, filesMap]);
 
+  const expectedTotalBranches = useMemo(
+    () => countExpectedLeafBranchesFromManifest(manifest),
+    [manifest],
+  );
+
   // Динамическая инициализация состояния веток: учет ?branches= из URL или дефолтный пресет «Обзор истории» ('overview')
   useEffect(() => {
     if (branches.length === 0) return;
 
-    setActiveBranches((prev) => {
-      if (Object.keys(prev).length === 0) {
+    const applyBranchSync = () => {
+      setActiveBranches((prev) => {
+        if (Object.keys(prev).length === 0) {
+          const overviewMap = computeBranchPresetMap(branches, 'overview');
+          const urlBranchesRaw = initialParams.get('branches');
+          if (!urlBranchesRaw) return overviewMap;
+
+          const requestedIds = new Set(
+            urlBranchesRaw
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean),
+          );
+          const leafBranches = branches.filter((b) => !b.isGroup);
+          const hasValidMatch = leafBranches.some((b) => requestedIds.has(b.id));
+          if (!hasValidMatch) return overviewMap;
+
+          const customMap: Record<string, boolean> = {};
+          leafBranches.forEach((b) => {
+            customMap[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
+          });
+          return customMap;
+        }
+        let changed = false;
+        const next = { ...prev };
         const overviewMap = computeBranchPresetMap(branches, 'overview');
-        const urlBranchesRaw = initialParams.get('branches');
-        if (!urlBranchesRaw) return overviewMap;
-
-        const requestedIds = new Set(
-          urlBranchesRaw
-            .split(',')
-            .map((s) => s.trim())
-            .filter(Boolean),
-        );
-        const leafBranches = branches.filter((b) => !b.isGroup);
-        const hasValidMatch = leafBranches.some((b) => requestedIds.has(b.id));
-        if (!hasValidMatch) return overviewMap;
-
-        const customMap: Record<string, boolean> = {};
-        leafBranches.forEach((b) => {
-          customMap[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
+        branches.forEach((b) => {
+          if (b.isGroup) return;
+          if (next[b.id] === undefined) {
+            next[b.id] = overviewMap[b.id] ?? false;
+            changed = true;
+          }
         });
-        return customMap;
-      }
-      let changed = false;
-      const next = { ...prev };
-      const overviewMap = computeBranchPresetMap(branches, 'overview');
-      branches.forEach((b) => {
-        if (b.isGroup) return;
-        if (next[b.id] === undefined) {
-          next[b.id] = overviewMap[b.id] ?? false;
-          changed = true;
-        }
+        return changed ? next : prev;
       });
-      return changed ? next : prev;
-    });
 
-    setCollapsedParents((prev) => {
-      let changed = false;
-      const next = { ...prev };
-      branches.forEach((b) => {
-        if (b.defaultCollapsedOnTimeline && next[b.id] === undefined) {
-          next[b.id] = true;
-          changed = true;
-        }
+      setCollapsedParents((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        branches.forEach((b) => {
+          if (b.defaultCollapsedOnTimeline && next[b.id] === undefined) {
+            next[b.id] = true;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
       });
-      return changed ? next : prev;
-    });
+    };
+
+    if (!hasInitializedBranchesRef.current) {
+      hasInitializedBranchesRef.current = true;
+      applyBranchSync();
+    } else {
+      startTransition(applyBranchSync);
+    }
   }, [branches, initialParams]);
 
   // Двусторонняя синхронизация с URLSearchParams (Deep Linking и History API)
@@ -339,10 +449,18 @@ export default function App() {
     return getEnrichedEvents(manifest, filesMap, rulers);
   }, [manifest, filesMap, rulers]);
 
-  const { dossiers: personDossiers, rawToKey: personRawToKey } = useMemo(
-    () => buildPersonDossierIndex(enrichedEvents, rulers),
-    [enrichedEvents, rulers],
-  );
+  const shouldComputePersonIndex =
+    isPersonIndexReady ||
+    activeModal.type !== 'NONE' ||
+    searchQuery.trim().length >= 2 ||
+    selectedPersonKey !== null;
+
+  const { dossiers: personDossiers, rawToKey: personRawToKey } = useMemo(() => {
+    if (!shouldComputePersonIndex || enrichedEvents.length === 0) {
+      return { dossiers: EMPTY_PERSON_DOSSIERS, rawToKey: EMPTY_PERSON_RAW_TO_KEY };
+    }
+    return buildPersonDossierIndex(enrichedEvents, rulers);
+  }, [shouldComputePersonIndex, enrichedEvents, rulers]);
 
   const selectedPersonDossier = useMemo(
     () => (selectedPersonKey ? personDossiers.get(selectedPersonKey) ?? null : null),
@@ -361,9 +479,9 @@ export default function App() {
     setYearTo((prev) => (prev === 2000 ? timelineBounds.maxYear : Math.min(timelineBounds.maxYear, prev)));
   }, [manifest, timelineBounds.minYear, timelineBounds.maxYear]);
 
-  // Изоляция устаревших ID при удалении файлов веток или правителей
+  // Изоляция устаревших ID при удалении файлов веток или правителей (только после завершения гидратации)
   useEffect(() => {
-    if (!manifest) return;
+    if (!manifest || !isFullyHydrated) return;
     if (selectedReign !== 'ALL' && !rulers.some((r) => r.id === selectedReign)) {
       setSelectedReign('ALL');
     }
@@ -376,7 +494,11 @@ export default function App() {
     if (activeModal.type === 'REIGN' && !rulers.some((r) => r.id === activeModal.rulerId)) {
       setActiveModal({ type: 'NONE' });
     }
-    if (activeModal.type === 'PERSON' && !personDossiers.has(activeModal.personKey)) {
+    if (
+      shouldComputePersonIndex &&
+      activeModal.type === 'PERSON' &&
+      !personDossiers.has(activeModal.personKey)
+    ) {
       setActiveModal({ type: 'NONE' });
     }
     if (
@@ -385,11 +507,13 @@ export default function App() {
     ) {
       setActiveModal({ type: 'NONE' });
     }
-    if (selectedPersonKey && !personDossiers.has(selectedPersonKey)) {
+    if (shouldComputePersonIndex && selectedPersonKey && !personDossiers.has(selectedPersonKey)) {
       setSelectedPersonKey(null);
     }
   }, [
     manifest,
+    isFullyHydrated,
+    shouldComputePersonIndex,
     rulers,
     enrichedEvents,
     personDossiers,
@@ -399,11 +523,12 @@ export default function App() {
     selectedPersonKey,
   ]);
 
-
-
   const syncTagOptions = useMemo(
-    () => (manifest ? buildSyncTagIndex(enrichedEvents, rulers, manifest.macroEras) : []),
-    [manifest, enrichedEvents, rulers],
+    () =>
+      manifest && (!isFiltersCollapsed || selectedSyncTag !== null)
+        ? buildSyncTagIndex(enrichedEvents, rulers, manifest.macroEras)
+        : EMPTY_SYNC_TAG_OPTIONS,
+    [manifest, isFiltersCollapsed, selectedSyncTag, enrichedEvents, rulers],
   );
 
   const thematicLeafBranches = useMemo(() => getLeafBranches(branches), [branches]);
@@ -466,6 +591,7 @@ export default function App() {
       selectedMacroRegion,
       branchPairFilter,
       auditUnlinkedMode: isAuditDebugEnabled && auditUnlinkedMode,
+      computeAuditMap: isAuditDebugEnabled,
       onlyWithSyncLinks,
       syncLinkTypeFilter,
       focusedEventId,
@@ -608,108 +734,162 @@ export default function App() {
     [activeModal],
   );
 
+  // Реф актуального состояния модальных окон для стабильных коллбеков (чтобы открытие/закрытие модалок не перерисовывало ленту)
+  const modalStateRef = useRef({
+    activeModal,
+    activeCardObj,
+    activeRulerObj,
+    activeEraObj,
+    activePersonObj,
+    activeWindowRange,
+    activeComparePair,
+    personDossiers,
+    personRawToKey,
+    enrichedEvents,
+    rulers,
+    isPersonIndexReady,
+  });
+  modalStateRef.current = {
+    activeModal,
+    activeCardObj,
+    activeRulerObj,
+    activeEraObj,
+    activePersonObj,
+    activeWindowRange,
+    activeComparePair,
+    personDossiers,
+    personRawToKey,
+    enrichedEvents,
+    rulers,
+    isPersonIndexReady,
+  };
+
   // Стек навигации между модальными окнами («← Назад»)
   const pushCurrentModalToHistory = useCallback(() => {
-    if (activeCardObj) {
+    const {
+      activeCardObj: curCard,
+      activeRulerObj: curRuler,
+      activeEraObj: curEra,
+      activePersonObj: curPerson,
+      activeWindowRange: curWindow,
+      activeComparePair: curCompare,
+    } = modalStateRef.current;
+
+    if (curCard) {
       setModalHistory((prev) => [
         ...prev.slice(-9),
-        { type: 'card', id: activeCardObj.id, label: `${activeCardObj.period} ${activeCardObj.title}` },
+        { type: 'card', id: curCard.id, label: `${curCard.period} ${curCard.title}` },
       ]);
-    } else if (activeRulerObj) {
+    } else if (curRuler) {
       setModalHistory((prev) => [
         ...prev.slice(-9),
-        { type: 'ruler', id: activeRulerObj.id, label: `${activeRulerObj.shortRuler} (${activeRulerObj.reignPeriod})` },
+        { type: 'ruler', id: curRuler.id, label: `${curRuler.shortRuler} (${curRuler.reignPeriod})` },
       ]);
-    } else if (activeEraObj) {
+    } else if (curEra) {
       setModalHistory((prev) => [
         ...prev.slice(-9),
-        { type: 'era', id: activeEraObj.id, label: activeEraObj.shortTitle || activeEraObj.title },
+        { type: 'era', id: curEra.id, label: curEra.shortTitle || curEra.title },
       ]);
-    } else if (activePersonObj) {
+    } else if (curPerson) {
       setModalHistory((prev) => [
         ...prev.slice(-9),
-        { type: 'person', id: activePersonObj.key, label: activePersonObj.displayName },
+        { type: 'person', id: curPerson.key, label: curPerson.displayName },
       ]);
-    } else if (activeWindowRange) {
+    } else if (curWindow) {
       setModalHistory((prev) => [
         ...prev.slice(-9),
         {
           type: 'window',
-          id: `${activeWindowRange.from}-${activeWindowRange.to}`,
-          label: `Окно ${activeWindowRange.from}–${activeWindowRange.to}`,
-          windowRange: activeWindowRange,
+          id: `${curWindow.from}-${curWindow.to}`,
+          label: `Окно ${curWindow.from}–${curWindow.to}`,
+          windowRange: curWindow,
         },
       ]);
-    } else if (activeComparePair) {
+    } else if (curCompare) {
       setModalHistory((prev) => [
         ...prev.slice(-9),
         {
           type: 'compare',
           id: 'compare',
           label: 'Сравнение периодов',
-          comparePair: activeComparePair,
+          comparePair: curCompare,
         },
       ]);
     }
-  }, [activeCardObj, activeRulerObj, activeEraObj, activePersonObj, activeWindowRange, activeComparePair]);
+  }, []);
 
   const transitionToModal = useCallback(
     (nextModal: Exclude<ActiveModalState, { type: 'NONE' }>) => {
-      if (activeModal.type !== 'NONE') {
+      if (modalStateRef.current.activeModal.type !== 'NONE') {
         pushCurrentModalToHistory();
       } else {
         setModalHistory([]);
       }
       setActiveModal(nextModal);
     },
-    [activeModal.type, pushCurrentModalToHistory],
+    [pushCurrentModalToHistory],
   );
 
   const handleOpenCardModal = useCallback(
     (cardId: string) => {
-      if (activeModal.type === 'CARD' && activeModal.cardId === cardId) return;
+      const cur = modalStateRef.current.activeModal;
+      if (cur.type === 'CARD' && cur.cardId === cardId) return;
       transitionToModal({ type: 'CARD', cardId });
     },
-    [activeModal, transitionToModal],
+    [transitionToModal],
   );
 
   const handleOpenPeriodModal = useCallback(
     (rulerId: string) => {
-      if (activeModal.type === 'REIGN' && activeModal.rulerId === rulerId) return;
+      const cur = modalStateRef.current.activeModal;
+      if (cur.type === 'REIGN' && cur.rulerId === rulerId) return;
       transitionToModal({ type: 'REIGN', rulerId });
     },
-    [activeModal, transitionToModal],
+    [transitionToModal],
   );
 
   const handleOpenEraModal = useCallback(
     (eraId: string) => {
-      if (activeModal.type === 'ERA' && activeModal.eraId === eraId) return;
+      const cur = modalStateRef.current.activeModal;
+      if (cur.type === 'ERA' && cur.eraId === eraId) return;
       transitionToModal({ type: 'ERA', eraId });
     },
-    [activeModal, transitionToModal],
+    [transitionToModal],
   );
 
   const handleOpenPersonModal = useCallback(
     (personKeyOrName: string) => {
+      const state = modalStateRef.current;
+      let dossiers = state.personDossiers;
+      let rawToKey = state.personRawToKey;
+      if (dossiers.size === 0 && state.enrichedEvents.length > 0) {
+        const built = buildPersonDossierIndex(state.enrichedEvents, state.rulers);
+        dossiers = built.dossiers;
+        rawToKey = built.rawToKey;
+        if (!state.isPersonIndexReady) {
+          setIsPersonIndexReady(true);
+        }
+      }
       const resolvedKey =
-        resolvePersonKey(personKeyOrName, personDossiers, personRawToKey) || personKeyOrName;
-      if (!personDossiers.has(resolvedKey)) return;
-      if (activeModal.type === 'PERSON' && activeModal.personKey === resolvedKey) return;
+        resolvePersonKey(personKeyOrName, dossiers, rawToKey) || personKeyOrName;
+      if (!dossiers.has(resolvedKey)) return;
+      if (state.activeModal.type === 'PERSON' && state.activeModal.personKey === resolvedKey) return;
       transitionToModal({ type: 'PERSON', personKey: resolvedKey });
     },
-    [personDossiers, personRawToKey, activeModal, transitionToModal],
+    [transitionToModal],
   );
 
   const handleOpenWindowModal = useCallback(
     (fromVal: number, toVal: number) => {
       const from = Math.min(fromVal, toVal);
       const to = Math.max(fromVal, toVal);
-      if (activeModal.type === 'WINDOW' && activeModal.from === from && activeModal.to === to) {
+      const cur = modalStateRef.current.activeModal;
+      if (cur.type === 'WINDOW' && cur.from === from && cur.to === to) {
         return;
       }
       transitionToModal({ type: 'WINDOW', from, to });
     },
-    [activeModal, transitionToModal],
+    [transitionToModal],
   );
 
   const handleOpenCompareModal = useCallback(
@@ -1352,6 +1532,9 @@ export default function App() {
   }
 
   function handleApplyBranchPreset(presetId: BranchPresetId) {
+    if (presetId !== 'overview' && !isFullyHydrated) {
+      void ensureAllModulesLoaded({ priority: true });
+    }
     preserveViewportScrollAnchor(() => {
       setActiveBranches((prev) => ({
         ...prev,
@@ -1504,6 +1687,191 @@ export default function App() {
   const shouldShowHiddenLinksNotice =
     forceShowHiddenLinks || (!dismissedHiddenLinks && isWindowNarrowedOrFiltered);
 
+  // Стабильные обёртки обработчиков для React.memo дочерних панелей и ленты (исключают лишний рендер ленты при открытии/закрытии модалок)
+  const actionsRef = useRef({
+    handleToggleBranch,
+    handleToggleBranchCategory,
+    handleApplyBranchPreset,
+    handleIsolateBranch,
+    handleToggleCollapseParent,
+    handleSelectEra,
+    handleJumpToRuler,
+    handleSelectReign,
+    handleYearRangeChange,
+    handleStepBackZoom,
+    handleZoomByFactor,
+    handleShiftWindow,
+    handleToggleFilters,
+    handleQuickStartHotNode,
+    handleToggleOnlySynced,
+    handleChangeSyncLinkTypeFilter,
+    handleSelectSyncTag,
+    handleChangeBranchPair,
+    handleResetFiltersOnly,
+    handleApplySpanPreset,
+    handleRecordZoomCheckpoint,
+    handleToggleFocusEvent,
+    handleRevealBranches,
+    handleJumpToEvent,
+    effectiveYearFrom,
+    effectiveYearTo,
+  });
+  actionsRef.current = {
+    handleToggleBranch,
+    handleToggleBranchCategory,
+    handleApplyBranchPreset,
+    handleIsolateBranch,
+    handleToggleCollapseParent,
+    handleSelectEra,
+    handleJumpToRuler,
+    handleSelectReign,
+    handleYearRangeChange,
+    handleStepBackZoom,
+    handleZoomByFactor,
+    handleShiftWindow,
+    handleToggleFilters,
+    handleQuickStartHotNode,
+    handleToggleOnlySynced,
+    handleChangeSyncLinkTypeFilter,
+    handleSelectSyncTag,
+    handleChangeBranchPair,
+    handleResetFiltersOnly,
+    handleApplySpanPreset,
+    handleRecordZoomCheckpoint,
+    handleToggleFocusEvent,
+    handleRevealBranches,
+    handleJumpToEvent,
+    effectiveYearFrom,
+    effectiveYearTo,
+  };
+
+  const stableToggleBranch = useCallback((id: string) => actionsRef.current.handleToggleBranch(id), []);
+  const stableToggleBranchCategory = useCallback(
+    (ids: string[], enable: boolean) => actionsRef.current.handleToggleBranchCategory(ids, enable),
+    [],
+  );
+  const stableApplyBranchPreset = useCallback(
+    (presetId: BranchPresetId) => actionsRef.current.handleApplyBranchPreset(presetId),
+    [],
+  );
+  const stableIsolateBranch = useCallback((id: string) => actionsRef.current.handleIsolateBranch(id), []);
+  const stableToggleCollapseParent = useCallback(
+    (id: string) => actionsRef.current.handleToggleCollapseParent(id),
+    [],
+  );
+  const stableSelectEra = useCallback((id: string) => actionsRef.current.handleSelectEra(id), []);
+  const stableJumpToRuler = useCallback((id: string) => actionsRef.current.handleJumpToRuler(id), []);
+  const stableSelectReign = useCallback((id: string) => actionsRef.current.handleSelectReign(id), []);
+  const stableSelectMacroRegionTop = useCallback((region: MacroRegionId) => {
+    preserveViewportScrollAnchor(() => setSelectedMacroRegion(region));
+  }, []);
+  const stableSelectMacroRegionTimeline = useCallback(
+    (region: MacroRegionId) => {
+      preserveViewportScrollAnchor(() => setSelectedMacroRegion(region));
+      if (region === 'all') {
+        showToast('Фильтр по макрорегиону сброшен (показаны все регионы)');
+      } else {
+        showToast(`Фильтр по макрорегиону: «${getMacroRegionOption(region).label}»`);
+      }
+    },
+    [showToast],
+  );
+  const stableYearRangeChange = useCallback(
+    (fromVal: number, toVal: number, recordHistory = true) =>
+      actionsRef.current.handleYearRangeChange(fromVal, toVal, recordHistory),
+    [],
+  );
+  const stableSelectYearRangeResettingEra = useCallback(
+    (fromVal: number, toVal: number, recordHistory = true) => {
+      setSelectedEra('ALL');
+      setSelectedReign('ALL');
+      actionsRef.current.handleYearRangeChange(fromVal, toVal, recordHistory);
+    },
+    [],
+  );
+  const stableStepBackZoom = useCallback(() => actionsRef.current.handleStepBackZoom(), []);
+  const stableZoomIn = useCallback(() => actionsRef.current.handleZoomByFactor(0.5), []);
+  const stableZoomOut = useCallback(() => actionsRef.current.handleZoomByFactor(2), []);
+  const stableShiftWindow = useCallback((dir: -1 | 1) => actionsRef.current.handleShiftWindow(dir), []);
+  const stableChangeCardDensity = useCallback((density: CardDensity) => {
+    preserveViewportScrollAnchor(() => setCardDensity(density));
+  }, []);
+  const stableChangeTimeScaleMode = useCallback((mode: TimeScaleMode) => {
+    preserveViewportScrollAnchor(() => setTimeScaleMode(mode));
+  }, []);
+  const stableToggleShowEndNodes = useCallback(() => {
+    preserveViewportScrollAnchor(() => setShowEndNodes((prev) => !prev));
+  }, []);
+  const stableResetTimeFilter = useCallback(() => actionsRef.current.handleSelectEra('ALL'), []);
+  const stableToggleFilters = useCallback(() => actionsRef.current.handleToggleFilters(), []);
+  const stableRevealHiddenLinks = useCallback(() => {
+    setDismissedHiddenLinks(false);
+    setForceShowHiddenLinks(true);
+    window.setTimeout(() => {
+      const el = document.getElementById('hidden-links-notice');
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 40);
+  }, []);
+  const stableChangeYearFrom = useCallback((y: number) => {
+    setSelectedEra('ALL');
+    actionsRef.current.handleYearRangeChange(y, actionsRef.current.effectiveYearTo);
+  }, []);
+  const stableChangeYearTo = useCallback((y: number) => {
+    setSelectedEra('ALL');
+    actionsRef.current.handleYearRangeChange(actionsRef.current.effectiveYearFrom, y);
+  }, []);
+  const stableQuickStartHotNode = useCallback(
+    (preset: EpochSlicePreset) => actionsRef.current.handleQuickStartHotNode(preset),
+    [],
+  );
+  const stableToggleOnlySynced = useCallback(() => actionsRef.current.handleToggleOnlySynced(), []);
+  const stableChangeSyncLinkTypeFilter = useCallback(
+    (nextType: SyncLinkTypeFilter) => actionsRef.current.handleChangeSyncLinkTypeFilter(nextType),
+    [],
+  );
+  const stableSelectSyncTag = useCallback(
+    (tag: string | null) => actionsRef.current.handleSelectSyncTag(tag),
+    [],
+  );
+  const stableChangeBranchPair = useCallback(
+    (pair: BranchPairFilter | null) => actionsRef.current.handleChangeBranchPair(pair),
+    [],
+  );
+  const stableToggleAuditUnlinkedMode = useCallback(() => {
+    setAuditUnlinkedMode((prev) => !prev);
+  }, []);
+  const stableClearPersonFilter = useCallback(() => setSelectedPersonKey(null), []);
+  const stableResetFiltersOnly = useCallback(() => actionsRef.current.handleResetFiltersOnly(), []);
+  const stableApplySpanPreset = useCallback(
+    (preset: 'all' | 100 | 10 | 2) => actionsRef.current.handleApplySpanPreset(preset),
+    [],
+  );
+  const stableRecordZoomCheckpoint = useCallback(
+    () => actionsRef.current.handleRecordZoomCheckpoint(),
+    [],
+  );
+  const stableToggleFocusKeepWindow = useCallback(() => {
+    setFocusKeepWindow((prev) => !prev);
+  }, []);
+  const stableToggleFocusEvent = useCallback(
+    (id: string) => actionsRef.current.handleToggleFocusEvent(id),
+    [],
+  );
+  const stableExitFocusMode = useCallback(() => setFocusedEventId(null), []);
+  const stableRevealBranches = useCallback(
+    (ids: string[]) => actionsRef.current.handleRevealBranches(ids),
+    [],
+  );
+  const stableJumpToEvent = useCallback((id: string) => actionsRef.current.handleJumpToEvent(id), []);
+
+  const memoizedWindowRange = useMemo(
+    () => ({ from: yearFrom, to: yearTo }),
+    [yearFrom, yearTo],
+  );
+  const lastZoomStep = zoomHistory[zoomHistory.length - 1] ?? null;
+
   if (loading) {
     return (
       <div className="min-h-screen bg-[#050811] text-slate-100 p-6 sm:p-10 max-w-7xl mx-auto space-y-6">
@@ -1545,59 +1913,50 @@ export default function App() {
         branchControls={branchControls}
         activeBranches={activeBranches}
         collapsedParents={collapsedParents}
-        onToggleBranch={handleToggleBranch}
-        onToggleCategory={handleToggleBranchCategory}
-        onApplyPreset={handleApplyBranchPreset}
-        onIsolateBranch={handleIsolateBranch}
-        onToggleCollapseParent={handleToggleCollapseParent}
+        expectedTotalBranches={expectedTotalBranches}
+        isHydratingBranches={isHydrating}
+        onRequestAllBranches={handleRequestAllBranches}
+        onToggleBranch={stableToggleBranch}
+        onToggleCategory={stableToggleBranchCategory}
+        onApplyPreset={stableApplyBranchPreset}
+        onIsolateBranch={stableIsolateBranch}
+        onToggleCollapseParent={stableToggleCollapseParent}
         eras={manifest.macroEras}
         enrichedEventsForEras={enrichedEvents}
         selectedEraId={selectedEra}
-        onSelectEra={handleSelectEra}
+        onSelectEra={stableSelectEra}
         onOpenEraModal={handleOpenEraModal}
         rulers={rulers}
         matchingEvents={matchingEvents}
         selectedRulerId={selectedReign === 'ALL' ? '' : selectedReign}
-        onJumpToRuler={handleJumpToRuler}
-        onFilterByRuler={handleSelectReign}
+        onJumpToRuler={stableJumpToRuler}
+        onFilterByRuler={stableSelectReign}
         onOpenRulerModal={handleOpenPeriodModal}
         selectedMacroRegion={selectedMacroRegion}
         macroRegionCounts={macroRegionCounts}
-        onSelectMacroRegion={(region) => {
-          preserveViewportScrollAnchor(() => setSelectedMacroRegion(region));
-        }}
+        onSelectMacroRegion={stableSelectMacroRegionTop}
         yearFrom={effectiveYearFrom}
         yearTo={effectiveYearTo}
         minYear={timelineBounds.minYear}
         maxYear={timelineBounds.maxYear}
-        onYearRangeChange={(fromVal, toVal) => {
-          setSelectedEra('ALL');
-          setSelectedReign('ALL');
-          handleYearRangeChange(fromVal, toVal);
-        }}
+        onYearRangeChange={stableSelectYearRangeResettingEra}
         zoomHistoryCount={zoomHistory.length}
-        lastZoomStep={zoomHistory[zoomHistory.length - 1] ?? null}
-        onStepBackZoom={handleStepBackZoom}
-        onZoomIn={() => handleZoomByFactor(0.5)}
-        onZoomOut={() => handleZoomByFactor(2)}
-        onShiftWindow={handleShiftWindow}
+        lastZoomStep={lastZoomStep}
+        onStepBackZoom={stableStepBackZoom}
+        onZoomIn={stableZoomIn}
+        onZoomOut={stableZoomOut}
+        onShiftWindow={stableShiftWindow}
         cardDensity={cardDensity}
-        onChangeCardDensity={(density) =>
-          preserveViewportScrollAnchor(() => setCardDensity(density))
-        }
+        onChangeCardDensity={stableChangeCardDensity}
         timeScaleMode={timeScaleMode}
-        onChangeTimeScaleMode={(mode) =>
-          preserveViewportScrollAnchor(() => setTimeScaleMode(mode))
-        }
+        onChangeTimeScaleMode={stableChangeTimeScaleMode}
         showEndNodes={showEndNodes}
-        onToggleShowEndNodes={() =>
-          preserveViewportScrollAnchor(() => setShowEndNodes((prev) => !prev))
-        }
+        onToggleShowEndNodes={stableToggleShowEndNodes}
         onOpenWindowModal={handleOpenWindowModal}
-        onResetTimeFilter={() => handleSelectEra('ALL')}
+        onResetTimeFilter={stableResetTimeFilter}
         isFiltersCollapsed={isFiltersCollapsed}
         activeAdvancedCount={activeAdvancedCount}
-        onToggleFilters={handleToggleFilters}
+        onToggleFilters={stableToggleFilters}
       />
 
       <DashboardHeader
@@ -1606,16 +1965,7 @@ export default function App() {
         streamCount={stream.length}
         visibleLinksCount={windowLinksVisibility.visibleLinksCount}
         hiddenLinksCount={windowLinksVisibility.hiddenLinksCount}
-        onRevealHiddenLinks={() => {
-          setDismissedHiddenLinks(false);
-          setForceShowHiddenLinks(true);
-          window.setTimeout(() => {
-            const el = document.getElementById('hidden-links-notice');
-            if (el) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-          }, 40);
-        }}
+        onRevealHiddenLinks={stableRevealHiddenLinks}
         minYear={timelineBounds.minYear}
         maxYear={timelineBounds.maxYear}
       />
@@ -1644,33 +1994,23 @@ export default function App() {
           personDossiers={personDossiers}
           selectedPersonDossier={selectedPersonDossier}
           isAdvancedExpanded={!isFiltersCollapsed}
-          onToggleAdvanced={handleToggleFilters}
-          onChangeYearFrom={(y) => {
-            setSelectedEra('ALL');
-            handleYearRangeChange(y, effectiveYearTo);
-          }}
-          onChangeYearTo={(y) => {
-            setSelectedEra('ALL');
-            handleYearRangeChange(effectiveYearFrom, y);
-          }}
-          onSelectYearRange={(fromVal, toVal) => {
-            setSelectedEra('ALL');
-            setSelectedReign('ALL');
-            handleYearRangeChange(fromVal, toVal);
-          }}
-          onQuickStartHotNode={handleQuickStartHotNode}
+          onToggleAdvanced={stableToggleFilters}
+          onChangeYearFrom={stableChangeYearFrom}
+          onChangeYearTo={stableChangeYearTo}
+          onSelectYearRange={stableSelectYearRangeResettingEra}
+          onQuickStartHotNode={stableQuickStartHotNode}
           onChangeSearch={setSearchQuery}
-          onToggleOnlySynced={handleToggleOnlySynced}
-          onChangeSyncLinkTypeFilter={handleChangeSyncLinkTypeFilter}
-          onSelectSyncTag={handleSelectSyncTag}
+          onToggleOnlySynced={stableToggleOnlySynced}
+          onChangeSyncLinkTypeFilter={stableChangeSyncLinkTypeFilter}
+          onSelectSyncTag={stableSelectSyncTag}
           onSelectMacroRegion={setSelectedMacroRegion}
-          onChangeBranchPair={handleChangeBranchPair}
-          onToggleAuditUnlinkedMode={() => setAuditUnlinkedMode((prev) => !prev)}
+          onChangeBranchPair={stableChangeBranchPair}
+          onToggleAuditUnlinkedMode={stableToggleAuditUnlinkedMode}
           onOpenCompareModal={handleOpenCompareFromHeader}
           onOpenWindowModal={handleOpenWindowModal}
           onOpenPersonModal={handleOpenPersonModal}
-          onClearPersonFilter={() => setSelectedPersonKey(null)}
-          onResetFilters={handleResetFiltersOnly}
+          onClearPersonFilter={stableClearPersonFilter}
+          onResetFilters={stableResetFiltersOnly}
         />
 
         <OverlapMapSection
@@ -1687,19 +2027,15 @@ export default function App() {
           onOpenCardModal={handleOpenCardModal}
           onOpenPeriodModal={handleOpenPeriodModal}
           onOpenWindowModal={handleOpenWindowModal}
-          onSelectYearRange={(fromVal, toVal, recordHistory = true) => {
-            setSelectedEra('ALL');
-            setSelectedReign('ALL');
-            handleYearRangeChange(fromVal, toVal, recordHistory);
-          }}
+          onSelectYearRange={stableSelectYearRangeResettingEra}
           zoomHistoryCount={zoomHistory.length}
-          lastZoomStep={zoomHistory[zoomHistory.length - 1] ?? null}
-          onStepBackZoom={handleStepBackZoom}
-          onZoomIn={() => handleZoomByFactor(0.5)}
-          onZoomOut={() => handleZoomByFactor(2)}
-          onShiftWindow={handleShiftWindow}
-          onApplySpanPreset={handleApplySpanPreset}
-          onRecordZoomCheckpoint={handleRecordZoomCheckpoint}
+          lastZoomStep={lastZoomStep}
+          onStepBackZoom={stableStepBackZoom}
+          onZoomIn={stableZoomIn}
+          onZoomOut={stableZoomOut}
+          onShiftWindow={stableShiftWindow}
+          onApplySpanPreset={stableApplySpanPreset}
+          onRecordZoomCheckpoint={stableRecordZoomCheckpoint}
         />
 
         {shouldShowHiddenLinksNotice && (
@@ -1752,38 +2088,31 @@ export default function App() {
             cardDensity={cardDensity}
             timeScaleMode={timeScaleMode}
             selectedMacroRegion={selectedMacroRegion}
-            onSelectMacroRegion={(region) => {
-              preserveViewportScrollAnchor(() => setSelectedMacroRegion(region));
-              if (region === 'all') {
-                showToast('Фильтр по макрорегиону сброшен (показаны все регионы)');
-              } else {
-                showToast(`Фильтр по макрорегиону: «${getMacroRegionOption(region).label}»`);
-              }
-            }}
+            onSelectMacroRegion={stableSelectMacroRegionTimeline}
             focusedEvent={focusedEvent}
             focusScope={focusScope}
             focusDepth={focusDepth}
             focusKeepWindow={focusKeepWindow}
             outOfWindowFocusCount={outOfWindowFocusCount}
             focusDistanceMap={focusDistanceMap}
-            windowRange={{ from: yearFrom, to: yearTo }}
+            windowRange={memoizedWindowRange}
             auditUnlinkedMode={isAuditDebugEnabled && auditUnlinkedMode}
             auditCandidateMap={auditCandidateMap}
             onChangeFocusScope={setFocusScope}
             onChangeFocusDepth={setFocusDepth}
-            onToggleFocusKeepWindow={() => setFocusKeepWindow((prev) => !prev)}
-            onToggleFocusEvent={handleToggleFocusEvent}
-            onToggleCollapseParent={handleToggleCollapseParent}
-            onExitFocusMode={() => setFocusedEventId(null)}
-            onRevealBranches={handleRevealBranches}
+            onToggleFocusKeepWindow={stableToggleFocusKeepWindow}
+            onToggleFocusEvent={stableToggleFocusEvent}
+            onToggleCollapseParent={stableToggleCollapseParent}
+            onExitFocusMode={stableExitFocusMode}
+            onRevealBranches={stableRevealBranches}
             highlightedJumpId={highlightedJumpId}
-            onJumpToEvent={handleJumpToEvent}
+            onJumpToEvent={stableJumpToEvent}
             onHoverEvent={setHoveredEventId}
             onOpenCardModal={handleOpenCardModal}
             onOpenPeriodModal={handleOpenPeriodModal}
             onOpenEraModal={handleOpenEraModal}
             onOpenWindowModal={handleOpenWindowModal}
-            onSelectYearRange={handleYearRangeChange}
+            onSelectYearRange={stableYearRangeChange}
           />
         )}
       </main>

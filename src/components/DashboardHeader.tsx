@@ -1,4 +1,5 @@
 import { BookOpenCheck } from 'lucide-react';
+import { memo } from 'react';
 
 interface DashboardHeaderProps {
   visibleLanesCount: number;
@@ -11,7 +12,7 @@ interface DashboardHeaderProps {
   maxYear?: number;
 }
 
-export function DashboardHeader({
+export const DashboardHeader = memo(function DashboardHeader({
   visibleLanesCount,
   matchingRulersCount,
   streamCount,
@@ -92,4 +93,4 @@ export function DashboardHeader({
       </div>
     </header>
   );
-}
+});

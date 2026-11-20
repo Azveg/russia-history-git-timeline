@@ -530,83 +530,202 @@ export function getEnrichedEvents(
     CrossLink & { isAutoSync?: boolean; syncTag?: string; isRetrospective?: boolean }
   > = [...explicitLinks, ...autoSyncLinks, ...retrospectiveTagLinks];
 
-  list.forEach((ev) => {
-    ev.concurrentEvents = list.filter(
-      (other) => other.id !== ev.id && other.startYear <= ev.endYear && other.endYear >= ev.startYear,
-    );
+  // O(L) adjacency index so every event inspects only its incident links instead of scanning allLinks (O(N * L))
+  const linksByNodeId = new Map<
+    string,
+    Array<CrossLink & { isAutoSync?: boolean; syncTag?: string; isRetrospective?: boolean }>
+  >();
+  for (let i = 0; i < allLinks.length; i++) {
+    const lnk = allLinks[i];
+    let fromBucket = linksByNodeId.get(lnk.from);
+    if (!fromBucket) {
+      fromBucket = [];
+      linksByNodeId.set(lnk.from, fromBucket);
+    }
+    fromBucket.push(lnk);
+
+    if (lnk.to !== lnk.from) {
+      let toBucket = linksByNodeId.get(lnk.to);
+      if (!toBucket) {
+        toBucket = [];
+        linksByNodeId.set(lnk.to, toBucket);
+      }
+      toBucket.push(lnk);
+    }
+  }
+
+  // O(N + Y) prefix-sum interval counting for exact concurrentCount on every event
+  const totalEvents = list.length;
+  let minStartYear = Infinity;
+  let maxEndYear = -Infinity;
+  for (let i = 0; i < totalEvents; i++) {
+    const ev = list[i];
+    if (ev.startYear < minStartYear) minStartYear = ev.startYear;
+    if (ev.endYear > maxEndYear) maxEndYear = ev.endYear;
+  }
+
+  const yearSpan = Number.isFinite(minStartYear) ? maxEndYear - minStartYear + 1 : 0;
+  const usePrefixCount = totalEvents > 0 && yearSpan > 0 && yearSpan <= 20000;
+  let startsPrefix: Int32Array | null = null;
+  let endsPrefix: Int32Array | null = null;
+
+  if (usePrefixCount) {
+    startsPrefix = new Int32Array(yearSpan);
+    endsPrefix = new Int32Array(yearSpan);
+    for (let i = 0; i < totalEvents; i++) {
+      const ev = list[i];
+      startsPrefix[ev.startYear - minStartYear] += 1;
+      endsPrefix[ev.endYear - minStartYear] += 1;
+    }
+    for (let y = 1; y < yearSpan; y++) {
+      startsPrefix[y] += startsPrefix[y - 1];
+      endsPrefix[y] += endsPrefix[y - 1];
+    }
+  }
+
+  // Upper bound in `list` (sorted monotonically by startYear via startPrecision.sortKey)
+  const findStartYearUpperBound = (targetYear: number): number => {
+    let lo = 0;
+    let hi = totalEvents;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (list[mid].startYear <= targetYear) {
+        lo = mid + 1;
+      } else {
+        hi = mid;
+      }
+    }
+    return lo;
+  };
+
+  for (let i = 0; i < totalEvents; i++) {
+    const ev = list[i];
+
+    if (usePrefixCount && startsPrefix && endsPrefix) {
+      const endedBefore =
+        ev.startYear > minStartYear ? endsPrefix[ev.startYear - minStartYear - 1] : 0;
+      const startedUpToEnd = startsPrefix[ev.endYear - minStartYear];
+      const startedAfter = totalEvents - startedUpToEnd;
+      ev.concurrentCount = Math.max(0, totalEvents - 1 - endedBefore - startedAfter);
+    } else {
+      let count = 0;
+      const upper = findStartYearUpperBound(ev.endYear);
+      for (let j = 0; j < upper; j++) {
+        const other = list[j];
+        if (other.id !== ev.id && other.endYear >= ev.startYear) {
+          count += 1;
+        }
+      }
+      ev.concurrentCount = count;
+    }
+
+    // Lazily materialize ev.concurrentEvents only when actually accessed (e.g. CardDetailModal or Focus mode)
+    Object.defineProperty(ev, 'concurrentEvents', {
+      configurable: true,
+      enumerable: true,
+      get() {
+        const upper = findStartYearUpperBound(ev.endYear);
+        const concurrent: EnrichedEvent[] = [];
+        for (let j = 0; j < upper; j++) {
+          const other = list[j];
+          if (other.id !== ev.id && other.endYear >= ev.startYear) {
+            concurrent.push(other);
+          }
+        }
+        Object.defineProperty(ev, 'concurrentEvents', {
+          value: concurrent,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+        return concurrent;
+      },
+      set(val: EnrichedEvent[]) {
+        Object.defineProperty(ev, 'concurrentEvents', {
+          value: val,
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        });
+      },
+    });
 
     const links: ExplicitLinkInfo[] = [];
     const retroLinks: RetrospectiveLinkInfo[] = [];
     const seenRetroOtherIds = new Set<string>();
+    const incidentLinks = linksByNodeId.get(ev.id);
 
-    allLinks.forEach((lnk) => {
-      if (lnk.from === ev.id || lnk.to === ev.id) {
+    if (incidentLinks) {
+      const isEvCulturalOrSci =
+        isLiteraryWorkNode(ev) || isScienceDiscoveryNode(ev) || isBiographyNode(ev);
+
+      for (let k = 0; k < incidentLinks.length; k++) {
+        const lnk = incidentLinks[k];
         let isOutgoing = lnk.from === ev.id;
         const targetId = isOutgoing ? lnk.to : lnk.from;
         const targetEvent = byId.get(targetId);
-        if (targetEvent) {
-          // Для неперекрывающихся событий в явном хронологическом порядке нормализуем случайную инверсию,
-          // но при перекрытии интервалов или в одном году сохраняем авторский вектор причина -> следствие.
-          if (lnk.type === 'triggers' || lnk.type === 'enables') {
-            const fromEv = lnk.from === ev.id ? ev : targetEvent;
-            const toEv = lnk.to === ev.id ? ev : targetEvent;
-            const intervalsOverlap = fromEv.startYear <= toEv.endYear && toEv.startYear <= fromEv.endYear;
-            if (!intervalsOverlap && fromEv.startPrecision.sortKey > toEv.startPrecision.sortKey) {
-              isOutgoing = lnk.to === ev.id;
-            }
-          }
+        if (!targetEvent) continue;
 
-          const maxStart = Math.max(ev.startYear, targetEvent.startYear);
-          const minEnd = Math.min(ev.endYear, targetEvent.endYear);
-          const yearGap = maxStart > minEnd ? maxStart - minEnd : 0;
-          const isEvCulturalOrSci =
-            isLiteraryWorkNode(ev) || isScienceDiscoveryNode(ev) || isBiographyNode(ev);
-          const isTargetCulturalOrSci =
-            isLiteraryWorkNode(targetEvent) ||
-            isScienceDiscoveryNode(targetEvent) ||
-            isBiographyNode(targetEvent);
-          const isRetrospective =
-            lnk.isRetrospective === true ||
-            RETROSPECTIVE_LINK_TYPES.has(lnk.type) ||
-            ((isEvCulturalOrSci || isTargetCulturalOrSci) &&
-              yearGap > 3 &&
-              lnk.type !== 'triggers' &&
-              lnk.type !== 'enables');
-
-          links.push({
-            ...lnk,
-            otherId: targetId,
-            direction: isOutgoing ? 'outgoing' : 'incoming',
-            targetEvent,
-            isRetrospective,
-            yearGap,
-          });
-
-          const isCrossDomainCulturalHighlight =
-            !isEvCulturalOrSci && isTargetCulturalOrSci;
-
-          if (
-            (lnk.isRetrospective === true ||
-              RETROSPECTIVE_LINK_TYPES.has(lnk.type) ||
-              isCrossDomainCulturalHighlight) &&
-            !seenRetroOtherIds.has(targetId)
-          ) {
-            seenRetroOtherIds.add(targetId);
-            retroLinks.push({
-              id: lnk.id,
-              otherId: targetId,
-              direction: targetEvent.startYear >= ev.startYear ? 'depicted_by' : 'depicts',
-              label: lnk.label,
-              yearGap,
-            });
+        // Для неперекрывающихся событий в явном хронологическом порядке нормализуем случайную инверсию,
+        // но при перекрытии интервалов или в одном году сохраняем авторский вектор причина -> следствие.
+        if (lnk.type === 'triggers' || lnk.type === 'enables') {
+          const fromEv = lnk.from === ev.id ? ev : targetEvent;
+          const toEv = lnk.to === ev.id ? ev : targetEvent;
+          const intervalsOverlap = fromEv.startYear <= toEv.endYear && toEv.startYear <= fromEv.endYear;
+          if (!intervalsOverlap && fromEv.startPrecision.sortKey > toEv.startPrecision.sortKey) {
+            isOutgoing = lnk.to === ev.id;
           }
         }
+
+        const maxStart = Math.max(ev.startYear, targetEvent.startYear);
+        const minEnd = Math.min(ev.endYear, targetEvent.endYear);
+        const yearGap = maxStart > minEnd ? maxStart - minEnd : 0;
+        const isTargetCulturalOrSci =
+          isLiteraryWorkNode(targetEvent) ||
+          isScienceDiscoveryNode(targetEvent) ||
+          isBiographyNode(targetEvent);
+        const isRetrospective =
+          lnk.isRetrospective === true ||
+          RETROSPECTIVE_LINK_TYPES.has(lnk.type) ||
+          ((isEvCulturalOrSci || isTargetCulturalOrSci) &&
+            yearGap > 3 &&
+            lnk.type !== 'triggers' &&
+            lnk.type !== 'enables');
+
+        links.push({
+          ...lnk,
+          otherId: targetId,
+          direction: isOutgoing ? 'outgoing' : 'incoming',
+          targetEvent,
+          isRetrospective,
+          yearGap,
+        });
+
+        const isCrossDomainCulturalHighlight =
+          !isEvCulturalOrSci && isTargetCulturalOrSci;
+
+        if (
+          (lnk.isRetrospective === true ||
+            RETROSPECTIVE_LINK_TYPES.has(lnk.type) ||
+            isCrossDomainCulturalHighlight) &&
+          !seenRetroOtherIds.has(targetId)
+        ) {
+          seenRetroOtherIds.add(targetId);
+          retroLinks.push({
+            id: lnk.id,
+            otherId: targetId,
+            direction: targetEvent.startYear >= ev.startYear ? 'depicted_by' : 'depicts',
+            label: lnk.label,
+            yearGap,
+          });
+        }
       }
-    });
+    }
+
     ev.explicitLinks = links;
     ev.retrospectiveLinks = retroLinks;
     ev.prerequisitesList = resolveEventPrerequisites(ev);
-  });
+  }
 
   return list;
 }
@@ -800,7 +919,9 @@ export function buildUnifiedTimelineStream(
       effectiveYearTo = Math.min(yearBounds.maxYear, Math.max(effectiveYearFrom + 1, maxEventYear));
     }
 
-    auditCandidateMap = computeUnlinkedAuditMap(matchingEvents);
+    if (filters.auditUnlinkedMode || filters.computeAuditMap) {
+      auditCandidateMap = computeUnlinkedAuditMap(matchingEvents);
+    }
 
     const touchedRulerIds = new Set<string>();
     matchingEvents.forEach((ev) => {
@@ -923,7 +1044,9 @@ export function buildUnifiedTimelineStream(
       );
     });
 
-    auditCandidateMap = computeUnlinkedAuditMap(preAuditEvents);
+    if (filters.auditUnlinkedMode || filters.computeAuditMap) {
+      auditCandidateMap = computeUnlinkedAuditMap(preAuditEvents);
+    }
     matchingEvents = filters.auditUnlinkedMode
       ? preAuditEvents.filter((ev) => (auditCandidateMap.get(ev.id)?.candidates.length ?? 0) > 0)
       : preAuditEvents;

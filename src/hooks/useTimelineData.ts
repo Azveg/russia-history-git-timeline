@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { startTransition, useCallback, useEffect, useState } from 'react';
 import {
   fetchTimelineRepository,
   hydrateRemainingTimelineModules,
@@ -15,8 +15,9 @@ export interface UseTimelineDataResult {
   loading: boolean;
   loadError: string | null;
   isFullyHydrated: boolean;
+  isHydrating: boolean;
   reloadRepository: () => Promise<void>;
-  ensureAllModulesLoaded: () => Promise<void>;
+  ensureAllModulesLoaded: (options?: { priority?: boolean }) => Promise<void>;
 }
 
 export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseTimelineDataResult {
@@ -26,13 +27,15 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isFullyHydrated, setIsFullyHydrated] = useState(false);
 
-  const ensureAllModulesLoaded = useCallback(async () => {
+  const ensureAllModulesLoaded = useCallback(async (options?: { priority?: boolean }) => {
     try {
-      const fullSnapshot = await hydrateRemainingTimelineModules();
+      const fullSnapshot = await hydrateRemainingTimelineModules(options);
       if (fullSnapshot) {
-        setManifest(fullSnapshot.manifest);
-        setFilesMap(fullSnapshot.files);
-        setIsFullyHydrated(Boolean(fullSnapshot.isFullyHydrated));
+        startTransition(() => {
+          setManifest(fullSnapshot.manifest);
+          setFilesMap(fullSnapshot.files);
+          setIsFullyHydrated(Boolean(fullSnapshot.isFullyHydrated));
+        });
       }
     } catch {
       // Non-fatal background hydration error; core modules remain interactive
@@ -73,7 +76,7 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
     void loadRepositoryData();
   }, [loadRepositoryData]);
 
-  // Phase 2: hydrate remaining non-default modules during browser idle time
+  // Phase 2: hydrate remaining non-default modules smoothly during browser idle time
   useEffect(() => {
     if (loading || loadError || !manifest || isFullyHydrated) return;
 
@@ -84,18 +87,20 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
 
     if (typeof win.requestIdleCallback === 'function') {
       const idleId = win.requestIdleCallback(() => {
-        void ensureAllModulesLoaded();
-      }, { timeout: 1800 });
+        void ensureAllModulesLoaded({ priority: false });
+      }, { timeout: 1200 });
       return () => {
         win.cancelIdleCallback?.(idleId);
       };
     }
 
     const timer = window.setTimeout(() => {
-      void ensureAllModulesLoaded();
-    }, 350);
+      void ensureAllModulesLoaded({ priority: false });
+    }, 250);
     return () => window.clearTimeout(timer);
   }, [loading, loadError, manifest, isFullyHydrated, ensureAllModulesLoaded]);
+
+  const isHydrating = !loading && !loadError && Boolean(manifest) && !isFullyHydrated;
 
   return {
     manifest,
@@ -103,6 +108,7 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
     loading,
     loadError,
     isFullyHydrated,
+    isHydrating,
     reloadRepository: loadRepositoryData,
     ensureAllModulesLoaded,
   };
