@@ -124,15 +124,23 @@ describe('Ruler biographical profiles & PeriodSummary analytics', () => {
     const branches: BranchDefinition[] = [
       {
         id: 'REFORMS',
+        gitName: 'reforms',
         label: 'Реформы',
+        short: 'Реф',
+        description: 'Внутренние реформы и преобразования',
         color: '#f59e0b',
         badgeClass: 'bg-amber-500/20 text-amber-200',
+        isMilitary: false,
       },
       {
         id: 'DIPLOMACY',
+        gitName: 'diplomacy',
         label: 'Дипломатия',
+        short: 'Дип',
+        description: 'Внешняя политика и дипломатические договоры',
         color: '#38bdf8',
         badgeClass: 'bg-sky-500/20 text-sky-200',
+        isMilitary: false,
       },
     ];
 
@@ -140,38 +148,51 @@ describe('Ruler biographical profiles & PeriodSummary analytics', () => {
     const alex2 = rulers.find((r) => r.id === 'ruler-alexander-2')!;
 
     const manifest: SyncManifest = {
+      project: 'test-atlas',
       schemaVersion: '1.0',
-      atlasTitle: 'Test Atlas',
-      defaultAxisStartYear: 1850,
-      defaultAxisEndYear: 1890,
+      timeAxis: {
+        minYear: 1850,
+        maxYear: 1890,
+        resolution: 'year',
+        overlapRule: 'inclusive',
+      },
       macroEras: [
         {
           id: 'EMPIRE',
-          label: 'Российская империя',
+          period: '1721–1917',
           startYear: 1721,
           endYear: 1917,
+          title: 'Российская империя',
+          thesis: 'Имперский период истории России.',
         },
       ],
       mountedFiles: [
         {
-          id: 'reforms',
-          file: 'data/reforms.json',
-          role: 'branch',
+          fileId: 'reforms',
+          path: 'data/reforms.json',
+          role: 'thematic_branch',
+          branchIds: ['REFORMS'],
+          title: 'Реформы',
           enabled: true,
         },
         {
-          id: 'diplomacy',
-          file: 'data/diplomacy.json',
-          role: 'branch',
+          fileId: 'diplomacy',
+          path: 'data/diplomacy.json',
+          role: 'thematic_branch',
+          branchIds: ['DIPLOMACY'],
+          title: 'Дипломатия',
           enabled: true,
         },
       ],
+      crossLinks: [],
     };
 
     const filesMap: Record<string, TimelineDataFile> = {
       'data/reforms.json': {
+        fileId: 'reforms',
+        path: 'data/reforms.json',
         branch: branches[0],
-        events: [
+        nodes: [
           {
             id: '1861-reform-emancipation',
             task: 'REFORMS',
@@ -181,13 +202,17 @@ describe('Ruler biographical profiles & PeriodSummary analytics', () => {
             title: 'Отмена крепостного права',
             subtitle: 'Манифест 19 февраля 1861 года',
             details: 'Крестьянская реформа Александра II.',
+            region: 'Российская империя',
+            type: 'reform',
             keyFigures: ['Александр II', 'Николай Алексеевич Милютин'],
           },
         ],
       },
       'data/diplomacy.json': {
+        fileId: 'diplomacy',
+        path: 'data/diplomacy.json',
         branch: branches[1],
-        events: [
+        nodes: [
           {
             id: '1878-san-stefano-berlin',
             task: 'DIPLOMACY',
@@ -197,6 +222,8 @@ describe('Ruler biographical profiles & PeriodSummary analytics', () => {
             title: 'Берлинский конгресс',
             subtitle: 'Пересмотр Сан-Стефанского мира',
             details: 'Дипломатический конгресс под председательством Отто фон Бисмарка.',
+            region: 'Европа',
+            type: 'diplomacy',
             keyFigures: ['Александр Михайлович Горчаков', 'Отто фон Бисмарк'],
           },
         ],
