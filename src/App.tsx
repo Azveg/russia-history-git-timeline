@@ -2305,12 +2305,14 @@ export default function App() {
               rulers={rulers}
               enrichedEvents={enrichedEvents}
               branches={branches}
+              personDossiers={personDossiers}
               modalHistory={modalHistory}
               onClose={handleCloseAllModals}
               onNavigateBack={handleModalNavigateBack}
               onSelectEra={handleOpenEraModal}
               onSelectRuler={handleOpenPeriodModal}
               onSelectEvent={handleOpenCardModal}
+              onOpenPersonModal={handleOpenPersonModal}
               onFilterByEraRange={(startYear, endYear) => {
                 setSelectedEra('ALL');
                 setSelectedReign('ALL');

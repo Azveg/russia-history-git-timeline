@@ -7,6 +7,10 @@ import type {
   DensityBin,
   DynamicWindowHotspot,
   EnrichedEvent,
+  EraEventSphereId,
+  EraEventSphereSummary,
+  EraFigureEntry,
+  EraFigureGroupId,
   ExplicitLinkInfo,
   HiddenBranchLinkGroup,
   MacroEra,
@@ -752,14 +756,106 @@ export function computeDynamicWindowHotspots(
   return deduped.sort((a, b) => a.fromYear - b.fromYear);
 }
 
+export const ERA_SPHERE_ORDER: EraEventSphereId[] = [
+  'wars',
+  'reforms',
+  'diplomacy',
+  'world',
+  'science',
+];
+
+export const ERA_SPHERE_META: Record<
+  EraEventSphereId,
+  { label: string; shortLabel: string; description: string }
+> = {
+  wars: {
+    label: 'Войны и военные кампании',
+    shortLabel: 'Войны',
+    description: 'Вооружённые конфликты, походы, оборона рубежей и внутренние силовые кризисы',
+  },
+  reforms: {
+    label: 'Реформы, экономика и общество',
+    shortLabel: 'Реформы',
+    description: 'Государственное управление, право, финансы, сословия и общественные сдвиги',
+  },
+  diplomacy: {
+    label: 'Дипломатия и договоры',
+    shortLabel: 'Дипломатия',
+    description: 'Мирные договоры, съезды, внешнеполитические союзы и изменение границ',
+  },
+  world: {
+    label: 'Мировой контекст',
+    shortLabel: 'Мир',
+    description: 'Ключевые синхронные процессы в Европе, Азии и мире, влиявшие на эпоху',
+  },
+  science: {
+    label: 'Наука, технологии и медицина',
+    shortLabel: 'Наука',
+    description: 'Научные открытия, академии, инженерные прорывы и становление медицины',
+  },
+};
+
+export function classifyEventToEraSphere(
+  ev: Pick<EnrichedEvent, 'task' | 'type'>,
+  branchById: Map<string, BranchDefinition>,
+  branches?: BranchDefinition[],
+): EraEventSphereId {
+  const task = ev.task || '';
+  const branch = branchById.get(task);
+
+  if (
+    task.startsWith('WAR_') ||
+    task === 'SEAS' ||
+    task === 'PERIPHERY' ||
+    task === 'INTERNAL_BUFFER' ||
+    branch?.isMilitary === true
+  ) {
+    return 'wars';
+  }
+  if (task === 'DIPLOMACY_TREATIES') {
+    return 'diplomacy';
+  }
+  if (task.startsWith('WORLD_') || branch?.category === 'world') {
+    return 'world';
+  }
+  if (
+    task === 'SCIENCE_DISCOVERIES' ||
+    task === 'SCIENCE_ALL' ||
+    task === 'MEDICINE_HEALTH' ||
+    task === 'MEDICINE_ALL' ||
+    isScienceDiscoveryNode(ev, branches)
+  ) {
+    return 'science';
+  }
+  return 'reforms';
+}
+
+function normalizeEraFigureKey(rawName: string): string {
+  const stripped = rawName
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/«[^»]*»/g, ' ')
+    .replace(/[.,;:!?]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .replace(/ё/g, 'е');
+  return stripped;
+}
+
 export interface MacroEraSummaryData {
   era: ResolvedMacroEra;
   eraRulers: RulerPeriod[];
   eraEvents: EnrichedEvent[];
+  eraSphereEvents: EnrichedEvent[];
+  sphereSummaries: EraEventSphereSummary[];
+  eraFigures: EraFigureEntry[];
+  eraFiguresByGroup: Record<EraFigureGroupId, EraFigureEntry[]>;
   contemporaryWriters: EnrichedEvent[];
   contemporaryScientists: EnrichedEvent[];
   worksWrittenInPeriod: EnrichedEvent[];
+  literaryWorksInPeriod: EnrichedEvent[];
   discoveriesInPeriod: EnrichedEvent[];
+  cultureEventsInPeriod: EnrichedEvent[];
   worksAboutPeriod: EnrichedEvent[];
   carryOverInEvents: EnrichedEvent[];
   carryOverOutEvents: EnrichedEvent[];
@@ -779,6 +875,7 @@ const macroEraSummaryCache = new WeakMap<
       era: ResolvedMacroEra;
       rulers: RulerPeriod[];
       branches: BranchDefinition[];
+      personDossiers?: Map<string, PersonDossier>;
       result: MacroEraSummaryData;
     }
   >
@@ -789,6 +886,7 @@ export function getMacroEraSummaryData(
   rulers: RulerPeriod[],
   enrichedEvents: EnrichedEvent[],
   branches: BranchDefinition[],
+  personDossiers?: Map<string, PersonDossier>,
 ): MacroEraSummaryData {
   let byEraId = macroEraSummaryCache.get(enrichedEvents);
   const cached = byEraId?.get(era.id);
@@ -796,10 +894,13 @@ export function getMacroEraSummaryData(
     cached &&
     cached.era === era &&
     cached.rulers === rulers &&
-    cached.branches === branches
+    cached.branches === branches &&
+    cached.personDossiers === personDossiers
   ) {
     return cached.result;
   }
+
+  const branchById = new Map<string, BranchDefinition>(branches.map((b) => [b.id, b]));
 
   const allBelongingEvents = enrichedEvents.filter((ev) =>
     doesIntervalBelongToEra(
@@ -824,10 +925,26 @@ export function getMacroEraSummaryData(
       intersectsTimeWindow(ev.activeFrom, ev.activeTo, era.startYear, era.endYear),
   );
 
+  const contemporaryStatesmen = enrichedEvents.filter(
+    (ev) =>
+      ev.task === 'STATESMEN_BIO' &&
+      intersectsTimeWindow(ev.activeFrom, ev.activeTo, era.startYear, era.endYear),
+  );
+
+  const contemporaryDoctorsAndArchitects = enrichedEvents.filter(
+    (ev) =>
+      (ev.task === 'DOCTORS_BIO' || ev.task === 'ARCHITECTS_BIO') &&
+      intersectsTimeWindow(ev.activeFrom, ev.activeTo, era.startYear, era.endYear),
+  );
+
   const worksWrittenInPeriod = enrichedEvents.filter(
     (ev) =>
       isLiteraryWorkNode(ev, branches) &&
       intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
+  );
+
+  const literaryWorksInPeriod = worksWrittenInPeriod.filter(
+    (ev) => ev.task !== 'ARCHITECTURE_WORKS',
   );
 
   const discoveriesInPeriod = enrichedEvents.filter(
@@ -835,6 +952,15 @@ export function getMacroEraSummaryData(
       isScienceDiscoveryNode(ev, branches) &&
       intersectsTimeWindow(ev.startYear, ev.endYear, era.startYear, era.endYear),
   );
+
+  const cultureEventsInPeriod = allBelongingEvents
+    .filter(
+      (ev) =>
+        ev.task === 'ARTS_CULTURE' ||
+        ev.task === 'ARCHITECTURE_WORKS' ||
+        ev.task === 'THOUGHT_RELIGION',
+    )
+    .sort((a, b) => a.startYear - b.startYear || b.explicitLinks.length - a.explicitLinks.length);
 
   const eraRulers = rulers.filter((r) =>
     doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, era),
@@ -867,6 +993,202 @@ export function getMacroEraSummaryData(
 
   const carryOverInEvents = eraEvents.filter((ev) => ev.startYear < era.startYear);
   const carryOverOutEvents = eraEvents.filter((ev) => ev.endYear > era.endYear);
+
+  // Unified pool for the 5 historical spheres (eraEvents + science discoveries, deduplicated)
+  const sphereEventSeen = new Set<string>();
+  const eraSphereEvents: EnrichedEvent[] = [];
+  for (const ev of eraEvents) {
+    if (!sphereEventSeen.has(ev.id)) {
+      sphereEventSeen.add(ev.id);
+      eraSphereEvents.push(ev);
+    }
+  }
+  for (const disc of discoveriesInPeriod) {
+    if (!sphereEventSeen.has(disc.id)) {
+      sphereEventSeen.add(disc.id);
+      eraSphereEvents.push(disc);
+    }
+  }
+
+  const eventsBySphere = new Map<EraEventSphereId, EnrichedEvent[]>();
+  for (const sphereId of ERA_SPHERE_ORDER) {
+    eventsBySphere.set(sphereId, []);
+  }
+  for (const ev of eraSphereEvents) {
+    const sphereId = classifyEventToEraSphere(ev, branchById, branches);
+    eventsBySphere.get(sphereId)!.push(ev);
+  }
+
+  const sphereSummaries: EraEventSphereSummary[] = ERA_SPHERE_ORDER.map((sphereId) => {
+    const meta = ERA_SPHERE_META[sphereId];
+    const items = [...(eventsBySphere.get(sphereId) || [])].sort(
+      (a, b) => a.startYear - b.startYear || a.endYear - b.endYear,
+    );
+    const topEvents = [...items]
+      .sort((a, b) => {
+        if (b.explicitLinks.length !== a.explicitLinks.length) {
+          return b.explicitLinks.length - a.explicitLinks.length;
+        }
+        return a.startYear - b.startYear;
+      })
+      .slice(0, 4);
+    const linkCount = items.reduce((sum, ev) => sum + ev.explicitLinks.length, 0);
+    return {
+      id: sphereId,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      description: meta.description,
+      events: items,
+      topEvents,
+      linkCount,
+    };
+  });
+
+  // Build 4 role-explained figure groups: rulers, politics_military, writers, scientists
+  const rulerByNormName = new Map<string, RulerPeriod>();
+  for (const r of rulers) {
+    rulerByNormName.set(normalizeEraFigureKey(r.ruler), r);
+    rulerByNormName.set(normalizeEraFigureKey(r.shortRuler), r);
+  }
+
+  const eraRulerNormNames = new Set<string>();
+  const rulerFigures: EraFigureEntry[] = eraRulers.map((r) => {
+    eraRulerNormNames.add(normalizeEraFigureKey(r.ruler));
+    eraRulerNormNames.add(normalizeEraFigureKey(r.shortRuler));
+    const roleParts = [r.dynastyOrTitle, r.center].filter(Boolean);
+    return {
+      id: `era-fig-ruler-${r.id}`,
+      group: 'rulers',
+      name: r.ruler,
+      period: r.reignPeriod,
+      sortYear: r.startYear,
+      roleLabel: roleParts.length > 0 ? roleParts.join(' · ') : 'Правитель эпохи',
+      description: r.reignThesis || r.biography || r.reignTitle,
+      metaNote: `${Math.max(1, r.endYear - r.startYear)} л.`,
+      targetKind: 'ruler',
+      targetId: r.id,
+    };
+  });
+
+  const politicsSeenNames = new Set<string>(eraRulerNormNames);
+  const politicsFigures: EraFigureEntry[] = [];
+
+  for (const st of contemporaryStatesmen) {
+    const norm = normalizeEraFigureKey(st.title);
+    if (norm) politicsSeenNames.add(norm);
+    politicsFigures.push({
+      id: `era-fig-statesman-${st.id}`,
+      group: 'politics_military',
+      name: st.title,
+      period: st.period,
+      sortYear: st.activeFrom,
+      roleLabel: st.type || 'Государственный деятель',
+      description: st.subtitle || st.outcome || st.details.slice(0, 180),
+      metaNote: st.region || undefined,
+      targetKind: 'event',
+      targetId: st.id,
+      linkCount: st.explicitLinks.length,
+    });
+  }
+
+  for (const r of eraRulers) {
+    if (!r.innerCircle || r.innerCircle.length === 0) continue;
+    for (const member of r.innerCircle) {
+      const norm = normalizeEraFigureKey(member.name);
+      if (!norm || politicsSeenNames.has(norm)) continue;
+      // Avoid duplicating someone already listed by surname in STATESMEN_BIO
+      const tokens = norm.split(' ').filter((t) => t.length >= 4);
+      const lastToken = tokens[tokens.length - 1];
+      if (
+        lastToken &&
+        Array.from(politicsSeenNames).some(
+          (existing) => existing === norm || existing.endsWith(` ${lastToken}`),
+        )
+      ) {
+        continue;
+      }
+      politicsSeenNames.add(norm);
+
+      const linkedRuler = rulerByNormName.get(norm) ?? null;
+      const resolvedKey =
+        !linkedRuler && personDossiers && personDossiers.size > 0
+          ? resolvePersonKey(member.name, personDossiers)
+          : null;
+      const dossier = resolvedKey && personDossiers ? personDossiers.get(resolvedKey) : null;
+
+      politicsFigures.push({
+        id: `era-fig-circle-${r.id}-${norm}`,
+        group: 'politics_military',
+        name: member.name,
+        period: r.reignPeriod,
+        sortYear: r.startYear,
+        roleLabel: member.role,
+        description: member.connection,
+        metaNote: `При ${r.shortRuler}`,
+        targetKind: linkedRuler ? 'ruler' : resolvedKey ? 'person' : 'none',
+        targetId: linkedRuler ? linkedRuler.id : resolvedKey ?? undefined,
+        linkCount: dossier ? dossier.events.length : undefined,
+      });
+    }
+  }
+  politicsFigures.sort((a, b) => a.sortYear - b.sortYear || a.name.localeCompare(b.name, 'ru'));
+
+  const writerFigures: EraFigureEntry[] = [...contemporaryWriters]
+    .sort((a, b) => a.activeFrom - b.activeFrom || a.startYear - b.startYear)
+    .map((w) => ({
+      id: `era-fig-writer-${w.id}`,
+      group: 'writers',
+      name: w.title,
+      period: w.period,
+      sortYear: w.activeFrom,
+      roleLabel: w.type || 'Писатель и мыслитель',
+      description: w.subtitle || w.outcome || w.details.slice(0, 180),
+      metaNote: w.literaryProfile?.movement || undefined,
+      targetKind: 'event',
+      targetId: w.id,
+      linkCount: w.explicitLinks.length,
+    }));
+
+  const sciSeenIds = new Set<string>();
+  const scientistFigures: EraFigureEntry[] = [];
+  for (const ev of [...contemporaryScientists, ...contemporaryDoctorsAndArchitects]) {
+    if (sciSeenIds.has(ev.id)) continue;
+    sciSeenIds.add(ev.id);
+    const defaultRole =
+      ev.task === 'DOCTORS_BIO'
+        ? 'Врач и учёный-медик'
+        : ev.task === 'ARCHITECTS_BIO'
+          ? 'Зодчий и архитектор'
+          : 'Учёный и инженер';
+    scientistFigures.push({
+      id: `era-fig-sci-${ev.id}`,
+      group: 'scientists',
+      name: ev.title,
+      period: ev.period,
+      sortYear: ev.activeFrom,
+      roleLabel: ev.type || defaultRole,
+      description: ev.subtitle || ev.outcome || ev.details.slice(0, 180),
+      metaNote: ev.region || undefined,
+      targetKind: 'event',
+      targetId: ev.id,
+      linkCount: ev.explicitLinks.length,
+    });
+  }
+  scientistFigures.sort((a, b) => a.sortYear - b.sortYear || a.name.localeCompare(b.name, 'ru'));
+
+  const eraFiguresByGroup: Record<EraFigureGroupId, EraFigureEntry[]> = {
+    rulers: rulerFigures,
+    politics_military: politicsFigures,
+    writers: writerFigures,
+    scientists: scientistFigures,
+  };
+
+  const eraFigures: EraFigureEntry[] = [
+    ...rulerFigures,
+    ...politicsFigures,
+    ...writerFigures,
+    ...scientistFigures,
+  ];
 
   const branchCountMap = new Map<string, number>();
   let totalSyncLinks = 0;
@@ -908,19 +1230,25 @@ export function getMacroEraSummaryData(
         }
       : null;
 
-  const topConnectedEvents = [...eraEvents]
+  const topConnectedEvents = [...eraSphereEvents]
     .filter((ev) => ev.explicitLinks.length > 0)
-    .sort((a, b) => b.explicitLinks.length - a.explicitLinks.length)
+    .sort((a, b) => b.explicitLinks.length - a.explicitLinks.length || a.startYear - b.startYear)
     .slice(0, 6);
 
   const result: MacroEraSummaryData = {
     era,
     eraRulers,
     eraEvents,
+    eraSphereEvents,
+    sphereSummaries,
+    eraFigures,
+    eraFiguresByGroup,
     contemporaryWriters,
     contemporaryScientists,
     worksWrittenInPeriod,
+    literaryWorksInPeriod,
     discoveriesInPeriod,
+    cultureEventsInPeriod,
     worksAboutPeriod,
     carryOverInEvents,
     carryOverOutEvents,
@@ -936,7 +1264,7 @@ export function getMacroEraSummaryData(
     byEraId = new Map();
     macroEraSummaryCache.set(enrichedEvents, byEraId);
   }
-  byEraId.set(era.id, { era, rulers, branches, result });
+  byEraId.set(era.id, { era, rulers, branches, personDossiers, result });
   return result;
 }
 

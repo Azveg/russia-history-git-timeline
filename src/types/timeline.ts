@@ -682,3 +682,30 @@ export interface PeriodComparisonReport {
   };
 }
 
+export type EraEventSphereId = 'wars' | 'reforms' | 'diplomacy' | 'world' | 'science';
+
+export interface EraEventSphereSummary {
+  id: EraEventSphereId;
+  label: string;
+  shortLabel: string;
+  description: string;
+  events: EnrichedEvent[];
+  topEvents: EnrichedEvent[];
+  linkCount: number;
+}
+
+export type EraFigureGroupId = 'rulers' | 'politics_military' | 'writers' | 'scientists';
+
+export interface EraFigureEntry {
+  id: string;
+  group: EraFigureGroupId;
+  name: string;
+  period: string;
+  sortYear: number;
+  roleLabel: string;
+  description: string;
+  metaNote?: string;
+  targetKind: 'ruler' | 'event' | 'person' | 'none';
+  targetId?: string;
+  linkCount?: number;
+}

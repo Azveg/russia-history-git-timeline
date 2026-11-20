@@ -2,8 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  ERA_SPHERE_ORDER,
   buildPersonDossierIndex,
   buildUnifiedTimelineStream,
+  classifyEventToEraSphere,
   computeBranchPresetMap,
   computeBranchSubLaneLayout,
   computeRulerSubLaneLayout,
@@ -303,5 +305,76 @@ describe('Performance optimizations — semantic equivalence & caching', () => {
         expect(ruler!.endYear).toBeGreaterThanOrEqual(row.year);
       });
     }
+  });
+
+  it('getMacroEraSummaryData builds 5 complete event spheres, 4 role-explained figure groups, and caches with personDossiers', () => {
+    const { enrichedEvents, rulers, manifest, branches } = dataset;
+    const { dossiers } = buildPersonDossierIndex(enrichedEvents, rulers);
+    const resolvedEras = resolveMacroEras(manifest.macroEras);
+    const branchById = new Map(branches.map((b) => [b.id, b]));
+
+    expect(resolvedEras.length).toBe(11);
+
+    for (const era of resolvedEras) {
+      expect(era.thesis.trim().length).toBeGreaterThan(30);
+
+      const summary = getMacroEraSummaryData(era, rulers, enrichedEvents, branches, dossiers);
+
+      // 5 spheres in canonical order and complete partition of eraSphereEvents
+      expect(summary.sphereSummaries.map((s) => s.id)).toEqual(ERA_SPHERE_ORDER);
+      const totalAcrossSpheres = summary.sphereSummaries.reduce(
+        (acc, s) => acc + s.events.length,
+        0,
+      );
+      expect(totalAcrossSpheres).toBe(summary.eraSphereEvents.length);
+
+      for (const sphere of summary.sphereSummaries) {
+        for (const ev of sphere.events) {
+          expect(classifyEventToEraSphere(ev, branchById, branches)).toBe(sphere.id);
+        }
+      }
+
+      // 4 figure groups exist, every figure has non-empty name/role/description, no duplicate IDs
+      const groupKeys = ['rulers', 'politics_military', 'writers', 'scientists'] as const;
+      const seenIds = new Set<string>();
+      let totalInGroups = 0;
+      for (const group of groupKeys) {
+        const items = summary.eraFiguresByGroup[group];
+        expect(Array.isArray(items)).toBe(true);
+        totalInGroups += items.length;
+        for (const fig of items) {
+          expect(fig.group).toBe(group);
+          expect(fig.name.trim().length).toBeGreaterThan(0);
+          expect(fig.roleLabel.trim().length).toBeGreaterThan(0);
+          expect(fig.description.trim().length).toBeGreaterThan(0);
+          expect(seenIds.has(fig.id)).toBe(false);
+          seenIds.add(fig.id);
+        }
+      }
+      expect(totalInGroups).toBe(summary.eraFigures.length);
+      expect(summary.eraFiguresByGroup.rulers.length).toBe(summary.eraRulers.length);
+
+      // Literary works exclude architecture works which belong in cultureEventsInPeriod
+      expect(summary.literaryWorksInPeriod.every((w) => w.task !== 'ARCHITECTURE_WORKS')).toBe(
+        true,
+      );
+    }
+
+    // WeakMap cache hit & invalidation on personDossiers reference change
+    const sampleEra = resolvedEras[5];
+    const cached1 = getMacroEraSummaryData(sampleEra, rulers, enrichedEvents, branches, dossiers);
+    const cached2 = getMacroEraSummaryData(sampleEra, rulers, enrichedEvents, branches, dossiers);
+    expect(cached2).toBe(cached1);
+
+    const clonedDossiers = new Map(dossiers);
+    const cached3 = getMacroEraSummaryData(
+      sampleEra,
+      rulers,
+      enrichedEvents,
+      branches,
+      clonedDossiers,
+    );
+    expect(cached3).not.toBe(cached1);
+    expect(cached3.eraFigures.length).toBe(cached1.eraFigures.length);
   });
 });
