@@ -23,6 +23,7 @@ const VALID_LINK_TYPES = new Set([
 const VALID_CALENDAR_STYLES = new Set(['julian', 'gregorian', 'both']);
 const VALID_SOURCE_TYPES = new Set(['primary', 'document', 'historiography', 'reference']);
 const VALID_RULER_RELATION_TYPES = new Set(['ally', 'opponent', 'diplomacy', 'family', 'military']);
+const VALID_RULER_KINSHIP_GROUPS = new Set(['parent', 'uncle_aunt', 'spouse', 'sibling', 'child']);
 const HTTPS_URL_REGEX = /^https:\/\/\S+$/i;
 const DATE_REGEX = /^\d{3,4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/;
 const HEX_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
@@ -358,6 +359,12 @@ function auditRecordAcademicStyle(file, entityLabel, record, isRuler = false) {
         auditStyleText(file, entityLabel, `innerCircle[${idx}].connection`, ic?.connection);
       });
     }
+    if (Array.isArray(record.family)) {
+      record.family.forEach((rel, idx) => {
+        auditStyleText(file, entityLabel, `family[${idx}].title`, rel?.title);
+        auditStyleText(file, entityLabel, `family[${idx}].note`, rel?.note);
+      });
+    }
     return;
   }
   for (const fld of ['title', 'subtitle', 'details', 'outcome']) {
@@ -457,6 +464,7 @@ function main() {
   const collectedLinks = [];
   const collectedNodes = [];
   const collectedRulerActionLinks = [];
+  const collectedRulerFamilyLinks = [];
   const syncTagsSet = new Set();
   const sourcesStats = { total: 0, withSources: 0, byFile: new Map() };
 
@@ -677,6 +685,62 @@ function main() {
             });
           }
         }
+
+        if (r.family !== undefined) {
+          if (!Array.isArray(r.family)) {
+            addError(relFromPublic, `Правитель "${rId}": поле "family" должно быть массивом.`);
+          } else {
+            r.family.forEach((rel, fIdx) => {
+              if (
+                !isPlainObject(rel) ||
+                typeof rel.name !== 'string' ||
+                !rel.name.trim() ||
+                typeof rel.relation !== 'string' ||
+                !rel.relation.trim()
+              ) {
+                addError(
+                  relFromPublic,
+                  `Правитель "${rId}": family[${fIdx}] должен содержать непустые "name" и "relation".`,
+                );
+                return;
+              }
+              if (!VALID_RULER_KINSHIP_GROUPS.has(rel.group)) {
+                addError(
+                  relFromPublic,
+                  `Правитель "${rId}": family[${fIdx}].group ("${rel.group}") недопустим. Ожидается: ${Array.from(VALID_RULER_KINSHIP_GROUPS).join(', ')}.`,
+                );
+              }
+              if (rel.rulerId !== undefined) {
+                if (typeof rel.rulerId !== 'string' || !rel.rulerId.trim()) {
+                  addError(
+                    relFromPublic,
+                    `Правитель "${rId}": family[${fIdx}].rulerId должен быть непустой строкой.`,
+                  );
+                } else if (rel.rulerId.trim() === rId) {
+                  addError(
+                    relFromPublic,
+                    `Правитель "${rId}": family[${fIdx}].rulerId не может ссылаться сам на себя.`,
+                  );
+                } else {
+                  collectedRulerFamilyLinks.push({
+                    file: relFromPublic,
+                    rulerId: rId,
+                    familyIndex: fIdx,
+                    targetRulerId: rel.rulerId.trim(),
+                  });
+                }
+              }
+              for (const optField of ['lifeYears', 'title', 'note', 'personKey']) {
+                if (rel[optField] !== undefined && (typeof rel[optField] !== 'string' || !rel[optField].trim())) {
+                  addError(
+                    relFromPublic,
+                    `Правитель "${rId}": family[${fIdx}].${optField} должен быть непустой строкой.`,
+                  );
+                }
+              }
+            });
+          }
+        }
       });
     }
 
@@ -889,6 +953,16 @@ function main() {
       addError(
         item.file,
         `Правитель "${item.rulerId}": keyActions[${item.actionIndex}].eventId ссылается на несуществующий узел "${item.eventId}".`,
+      );
+    }
+  }
+
+  // Проверка целостности rulerId в родственных связях правителей
+  for (const item of collectedRulerFamilyLinks) {
+    if (!allRulersById.has(item.targetRulerId)) {
+      addError(
+        item.file,
+        `Правитель "${item.rulerId}": family[${item.familyIndex}].rulerId ссылается на несуществующего правителя "${item.targetRulerId}".`,
       );
     }
   }

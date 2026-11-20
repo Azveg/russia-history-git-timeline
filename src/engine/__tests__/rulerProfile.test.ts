@@ -230,9 +230,9 @@ describe('Ruler biographical profiles & PeriodSummary analytics', () => {
       },
     };
 
-    const enrichedEvents = getEnrichedEvents(manifest, filesMap, [alex2]);
-    const { dossiers } = buildPersonDossierIndex(enrichedEvents, [alex2]);
-    const summary = getRulerPeriodSummaryData(alex2, enrichedEvents, branches, dossiers);
+    const enrichedEvents = getEnrichedEvents(manifest, filesMap, rulers);
+    const { dossiers } = buildPersonDossierIndex(enrichedEvents, rulers);
+    const summary = getRulerPeriodSummaryData(alex2, enrichedEvents, branches, dossiers, rulers);
 
     const resolvedBismarck = summary.resolvedInnerCircle.find((m) => m.name.includes('Бисмарк'));
     expect(resolvedBismarck).toBeDefined();
@@ -243,5 +243,66 @@ describe('Ruler biographical profiles & PeriodSummary analytics', () => {
       (a) => a.eventId === '1861-reform-emancipation',
     );
     expect(emancipationAction?.linkedEvent?.id).toBe('1861-reform-emancipation');
+
+    // Kinship resolution checks for Alexander II
+    const father = summary.resolvedFamily.find((r) => r.group === 'parent' && r.rulerId === 'ruler-nicholas-1');
+    expect(father?.targetKind).toBe('ruler');
+    expect(father?.linkedRuler?.id).toBe('ruler-nicholas-1');
+
+    const uncleAlex1 = summary.resolvedFamily.find((r) => r.group === 'uncle_aunt' && r.rulerId === 'ruler-alexander-1');
+    expect(uncleAlex1?.targetKind).toBe('ruler');
+    expect(uncleAlex1?.linkedRuler?.id).toBe('ruler-alexander-1');
+
+    const sonAlex3 = summary.resolvedFamily.find((r) => r.group === 'child' && r.rulerId === 'ruler-alexander-3');
+    expect(sonAlex3?.targetKind).toBe('ruler');
+    expect(sonAlex3?.linkedRuler?.id).toBe('ruler-alexander-3');
+
+    const miniCardRelative = summary.resolvedFamily.find((r) => r.targetKind === 'mini_card');
+    expect(miniCardRelative).toBeDefined();
+    expect(miniCardRelative?.note?.length).toBeGreaterThan(15);
+  });
+
+  it('validates structured family kinship links across all 60 dynastic rulers with zero broken or self-referencing rulerIds', () => {
+    const rulers = loadRulersJson();
+    const rulerIds = new Set(rulers.map((r) => r.id));
+    const validGroups = new Set(['parent', 'uncle_aunt', 'spouse', 'sibling', 'child']);
+
+    const withFamily = rulers.filter((r) => Array.isArray(r.family) && r.family.length > 0);
+    expect(withFamily.length).toBeGreaterThanOrEqual(60);
+
+    for (const ruler of withFamily) {
+      const sanitized = sanitizeRulerPeriod(ruler);
+      expect(sanitized?.family?.length).toBe(ruler.family?.length);
+
+      for (const rel of ruler.family ?? []) {
+        expect(validGroups.has(rel.group), `invalid group for ${ruler.id}`).toBe(true);
+        expect(rel.name.trim().length).toBeGreaterThan(1);
+        expect(rel.relation.trim().length).toBeGreaterThan(1);
+        if (rel.rulerId) {
+          expect(rel.rulerId, `self-link in ${ruler.id}`).not.toBe(ruler.id);
+          expect(rulerIds.has(rel.rulerId), `missing target ruler ${rel.rulerId} from ${ruler.id}`).toBe(true);
+        }
+      }
+    }
+
+    // Verify sanitization drops malformed kinship records and strips self-links
+    const cleaned = sanitizeRulerPeriod({
+      id: 'ruler-sample',
+      eraId: 'ERA_1',
+      ruler: 'Тестовый князь',
+      shortRuler: 'Тест',
+      reignPeriod: '1200–1220',
+      startYear: 1200,
+      endYear: 1220,
+      reignTitle: 'Тест',
+      reignThesis: 'Тезис',
+      family: [
+        { name: 'Отец', relation: 'Отец', group: 'parent', rulerId: 'ruler-sample', lifeYears: '1170–1205' },
+        { name: 'Битая группа', relation: 'Дядя', group: 'invalid_group' },
+        { name: '', relation: 'Сын', group: 'child' },
+      ],
+    });
+    expect(cleaned?.family).toHaveLength(1);
+    expect(cleaned?.family?.[0].rulerId).toBeUndefined();
   });
 });

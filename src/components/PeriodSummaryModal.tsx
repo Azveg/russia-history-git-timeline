@@ -25,6 +25,7 @@ import {
   SourcesApparatusSection,
 } from './AcademicCitationBar';
 import { DossierModalHeader } from './DossierModalHeader';
+import { RulerKinshipSection } from './RulerKinshipSection';
 import {
   formatCalendarDetailBadge,
   getLeafBranches,
@@ -42,6 +43,7 @@ import type {
 
 interface PeriodSummaryModalProps {
   ruler: RulerPeriod | null;
+  rulers?: RulerPeriod[];
   enrichedEvents: EnrichedEvent[];
   branches: BranchDefinition[];
   personDossiers?: Map<string, PersonDossier>;
@@ -49,6 +51,7 @@ interface PeriodSummaryModalProps {
   onClose: () => void;
   onNavigateBack?: () => void;
   onSelectCard: (id: string) => void;
+  onOpenRulerModal?: (rulerId: string) => void;
   onOpenPersonModal?: (personKey: string) => void;
   onFilterByRuler: (rulerId: string) => void;
   onCompareWithRuler?: (rulerId: string) => void;
@@ -156,6 +159,7 @@ function CollapsibleSection({
 
 export function PeriodSummaryModal({
   ruler,
+  rulers,
   enrichedEvents,
   branches,
   personDossiers,
@@ -163,6 +167,7 @@ export function PeriodSummaryModal({
   onClose,
   onNavigateBack,
   onSelectCard,
+  onOpenRulerModal,
   onOpenPersonModal,
   onFilterByRuler,
   onCompareWithRuler,
@@ -225,8 +230,8 @@ export function PeriodSummaryModal({
 
   const summary = useMemo(() => {
     if (!ruler) return null;
-    return getRulerPeriodSummaryData(ruler, enrichedEvents, branches, personDossiers);
-  }, [ruler, enrichedEvents, branches, personDossiers]);
+    return getRulerPeriodSummaryData(ruler, enrichedEvents, branches, personDossiers, rulers);
+  }, [ruler, enrichedEvents, branches, personDossiers, rulers]);
 
   const branchMap = useMemo(() => new Map(branches.map((b) => [b.id, b])), [branches]);
   const leafBranches = useMemo(
@@ -424,6 +429,7 @@ export function PeriodSummaryModal({
     reignParticipants,
     resolvedInnerCircle,
     resolvedKeyActions,
+    resolvedFamily,
     topConnectedEvents,
     crossBranchLinks,
   } = summary;
@@ -710,6 +716,16 @@ export function PeriodSummaryModal({
                 </p>
               </section>
 
+              {/* Родственные связи по поколениям с переходами и мини-справками */}
+              {resolvedFamily.length > 0 && (
+                <RulerKinshipSection
+                  ruler={ruler}
+                  relatives={resolvedFamily}
+                  onOpenRulerModal={onOpenRulerModal}
+                  onOpenPersonModal={onOpenPersonModal}
+                />
+              )}
+
               {/* Последовательный список конкретных дел */}
               {resolvedKeyActions.length > 0 && (
                 <section className="space-y-3 pt-5 border-t border-slate-800/90">
@@ -859,12 +875,21 @@ export function PeriodSummaryModal({
                   <div className="divide-y divide-slate-800/80 border-y border-slate-800/80">
                     {filteredInnerCircle.map((member) => {
                       const meta = RELATION_META[member.relationType];
-                      const canOpenDossier = Boolean(member.personKey && onOpenPersonModal);
+                      const canOpenRuler = Boolean(member.linkedRulerId && onOpenRulerModal);
+                      const canOpenDossier = !canOpenRuler && Boolean(member.personKey && onOpenPersonModal);
                       return (
                         <div key={member.name} className="py-3.5 space-y-1.5">
                           <div className="flex flex-wrap items-baseline justify-between gap-2">
                             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 min-w-0">
-                              {canOpenDossier ? (
+                              {canOpenRuler ? (
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenRulerModal!(member.linkedRulerId!)}
+                                  className="font-serif text-lg font-bold text-white hover:text-amber-200 underline decoration-amber-500/40 underline-offset-4 transition-colors cursor-pointer text-left"
+                                >
+                                  {member.name}
+                                </button>
+                              ) : canOpenDossier ? (
                                 <button
                                   type="button"
                                   onClick={() => onOpenPersonModal!(member.personKey!)}
@@ -885,7 +910,18 @@ export function PeriodSummaryModal({
                               </span>
                             </div>
 
-                            {canOpenDossier && (
+                            {canOpenRuler ? (
+                              <button
+                                type="button"
+                                onClick={() => onOpenRulerModal!(member.linkedRulerId!)}
+                                className="text-[11px] font-mono text-amber-300 hover:text-amber-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap shrink-0 tabular-nums"
+                              >
+                                <Crown className="w-3 h-3" />
+                                <span>
+                                  Правитель{member.linkedRulerPeriod ? ` · ${member.linkedRulerPeriod}` : ''}
+                                </span>
+                              </button>
+                            ) : canOpenDossier ? (
                               <button
                                 type="button"
                                 onClick={() => onOpenPersonModal!(member.personKey!)}
@@ -896,7 +932,7 @@ export function PeriodSummaryModal({
                                   Досье ({member.totalEventCount})
                                 </span>
                               </button>
-                            )}
+                            ) : null}
                           </div>
 
                           <div className="text-xs font-mono text-slate-400">{member.role}</div>

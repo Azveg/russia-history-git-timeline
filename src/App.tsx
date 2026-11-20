@@ -1859,6 +1859,7 @@ export default function App() {
           {activeRulerObj && (
             <PeriodSummaryModal
               ruler={activeRulerObj}
+              rulers={rulers}
               enrichedEvents={enrichedEvents}
               branches={branches}
               personDossiers={personDossiers}
@@ -1866,6 +1867,7 @@ export default function App() {
               onClose={handleCloseAllModals}
               onNavigateBack={handleModalNavigateBack}
               onSelectCard={handleOpenCardModal}
+              onOpenRulerModal={handleOpenPeriodModal}
               onOpenPersonModal={handleOpenPersonModal}
               onFilterByRuler={handleSelectReign}
               onCompareWithRuler={handleCompareWithRuler}

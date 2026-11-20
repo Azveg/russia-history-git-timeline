@@ -97,8 +97,31 @@ export interface RulerInnerCircleMember {
   connection: string;
 }
 
+export type RulerKinshipGroup = 'parent' | 'uncle_aunt' | 'spouse' | 'sibling' | 'child';
+
+export interface RulerRelative {
+  name: string;
+  relation: string;
+  group: RulerKinshipGroup;
+  rulerId?: string;
+  personKey?: string;
+  lifeYears?: string;
+  title?: string;
+  note?: string;
+}
+
+export interface ResolvedRulerRelative extends RulerRelative {
+  id: string;
+  targetKind: 'ruler' | 'person' | 'mini_card';
+  linkedRuler: RulerPeriod | null;
+  resolvedPersonKey: string | null;
+  personEventCount: number;
+}
+
 export interface ResolvedRulerInnerCircleMember extends RulerInnerCircleMember {
   personKey: string | null;
+  linkedRulerId?: string | null;
+  linkedRulerPeriod?: string | null;
   reignEventCount: number;
   totalEventCount: number;
 }
@@ -126,6 +149,7 @@ export interface RulerPeriod {
   biography?: string;
   keyActions?: RulerKeyAction[];
   innerCircle?: RulerInnerCircleMember[];
+  family?: RulerRelative[];
   legacy?: string;
   sources?: SourceEntry[];
 }

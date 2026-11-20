@@ -330,6 +330,14 @@ const VALID_RULER_RELATION_TYPES = new Set([
   'military',
 ]);
 
+const VALID_RULER_KINSHIP_GROUPS = new Set<string>([
+  'parent',
+  'uncle_aunt',
+  'spouse',
+  'sibling',
+  'child',
+]);
+
 export function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
   if (!isPlainRecord(raw)) return null;
   const id = typeof raw.id === 'string' ? raw.id.trim() : '';
@@ -394,6 +402,43 @@ export function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
         .filter((item): item is NonNullable<typeof item> => item !== null)
     : undefined;
 
+  const family = Array.isArray(raw.family)
+    ? raw.family
+        .filter((item): item is Record<string, unknown> => isPlainRecord(item))
+        .map((item) => {
+          const name = typeof item.name === 'string' ? item.name.trim() : '';
+          const relation = typeof item.relation === 'string' ? item.relation.trim() : '';
+          const rawGroup = typeof item.group === 'string' ? item.group.trim() : '';
+          if (!name || !relation || !VALID_RULER_KINSHIP_GROUPS.has(rawGroup)) return null;
+          const rawRulerId =
+            typeof item.rulerId === 'string' && item.rulerId.trim() ? item.rulerId.trim() : undefined;
+          const rulerId = rawRulerId && rawRulerId !== id ? rawRulerId : undefined;
+          const personKey =
+            typeof item.personKey === 'string' && item.personKey.trim()
+              ? item.personKey.trim()
+              : undefined;
+          const relLifeYears =
+            typeof item.lifeYears === 'string' && item.lifeYears.trim()
+              ? item.lifeYears.trim()
+              : undefined;
+          const title =
+            typeof item.title === 'string' && item.title.trim() ? item.title.trim() : undefined;
+          const note =
+            typeof item.note === 'string' && item.note.trim() ? item.note.trim() : undefined;
+          return {
+            name,
+            relation,
+            group: rawGroup as 'parent' | 'uncle_aunt' | 'spouse' | 'sibling' | 'child',
+            ...(rulerId ? { rulerId } : {}),
+            ...(personKey ? { personKey } : {}),
+            ...(relLifeYears ? { lifeYears: relLifeYears } : {}),
+            ...(title ? { title } : {}),
+            ...(note ? { note } : {}),
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null)
+    : undefined;
+
   return {
     id,
     eraId: typeof raw.eraId === 'string' && raw.eraId.trim() ? raw.eraId.trim() : 'ERA_1',
@@ -419,6 +464,7 @@ export function sanitizeRulerPeriod(raw: unknown): RulerPeriod | null {
     ...(biography ? { biography } : {}),
     ...(keyActions && keyActions.length > 0 ? { keyActions } : {}),
     ...(innerCircle && innerCircle.length > 0 ? { innerCircle } : {}),
+    ...(family && family.length > 0 ? { family } : {}),
     ...(legacy ? { legacy } : {}),
     sources: sanitizeSourcesList(raw.sources),
   };

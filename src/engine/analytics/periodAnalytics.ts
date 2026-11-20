@@ -20,6 +20,7 @@ import type {
   ResolvedMacroEra,
   ResolvedRulerInnerCircleMember,
   ResolvedRulerKeyAction,
+  ResolvedRulerRelative,
   RulerBoundaryTick,
   RulerParticipantEntry,
   RulerPeriod,
@@ -922,6 +923,7 @@ export interface RulerPeriodSummaryData {
   reignParticipants: RulerParticipantEntry[];
   resolvedInnerCircle: ResolvedRulerInnerCircleMember[];
   resolvedKeyActions: ResolvedRulerKeyAction[];
+  resolvedFamily: ResolvedRulerRelative[];
   topConnectedEvents: EnrichedEvent[];
   crossBranchLinks: ReignCrossBranchLink[];
   crossBranchPairs: ReignBranchPairSummary[];
@@ -1154,11 +1156,21 @@ function buildWindowParticipantsRanking(
     });
 }
 
+function normalizeRulerLookupName(value: string): string {
+  return value
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/ё/gi, 'е')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 export function getRulerPeriodSummaryData(
   ruler: RulerPeriod,
   enrichedEvents: EnrichedEvent[],
   branches?: BranchDefinition[],
   personDossiers?: Map<string, PersonDossier>,
+  allRulers?: RulerPeriod[],
 ): RulerPeriodSummaryData {
   const overlappingAll = enrichedEvents.filter((ev) =>
     ev.overlappingRulers.some((or) => or.id === ruler.id),
@@ -1198,13 +1210,31 @@ export function getRulerPeriodSummaryData(
   const inheritedEvents = reignEvents.filter((ev) => ev.startYear < ruler.startYear);
   const carryOverEvents = reignEvents.filter((ev) => ev.endYear > ruler.endYear);
 
-  const dossierMap = personDossiers ?? buildPersonDossierIndex(enrichedEvents, [ruler]).dossiers;
+  const rulersCatalog = allRulers && allRulers.length > 0 ? allRulers : [ruler];
+  const rulerById = new Map<string, RulerPeriod>(rulersCatalog.map((r) => [r.id, r]));
+  const rulerByNormName = new Map<string, RulerPeriod>();
+  rulersCatalog.forEach((r) => {
+    if (r.id === ruler.id) return;
+    const normFull = normalizeRulerLookupName(r.ruler);
+    const normShort = normalizeRulerLookupName(r.shortRuler);
+    if (normFull && !rulerByNormName.has(normFull)) rulerByNormName.set(normFull, r);
+    if (normShort && !rulerByNormName.has(normShort)) rulerByNormName.set(normShort, r);
+  });
+
+  const dossierMap = personDossiers ?? buildPersonDossierIndex(enrichedEvents, rulersCatalog).dossiers;
   const reignParticipants = buildWindowParticipantsRanking(reignEvents, [ruler], dossierMap);
   const participantByKey = new Map(reignParticipants.map((p) => [p.personKey, p]));
   const eventById = new Map(enrichedEvents.map((ev) => [ev.id, ev]));
 
+  const currentRulerNormKeys = new Set<string>();
+  [ruler.ruler, ruler.shortRuler].forEach((rName) => {
+    const k = resolvePersonKey(rName, dossierMap);
+    if (k) currentRulerNormKeys.add(k);
+  });
+
   const resolvedInnerCircle: ResolvedRulerInnerCircleMember[] = (ruler.innerCircle || []).map(
     (member) => {
+      const matchedRuler = rulerByNormName.get(normalizeRulerLookupName(member.name)) ?? null;
       let candidateKey = resolvePersonKey(member.name, dossierMap);
       let dossier = candidateKey ? dossierMap.get(candidateKey) ?? null : null;
       if (!dossier) {
@@ -1226,6 +1256,8 @@ export function getRulerPeriodSummaryData(
       return {
         ...member,
         personKey: dossier ? dossier.key : null,
+        linkedRulerId: matchedRuler?.id ?? null,
+        linkedRulerPeriod: matchedRuler?.reignPeriod ?? null,
         reignEventCount: participant?.reignEventCount ?? 0,
         totalEventCount: dossier?.events.length ?? 0,
       };
@@ -1236,6 +1268,43 @@ export function getRulerPeriodSummaryData(
     ...action,
     linkedEvent: action.eventId ? (eventById.get(action.eventId) ?? null) : null,
   }));
+
+  const resolvedFamily: ResolvedRulerRelative[] = (ruler.family || []).map((rel, idx) => {
+    const linkedRuler =
+      rel.rulerId && rel.rulerId !== ruler.id ? (rulerById.get(rel.rulerId) ?? null) : null;
+
+    let resolvedPersonKey: string | null = null;
+    let personEventCount = 0;
+
+    if (!linkedRuler) {
+      const explicitKey = rel.personKey
+        ? resolvePersonKey(rel.personKey, dossierMap) || rel.personKey
+        : null;
+      const inferredKey = explicitKey || resolvePersonKey(rel.name, dossierMap);
+      if (inferredKey && !currentRulerNormKeys.has(inferredKey)) {
+        const dossier = dossierMap.get(inferredKey);
+        if (dossier) {
+          resolvedPersonKey = dossier.key;
+          personEventCount = dossier.events.length;
+        }
+      }
+    }
+
+    const targetKind: ResolvedRulerRelative['targetKind'] = linkedRuler
+      ? 'ruler'
+      : resolvedPersonKey
+        ? 'person'
+        : 'mini_card';
+
+    return {
+      ...rel,
+      id: `${ruler.id}-rel-${rel.group}-${idx}`,
+      targetKind,
+      linkedRuler,
+      resolvedPersonKey,
+      personEventCount,
+    };
+  });
 
   const topConnectedEvents = [...reignEvents]
     .filter((ev) => ev.explicitLinks.length > 0)
@@ -1266,6 +1335,7 @@ export function getRulerPeriodSummaryData(
     reignParticipants,
     resolvedInnerCircle,
     resolvedKeyActions,
+    resolvedFamily,
     topConnectedEvents,
     crossBranchLinks,
     crossBranchPairs,
