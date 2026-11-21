@@ -50,12 +50,12 @@ export function buildTimelineModuleIndex(publicDir: string): ModulesIndexFile {
   const rulers = extractRulersFromStore(effectiveManifest, files);
   const events = getEnrichedEvents(effectiveManifest, files, rulers);
   const { dossiers } = buildPersonDossierIndex(events, rulers);
-  const personModules = Array.from(dossiers, ([key, dossier]) => {
+  const personModules = Array.from(dossiers, ([key, dossier]): [string, string[]] => {
     const paths = new Set(dossier.events.flatMap((event) => {
       const module = cardModules.get(event.id);
       return module ? [module] : [];
     }));
-    return [key, [...paths]] as const;
+    return [key, [...paths]];
   });
 
   return {
