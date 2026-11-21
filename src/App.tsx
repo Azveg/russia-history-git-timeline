@@ -208,6 +208,8 @@ export default function App() {
     loadError,
     isFullyHydrated,
     isHydrating,
+    isRetrying,
+    partialLoadWarning,
     reloadRepository,
     ensureAllModulesLoaded,
   } = useTimelineData({ initialParams });
@@ -1978,13 +1980,14 @@ export default function App() {
       <div className="min-h-screen bg-[#050811] text-slate-100 flex items-center justify-center p-6">
         <div className="max-w-md w-full bg-slate-900 border border-rose-500/40 rounded-2xl p-6 text-center space-y-4">
           <h2 className="text-lg font-bold text-white">Не удалось загрузить данные хронографа</h2>
-          <p className="text-sm text-slate-300">{loadError || 'Каталог исторических данных временно недоступен.'}</p>
+          <p role="alert" className="text-sm text-slate-300">{loadError || 'Каталог исторических данных временно недоступен.'}</p>
           <button
             type="button"
+            disabled={isRetrying}
             onClick={() => void reloadRepository()}
-            className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer"
+            className="px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs cursor-pointer disabled:opacity-60"
           >
-            Повторить загрузку
+            {isRetrying ? 'Загрузка…' : 'Повторить загрузку'}
           </button>
         </div>
       </div>
@@ -2049,6 +2052,20 @@ export default function App() {
         activeAdvancedCount={activeAdvancedCount}
         onToggleFilters={stableToggleFilters}
       />
+
+      {partialLoadWarning && (
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2 text-sm text-amber-200 sm:px-6 lg:px-8">
+          <p role="status">{partialLoadWarning}</p>
+          <button
+            type="button"
+            disabled={isRetrying}
+            onClick={() => void reloadRepository()}
+            className="font-semibold underline underline-offset-2 hover:text-amber-100 disabled:opacity-60"
+          >
+            {isRetrying ? 'Загрузка…' : 'Повторить загрузку'}
+          </button>
+        </div>
+      )}
 
       <DashboardHeader
         visibleLanesCount={visibleLanes.length}

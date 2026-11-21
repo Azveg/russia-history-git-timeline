@@ -541,44 +541,55 @@ export function collectBranchesFromDataFile(fileData: TimelineDataFile, fallback
 export interface TimelineRepositorySnapshot {
   manifest: SyncManifest;
   files: Record<string, TimelineDataFile>;
-  isFullyHydrated?: boolean;
+  isFullyHydrated: boolean;
+  missingModulePaths: string[];
+  failedModulePaths: string[];
 }
 
 interface RepositoryBootstrapState {
   manifest: SyncManifest;
   manifestMetaByNormPath: Map<string, MountedFileMeta>;
   orderedCandidatePaths: string[];
+  requiredModulePaths: string[];
   fileHashes: Record<string, string>;
   fallbackVersion: string;
 }
 
-let cachedRepositorySnapshot: TimelineRepositorySnapshot | null = null;
-let inFlightRepositoryPromise: Promise<TimelineRepositorySnapshot> | null = null;
-let cachedBootstrapState: RepositoryBootstrapState | null = null;
-let inFlightHydrationPromise: Promise<TimelineRepositorySnapshot> | null = null;
+interface RepositoryCache {
+  current?: { bootstrap: RepositoryBootstrapState; snapshot: TimelineRepositorySnapshot };
+  initialLoad?: Promise<TimelineRepositorySnapshot>;
+  hydration?: Promise<TimelineRepositorySnapshot>;
+}
+
+let repositoryCache: RepositoryCache = {};
 
 export function clearTimelineRepositoryCache(): void {
-  cachedRepositorySnapshot = null;
-  inFlightRepositoryPromise = null;
-  cachedBootstrapState = null;
-  inFlightHydrationPromise = null;
+  repositoryCache = {};
 }
 
 async function fetchDataModuleFile(
   normPath: string,
-  fileHashes: Record<string, string>,
-  fallbackVersion: string,
+  bootstrap: RepositoryBootstrapState,
+  retry: boolean,
 ): Promise<{ normPath: string; data: TimelineDataFile | null }> {
   try {
-    const contentHash = fileHashes[normPath];
-    const moduleUrl = buildVersionedDataUrl(normPath, contentHash || fallbackVersion, Boolean(contentHash));
-    const res = await fetch(moduleUrl, { cache: contentHash ? 'force-cache' : 'no-cache' });
+    const contentHash = bootstrap.fileHashes[normPath];
+    const moduleUrl = buildVersionedDataUrl(normPath, contentHash || bootstrap.fallbackVersion, Boolean(contentHash));
+    const cache = retry ? 'reload' : contentHash ? 'force-cache' : 'no-cache';
+    const res = await fetch(moduleUrl, { cache });
     const ct = res.headers.get('content-type') || '';
     if (!res.ok || ct.includes('text/html')) {
       return { normPath, data: null };
     }
     const parsed = (await res.json()) as unknown;
     if (!isPlainRecord(parsed) || (!Array.isArray(parsed.nodes) && !Array.isArray(parsed.rulers))) {
+      return { normPath, data: null };
+    }
+    const role = bootstrap.manifestMetaByNormPath.get(normPath)?.role;
+    if ((role === 'trunk' || role === 'rulers_branch') && !Array.isArray(parsed.rulers)) {
+      return { normPath, data: null };
+    }
+    if ((role === 'military_branches' || role === 'thematic_branch') && !Array.isArray(parsed.nodes)) {
       return { normPath, data: null };
     }
     return { normPath, data: parsed as unknown as TimelineDataFile };
@@ -590,13 +601,13 @@ async function fetchDataModuleFile(
 function buildSnapshotFromFiles(
   bootstrap: RepositoryBootstrapState,
   files: Record<string, TimelineDataFile>,
-  isFullyHydrated: boolean,
+  failedPaths: Set<string>,
 ): TimelineRepositorySnapshot {
   const resolvedMountedFiles: MountedFileMeta[] = [];
 
   bootstrap.orderedCandidatePaths.forEach((normPath) => {
     const existingMeta = bootstrap.manifestMetaByNormPath.get(normPath);
-    const data = files[normPath] ?? (existingMeta?.path ? files[existingMeta.path] : undefined);
+    const data = files[normPath];
 
     if (!data) {
       if (existingMeta) {
@@ -605,13 +616,7 @@ function buildSnapshotFromFiles(
       return;
     }
 
-    const rawDataPath = typeof data.path === 'string' && data.path.trim() ? normalizeDataPath(data.path) : '';
-    const storeKey = existingMeta?.path || rawDataPath || normPath;
-    if (!files[storeKey]) {
-      files[storeKey] = data;
-    }
-
-    const declaredBranches = collectBranchesFromDataFile(data, storeKey);
+    const declaredBranches = collectBranchesFromDataFile(data, normPath);
     const branchIds = declaredBranches.map((b) => b.id);
     const inferredRole: MountedFileMeta['role'] = isRulersFile(data)
       ? 'rulers_branch'
@@ -628,21 +633,24 @@ function buildSnapshotFromFiles(
 
     resolvedMountedFiles.push({
       fileId: existingMeta?.fileId || (typeof data.fileId === 'string' && data.fileId) || normPath,
-      path: storeKey,
+      path: normPath,
       role: existingMeta?.role || inferredRole,
       branchIds: existingMeta?.branchIds?.length ? existingMeta.branchIds : branchIds,
-      title: existingMeta?.title || declaredBranches[0]?.label || storeKey,
+      title: existingMeta?.title || declaredBranches[0]?.label || normPath,
       enabled: isFileEnabled,
     });
   });
 
+  const missingModulePaths = bootstrap.requiredModulePaths.filter((normPath) => !files[normPath]);
   return {
     manifest: {
       ...bootstrap.manifest,
       mountedFiles: resolvedMountedFiles,
     },
     files,
-    isFullyHydrated,
+    isFullyHydrated: missingModulePaths.length === 0,
+    missingModulePaths,
+    failedModulePaths: missingModulePaths.filter((normPath) => failedPaths.has(normPath)),
   };
 }
 
@@ -673,7 +681,6 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
     crossLinks: Array.isArray(rawManifest.crossLinks) ? rawManifest.crossLinks : [],
   };
 
-  let hasDiscoveredIndex = false;
   let discoveredPaths: string[] = [];
   let fileHashes: Record<string, string> = {};
   let indexVersion = cacheVersion;
@@ -685,7 +692,6 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
     if (indexRes.ok && !ct.includes('text/html')) {
       const idxData = (await indexRes.json()) as ModulesIndexFile;
       if (Array.isArray(idxData?.files)) {
-        hasDiscoveredIndex = true;
         discoveredPaths = idxData.files.map(normalizeDataPath).filter(Boolean);
       }
       if (idxData?.fileHashes && isPlainRecord(idxData.fileHashes)) {
@@ -710,41 +716,16 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
     }
   });
 
-  const discoveredSet = new Set(discoveredPaths);
-  const orderedCandidatePaths: string[] = [];
-  const seenPaths = new Set<string>();
-
-  if (hasDiscoveredIndex) {
-    manifest.mountedFiles.forEach((meta) => {
-      if (!meta?.path) return;
-      const norm = normalizeDataPath(meta.path);
-      if (norm && discoveredSet.has(norm) && !seenPaths.has(norm)) {
-        seenPaths.add(norm);
-        orderedCandidatePaths.push(norm);
-      }
-    });
-
-    discoveredPaths.forEach((norm) => {
-      if (norm && !seenPaths.has(norm)) {
-        seenPaths.add(norm);
-        orderedCandidatePaths.push(norm);
-      }
-    });
-  } else {
-    manifest.mountedFiles.forEach((meta) => {
-      if (!meta?.path) return;
-      const norm = normalizeDataPath(meta.path);
-      if (norm && !seenPaths.has(norm)) {
-        seenPaths.add(norm);
-        orderedCandidatePaths.push(norm);
-      }
-    });
-  }
+  const orderedCandidatePaths = [...new Set([...manifestMetaByNormPath.keys(), ...discoveredPaths])];
+  const requiredModulePaths = orderedCandidatePaths.filter(
+    (normPath) => manifestMetaByNormPath.get(normPath)?.enabled !== false,
+  );
 
   return {
     manifest,
     manifestMetaByNormPath,
     orderedCandidatePaths,
+    requiredModulePaths,
     fileHashes,
     fallbackVersion: indexVersion,
   };
@@ -756,10 +737,10 @@ function selectInitialModulePaths(
   requiredBranchIds?: Set<string>,
 ): string[] {
   if (!progressive) {
-    return bootstrap.orderedCandidatePaths;
+    return bootstrap.requiredModulePaths;
   }
 
-  const initialPaths = bootstrap.orderedCandidatePaths.filter((normPath) => {
+  const initialPaths = bootstrap.requiredModulePaths.filter((normPath) => {
     if (CORE_INITIAL_MODULE_PATHS.has(normPath)) return true;
     if (requiredBranchIds && requiredBranchIds.size > 0) {
       const meta = bootstrap.manifestMetaByNormPath.get(normPath);
@@ -770,7 +751,7 @@ function selectInitialModulePaths(
     return false;
   });
 
-  return initialPaths.length > 0 ? initialPaths : bootstrap.orderedCandidatePaths;
+  return initialPaths.length > 0 ? initialPaths : bootstrap.requiredModulePaths;
 }
 
 function yieldToMainThread(): Promise<void> {
@@ -780,69 +761,68 @@ function yieldToMainThread(): Promise<void> {
   });
 }
 
-export async function hydrateRemainingTimelineModules(options?: {
-  priority?: boolean;
-  batchSize?: number;
-}): Promise<TimelineRepositorySnapshot | null> {
-  if (!cachedBootstrapState || !cachedRepositorySnapshot) {
-    return cachedRepositorySnapshot;
-  }
-  if (cachedRepositorySnapshot.isFullyHydrated) {
-    return cachedRepositorySnapshot;
-  }
-  if (inFlightHydrationPromise) {
-    return inFlightHydrationPromise;
-  }
+async function loadModuleBatch(
+  bootstrap: RepositoryBootstrapState,
+  paths: string[],
+  previous?: TimelineRepositorySnapshot,
+  batchSize = paths.length,
+  shouldYield = false,
+): Promise<TimelineRepositorySnapshot> {
+  const files: Record<string, TimelineDataFile> = { ...previous?.files };
+  const failedPaths = new Set(previous?.failedModulePaths);
+  for (let i = 0; i < paths.length; i += batchSize) {
+    const batch = paths.slice(i, i + batchSize);
+    const entries = await Promise.all(
+      batch.map((normPath) => fetchDataModuleFile(normPath, bootstrap, failedPaths.has(normPath))),
+    );
 
-  const bootstrap = cachedBootstrapState;
-  const existingFiles = cachedRepositorySnapshot.files;
-  const remainingPaths = bootstrap.orderedCandidatePaths.filter((normPath) => !existingFiles[normPath]);
-
-  if (remainingPaths.length === 0) {
-    cachedRepositorySnapshot = {
-      ...cachedRepositorySnapshot,
-      isFullyHydrated: true,
-    };
-    return cachedRepositorySnapshot;
-  }
-
-  const batchSize = Math.max(1, options?.batchSize ?? (options?.priority ? remainingPaths.length : 5));
-  const shouldYield = !options?.priority && typeof window !== 'undefined';
-
-  inFlightHydrationPromise = (async () => {
-    const mergedFiles: Record<string, TimelineDataFile> = { ...existingFiles };
-
-    for (let i = 0; i < remainingPaths.length; i += batchSize) {
-      const batch = remainingPaths.slice(i, i + batchSize);
-      const fetchedEntries = await Promise.all(
-        batch.map((normPath) =>
-          fetchDataModuleFile(normPath, bootstrap.fileHashes, bootstrap.fallbackVersion),
-        ),
-      );
-
-      fetchedEntries.forEach(({ normPath, data }) => {
-        if (!data) return;
-        const existingMeta = bootstrap.manifestMetaByNormPath.get(normPath);
-        const rawDataPath = typeof data.path === 'string' && data.path.trim() ? normalizeDataPath(data.path) : '';
-        const storeKey = existingMeta?.path || rawDataPath || normPath;
-        mergedFiles[storeKey] = data;
-      });
-
-      if (shouldYield && i + batchSize < remainingPaths.length) {
-        await yieldToMainThread();
+    for (const { normPath, data } of entries) {
+      if (data) {
+        files[normPath] = data;
+        failedPaths.delete(normPath);
+      } else {
+        failedPaths.add(normPath);
       }
     }
+    if (shouldYield && i + batchSize < paths.length) {
+      await yieldToMainThread();
+    }
+  }
+  return buildSnapshotFromFiles(bootstrap, files, failedPaths);
+}
 
-    const fullSnapshot = buildSnapshotFromFiles(bootstrap, mergedFiles, true);
-    cachedRepositorySnapshot = fullSnapshot;
-    inFlightHydrationPromise = null;
-    return fullSnapshot;
-  })().catch((err) => {
-    inFlightHydrationPromise = null;
-    throw err;
-  });
+interface HydrationOptions {
+  priority?: boolean;
+  batchSize?: number;
+}
 
-  return inFlightHydrationPromise;
+function hydrateSnapshot(
+  cache: RepositoryCache,
+  current: NonNullable<RepositoryCache['current']>,
+  options?: HydrationOptions,
+): Promise<TimelineRepositorySnapshot> {
+  const { bootstrap, snapshot } = current;
+  if (snapshot.isFullyHydrated) return Promise.resolve(snapshot);
+  if (cache.hydration) return cache.hydration;
+
+  const paths = snapshot.missingModulePaths;
+  const batchSize = Math.max(1, options?.batchSize ?? (options?.priority ? paths.length : 5));
+  cache.hydration = loadModuleBatch(bootstrap, paths, snapshot, batchSize, !options?.priority)
+    .then((result) => {
+      cache.current = { bootstrap, snapshot: result };
+      return result;
+    })
+    .finally(() => {
+      cache.hydration = undefined;
+    });
+  return cache.hydration;
+}
+
+export async function hydrateRemainingTimelineModules(
+  options?: HydrationOptions,
+): Promise<TimelineRepositorySnapshot | null> {
+  const cache = repositoryCache;
+  return cache.current ? hydrateSnapshot(cache, cache.current, options) : null;
 }
 
 export async function fetchTimelineRepository(options?: {
@@ -853,50 +833,31 @@ export async function fetchTimelineRepository(options?: {
   if (options?.forceRefresh) {
     clearTimelineRepositoryCache();
   }
-  if (cachedRepositorySnapshot && (!options?.progressive || cachedRepositorySnapshot.isFullyHydrated)) {
-    return cachedRepositorySnapshot;
-  }
-  if (cachedRepositorySnapshot && options?.progressive) {
-    return cachedRepositorySnapshot;
-  }
-  if (inFlightRepositoryPromise) {
-    return inFlightRepositoryPromise;
-  }
-
+  const cache = repositoryCache;
   const progressive = Boolean(options?.progressive);
+  if (cache.current) {
+    return progressive ? cache.current.snapshot : hydrateSnapshot(cache, cache.current, { priority: true });
+  }
+  if (cache.initialLoad) {
+    const snapshot = await cache.initialLoad;
+    const current = cache.current;
+    const hasUnattemptedPaths = snapshot.missingModulePaths.length > snapshot.failedModulePaths.length;
+    return !progressive && current && hasUnattemptedPaths
+      ? hydrateSnapshot(cache, current, { priority: true })
+      : snapshot;
+  }
+
   const requiredSet = options?.requiredBranchIds ? new Set(options.requiredBranchIds) : undefined;
-
-  inFlightRepositoryPromise = (async () => {
+  cache.initialLoad = (async () => {
     const bootstrap = await loadRepositoryBootstrap();
-    cachedBootstrapState = bootstrap;
-
     const initialPaths = selectInitialModulePaths(bootstrap, progressive, requiredSet);
-    const fetchedEntries = await Promise.all(
-      initialPaths.map((normPath) =>
-        fetchDataModuleFile(normPath, bootstrap.fileHashes, bootstrap.fallbackVersion),
-      ),
-    );
-
-    const files: Record<string, TimelineDataFile> = {};
-    fetchedEntries.forEach(({ normPath, data }) => {
-      if (!data) return;
-      const existingMeta = bootstrap.manifestMetaByNormPath.get(normPath);
-      const rawDataPath = typeof data.path === 'string' && data.path.trim() ? normalizeDataPath(data.path) : '';
-      const storeKey = existingMeta?.path || rawDataPath || normPath;
-      files[storeKey] = data;
-    });
-
-    const isFullyHydrated = initialPaths.length >= bootstrap.orderedCandidatePaths.length;
-    const snapshot = buildSnapshotFromFiles(bootstrap, files, isFullyHydrated);
-    cachedRepositorySnapshot = snapshot;
-    inFlightRepositoryPromise = null;
+    const snapshot = await loadModuleBatch(bootstrap, initialPaths);
+    cache.current = { bootstrap, snapshot };
     return snapshot;
-  })().catch((err) => {
-    inFlightRepositoryPromise = null;
-    throw err;
+  })().finally(() => {
+    cache.initialLoad = undefined;
   });
-
-  return inFlightRepositoryPromise;
+  return cache.initialLoad;
 }
 
 export function extractBranchesFromStore(

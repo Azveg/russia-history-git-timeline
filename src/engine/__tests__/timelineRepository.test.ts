@@ -10,9 +10,35 @@ import {
   sanitizeTimelineNode,
 } from '../repository/timelineRepository';
 
+const manifestPath = 'data/sync.manifest.json';
+const indexPath = 'data/modules.index.json';
+const artsPath = 'data/arts_culture.json';
+const readDataFile = (file: string) => fs.readFileSync(path.resolve('public', file), 'utf8');
+const realManifest = JSON.parse(readDataFile(manifestPath)) as {
+  mountedFiles: Array<{ path: string; enabled: boolean }>;
+};
+const modulePaths = realManifest.mountedFiles.map(({ path }) => path);
+
+function mockDataRequests(
+  override: (file: string) => Response | Promise<Response> | undefined = () => undefined,
+) {
+  const fetchData = vi.fn(async (input: RequestInfo | URL, _options?: RequestInit) => {
+    const file = String(input).replace(/^\.\//, '').split('?')[0];
+    const response = override(file);
+    if (response) return response;
+    if (file === indexPath) {
+      return Response.json({ files: modulePaths, fileHashes: { [artsPath]: 'hash-arts' } });
+    }
+    return new Response(readDataFile(file), { headers: { 'content-type': 'application/json' } });
+  });
+  vi.stubGlobal('fetch', fetchData);
+  return fetchData;
+}
+
 describe('timelineRepository — cache busting, sanitization, progressive loader & manifest parity', () => {
   afterEach(() => {
     clearTimelineRepositoryCache();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -123,6 +149,8 @@ describe('timelineRepository — cache busting, sanitization, progressive loader
     // Phase 1: only core module (rulers.json) is fetched initially
     const phase1 = await fetchTimelineRepository({ progressive: true });
     expect(phase1.isFullyHydrated).toBe(false);
+    expect(phase1.missingModulePaths).toEqual([artsPath]);
+    expect(phase1.failedModulePaths).toEqual([]);
     expect(Object.keys(phase1.files)).toEqual(['data/rulers.json']);
     expect(requestedUrls).toContain('./data/rulers.json?h=hash_rulers_1');
     expect(requestedUrls.some((u) => u.includes('arts_culture.json'))).toBe(false);
@@ -132,6 +160,103 @@ describe('timelineRepository — cache busting, sanitization, progressive loader
     expect(phase2?.isFullyHydrated).toBe(true);
     expect(Object.keys(phase2?.files ?? {}).sort()).toEqual(['data/arts_culture.json', 'data/rulers.json']);
     expect(requestedUrls).toContain('./data/arts_culture.json?h=hash_arts_2');
+  });
+
+  it.each([
+    { progressive: true, failAll: false },
+    { progressive: false, failAll: false },
+    { progressive: true, failAll: true },
+    { progressive: false, failAll: true },
+  ])('recovers from HTTP failures (progressive: $progressive, all modules: $failAll)', async ({ progressive, failAll }) => {
+    const unavailable = failAll ? modulePaths : [artsPath];
+    let online = false;
+    const fetchData = mockDataRequests((file) =>
+      !online && unavailable.includes(file) ? new Response(null, { status: 503 }) : undefined,
+    );
+
+    const initial = await fetchTimelineRepository({ progressive });
+    const partial = progressive ? await hydrateRemainingTimelineModules() : initial;
+
+    expect(partial?.isFullyHydrated).toBe(false);
+    expect(partial?.missingModulePaths).toEqual(unavailable);
+    expect(partial?.failedModulePaths).toEqual(unavailable);
+    expect(Object.keys(partial?.files ?? {})).toHaveLength(modulePaths.length - unavailable.length);
+
+    online = true;
+    fetchData.mockClear();
+    const [first, second] = await Promise.all([
+      hydrateRemainingTimelineModules({ priority: true }),
+      fetchTimelineRepository({ progressive: false }),
+    ]);
+
+    expect(first).toBe(second);
+    expect(first?.isFullyHydrated).toBe(true);
+    expect(first?.missingModulePaths).toEqual([]);
+    expect(first?.failedModulePaths).toEqual([]);
+    expect(Object.keys(first?.files ?? {})).toHaveLength(modulePaths.length);
+    expect(fetchData).toHaveBeenCalledTimes(unavailable.length);
+    expect(fetchData).toHaveBeenCalledWith('./data/arts_culture.json?h=hash-arts', { cache: 'reload' });
+  });
+
+  it.each([
+    ['HTML', () => new Response('<p>Unavailable</p>', { headers: { 'content-type': 'text/html' } })],
+    ['invalid JSON', () => new Response('{', { headers: { 'content-type': 'application/json' } })],
+    ['wrong module shape', () => Response.json({ rulers: [] })],
+  ] as const)('reports %s in place of a thematic file as a missed module', async (_case, badResponse) => {
+    mockDataRequests((file) => file === artsPath ? badResponse() : undefined);
+    const result = await fetchTimelineRepository({ progressive: false });
+    expect(result.isFullyHydrated).toBe(false);
+    expect(result.failedModulePaths).toEqual([artsPath]);
+    expect(result.files[artsPath]).toBeUndefined();
+  });
+
+  it('waits for full data when a complete request joins a progressive initial request', async () => {
+    const fetchData = mockDataRequests();
+    const [partial, full] = await Promise.all([
+      fetchTimelineRepository({ progressive: true }),
+      fetchTimelineRepository({ progressive: false }),
+    ]);
+    expect(Object.keys(partial.files)).toHaveLength(4);
+    expect(full.isFullyHydrated).toBe(true);
+    expect(Object.keys(full.files)).toHaveLength(modulePaths.length);
+    expect(fetchData).toHaveBeenCalledTimes(modulePaths.length + 2);
+  });
+
+  it('loads enabled manifest modules missing from the index and skips explicitly disabled modules', async () => {
+    const disabledPath = 'data/wars.json';
+    const fetchData = mockDataRequests((file) => {
+      if (file === indexPath) return Response.json({ files: modulePaths.filter((path) => path !== artsPath) });
+      if (file === manifestPath) {
+        return Response.json({
+          ...realManifest,
+          mountedFiles: realManifest.mountedFiles.map((meta) =>
+            meta.path === disabledPath ? { ...meta, enabled: false } : meta,
+          ),
+        });
+      }
+    });
+
+    const result = await fetchTimelineRepository();
+    expect(result.isFullyHydrated).toBe(true);
+    expect(result.files[artsPath]).toBeDefined();
+    expect(result.manifest.mountedFiles.find((meta) => meta.path === disabledPath)?.enabled).toBe(false);
+    expect(fetchData.mock.calls.some(([url]) => String(url).startsWith('./data/wars.json?'))).toBe(false);
+  });
+
+  it('keeps the refreshed cache after an older hydration request finishes', async () => {
+    let finishOldRequest: (response: Response) => void = () => undefined;
+    const oldResponse = new Promise<Response>((resolve) => { finishOldRequest = resolve; });
+    let holdArts = true;
+    mockDataRequests((file) => file === artsPath && holdArts ? oldResponse : undefined);
+    await fetchTimelineRepository({ progressive: true });
+    const oldHydration = hydrateRemainingTimelineModules({ priority: true });
+    holdArts = false;
+    const fresh = await fetchTimelineRepository({ forceRefresh: true });
+    finishOldRequest(new Response(null, { status: 503 }));
+
+    expect((await oldHydration)?.failedModulePaths).toEqual([artsPath]);
+    expect(fresh.isFullyHydrated).toBe(true);
+    expect(await fetchTimelineRepository()).toBe(fresh);
   });
 
   it('mounts 100% of disk JSON modules in public/data/sync.manifest.json without drift', () => {

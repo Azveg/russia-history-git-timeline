@@ -2,8 +2,11 @@ import { startTransition, useCallback, useEffect, useState } from 'react';
 import {
   fetchTimelineRepository,
   hydrateRemainingTimelineModules,
+  type TimelineRepositorySnapshot,
 } from '../engine/repository/timelineRepository';
 import type { SyncManifest, TimelineDataFile } from '../types/timeline';
+
+const EMPTY_FILES: Record<string, TimelineDataFile> = {};
 
 export interface UseTimelineDataOptions {
   initialParams: URLSearchParams;
@@ -16,35 +19,36 @@ export interface UseTimelineDataResult {
   loadError: string | null;
   isFullyHydrated: boolean;
   isHydrating: boolean;
+  isRetrying: boolean;
+  partialLoadWarning: string | null;
   reloadRepository: () => Promise<void>;
   ensureAllModulesLoaded: (options?: { priority?: boolean }) => Promise<void>;
 }
 
 export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseTimelineDataResult {
-  const [manifest, setManifest] = useState<SyncManifest | null>(null);
-  const [filesMap, setFilesMap] = useState<Record<string, TimelineDataFile>>({});
+  const [snapshot, setSnapshot] = useState<TimelineRepositorySnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [isFullyHydrated, setIsFullyHydrated] = useState(false);
+  const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
+  const [hydrationError, setHydrationError] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   const ensureAllModulesLoaded = useCallback(async (options?: { priority?: boolean }) => {
     try {
-      const fullSnapshot = await hydrateRemainingTimelineModules(options);
-      if (fullSnapshot) {
+      const result = await hydrateRemainingTimelineModules(options);
+      if (result) {
         startTransition(() => {
-          setManifest(fullSnapshot.manifest);
-          setFilesMap(fullSnapshot.files);
-          setIsFullyHydrated(Boolean(fullSnapshot.isFullyHydrated));
+          setSnapshot(result);
+          setHydrationError(false);
         });
       }
     } catch {
-      // Non-fatal background hydration error; core modules remain interactive
+      setHydrationError(true);
     }
   }, []);
 
   const loadRepositoryData = useCallback(async () => {
     setLoading(true);
-    setLoadError(null);
+    setInitialLoadError(null);
 
     const hasDeepLinkOrSearch = Boolean(
       initialParams.get('card') ||
@@ -61,12 +65,10 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
         progressive: !hasDeepLinkOrSearch,
         requiredBranchIds: requestedBranches,
       });
-      setManifest(repo.manifest);
-      setFilesMap(repo.files);
-      setIsFullyHydrated(Boolean(repo.isFullyHydrated));
+      setSnapshot(repo);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Неизвестная ошибка загрузки данных';
-      setLoadError(msg);
+      setInitialLoadError(msg);
     } finally {
       setLoading(false);
     }
@@ -76,9 +78,13 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
     void loadRepositoryData();
   }, [loadRepositoryData]);
 
+  const failedModuleCount = snapshot?.failedModulePaths.length ?? 0;
+  const hasUnattemptedModules =
+    (snapshot?.missingModulePaths.length ?? 0) > failedModuleCount && !hydrationError;
+
   // Phase 2: hydrate remaining non-default modules smoothly during browser idle time
   useEffect(() => {
-    if (loading || loadError || !manifest || isFullyHydrated) return;
+    if (loading || !hasUnattemptedModules) return;
 
     const win = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
@@ -98,18 +104,43 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
       void ensureAllModulesLoaded({ priority: false });
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [loading, loadError, manifest, isFullyHydrated, ensureAllModulesLoaded]);
+  }, [loading, hasUnattemptedModules, ensureAllModulesLoaded]);
 
-  const isHydrating = !loading && !loadError && Boolean(manifest) && !isFullyHydrated;
+  const reloadRepository = useCallback(async () => {
+    if (!snapshot) {
+      await loadRepositoryData();
+      return;
+    }
+    setIsRetrying(true);
+    try {
+      await ensureAllModulesLoaded({ priority: true });
+    } finally {
+      setIsRetrying(false);
+    }
+  }, [snapshot, loadRepositoryData, ensureAllModulesLoaded]);
+
+  const hasLoadedModules = snapshot?.manifest.mountedFiles.some(
+    (module) => module.enabled && Boolean(snapshot.files[module.path]),
+  ) ?? false;
+  const hasFailures = failedModuleCount > 0 || hydrationError;
+  const loadError = initialLoadError ?? (
+    hasFailures && !hasLoadedModules && !hasUnattemptedModules
+      ? 'Исторические данные временно недоступны.'
+      : null
+  );
 
   return {
-    manifest,
-    filesMap,
-    loading,
+    manifest: snapshot?.manifest ?? null,
+    filesMap: snapshot?.files ?? EMPTY_FILES,
+    loading: loading || (!hasLoadedModules && hasUnattemptedModules),
     loadError,
-    isFullyHydrated,
-    isHydrating,
-    reloadRepository: loadRepositoryData,
+    isFullyHydrated: snapshot?.isFullyHydrated ?? false,
+    isHydrating: hasUnattemptedModules || isRetrying,
+    isRetrying,
+    partialLoadWarning: hasFailures && hasLoadedModules
+      ? 'Часть исторических данных недоступна. Поиск и аналитика могут показывать неполные результаты.'
+      : null,
+    reloadRepository,
     ensureAllModulesLoaded,
   };
 }
