@@ -227,6 +227,9 @@ export function collectRepositorySnapshot(rootDir: string): RepositorySnapshot {
     const entry = manifestByPath.get(relPath);
     const data = moduleData as {
       fileId?: string;
+      loadPolicy?: string;
+      detailScope?: string;
+      campaignPack?: unknown;
       branch?: RawBranch;
       branches?: RawBranch[];
       rulers?: SnapshotRuler[];
@@ -234,6 +237,14 @@ export function collectRepositorySnapshot(rootDir: string): RepositorySnapshot {
     } | null;
 
     if (!data) continue;
+    if (
+      data.loadPolicy === 'on_demand' ||
+      data.detailScope === 'campaign' ||
+      Boolean(data.campaignPack) ||
+      relPath.startsWith('data/campaigns/')
+    ) {
+      continue;
+    }
 
     const fileBranches: RawBranch[] = [
       ...(data.branch ? [data.branch] : []),

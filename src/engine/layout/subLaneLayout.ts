@@ -477,6 +477,10 @@ export function computeBranchPresetMap(
   const next: Record<string, boolean> = {};
   branches.forEach((b) => {
     if (b.isGroup) return;
+    if (b.detailScope === 'campaign') {
+      next[b.id] = false;
+      return;
+    }
     const cat = resolveBranchCategory(b).key;
     if (presetId === 'all') {
       next[b.id] = true;

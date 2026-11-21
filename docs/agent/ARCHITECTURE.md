@@ -11,18 +11,23 @@
 - `src/engine/` — чистые функции обработки данных без зависимости от React:
   - `timelineEngine.ts` — фасад реэкспорта основных функций движка.
   - `analytics/periodAnalytics.ts` — расчёт досье правителей, макро-периодов, произвольных окон лет и сравнения периодов.
+  - `campaigns/campaignPacks.ts` — чистые функции для пакетов детализации кампаний (`isCampaignBranch`, `isCampaignEvent`, `filterEventsForAnalyticsScope`, `buildCampaignBranchMask` с `ATLAS_CONTEXT_BRANCH_IDS`, `findCampaignPackForEvent`).
+  - `campaigns/causalChainTracer.ts` — защищённый от циклов BFS-трассировщик причинно-следственных и контекстных цепочек на произвольную глубину (`traceCausalChain`), с разделением на слои истоков (`-N..-1`), следствий (`+1..+N`), синхронный контекст и пометкой внешних узлов атласа (`isExternalAtlas`).
   - `nlp/personExtractor.ts` — нормализация имён, построение индекса деятелей (`buildPersonDossierIndex`) и O(1)-поиск `resolvePersonKey`.
   - `regionFilter.ts` — фасетная фильтрация и подсчёт событий по макрорегионам.
-- `src/components/timeline/` — рендеринг ленты времени и предрасчёт геометрии дорожек (`timelineLayoutPrecompute.ts`).
-- `src/components/` — верхняя панель (`TopControlBar`), поповеры навигации и аналитические модальные окна.
+- `src/components/timeline/` — рендеринг ленты времени, предрасчёт геометрии дорожек (`timelineLayoutPrecompute.ts`), живая читалка (`TimelineLiveReader`), хроника (`TimelineChronicleView`) и панель режима кампании (`CampaignModeBar`).
+- `src/components/` — верхняя панель (`TopControlBar`), поповеры навигации и аналитические модальные окна (включая лениво подгружаемый `CampaignCausalTracerModal`).
 - `src/engine/__tests__/` — автоматические тесты Vitest на реальном датасете из `public/data/`.
 
 ---
 
 ## 2. Критические контракты производительности
 
-1. **Прогрессивная неблокирующая загрузка 27+ веток**
-   - При открытии сайта сначала поднимается базовый набор, чтобы интерфейс мгновенно стал интерактивным и кликабельным; остальные ветки догружаются в фоне без блокировки главного потока.
+1. **Прогрессивная неблокирующая загрузка и пакеты кампаний `on_demand`**
+   - При открытии сайта сначала поднимается базовый набор, чтобы интерфейс мгновенно стал интерактивным и кликабельным; остальные основные ветки (`core`) догружаются в фоне без блокировки главного потока.
+   - Детальные многоветвевые пакеты кампаний (`loadPolicy: "on_demand"`, `detailScope: "campaign"`, каталог `public/data/campaigns/<id>/`) выносятся генератором индекса в `onDemandFiles` и лёгкий реестр `campaignPacks` в `modules.index.json`. Они **никогда** не скачиваются при старте или фоновой догрузке — только по явному запросу (`loadCampaignPackModules`) или по deep-link (`?campaign=<id>` / `?card=<id>`).
+   - События кампаний по умолчанию изолированы от общих сводок эпох, окон, досье правителей и сравнения периодов через `filterEventsForAnalyticsScope(..., includeCampaignDetails)` (включаются по желанию пользователя в `EraSummaryModal` и `WindowSummaryModal`).
+   - Изоляция протрассированной цепочки на ленте работает декларативно через `FilterState.tracedChainEventIds` в `buildUnifiedTimelineStream` (автоматически расширяет `effectiveYearFrom`/`effectiveYearTo` до внешних узлов атласа и добавляет их дорожки без мутации масок пользователя).
    - Запрещено возвращать синхронную блокировку всего интерфейса до загрузки всех JSON-файлов.
 
 2. **`WeakMap`-кэширование аналитики**

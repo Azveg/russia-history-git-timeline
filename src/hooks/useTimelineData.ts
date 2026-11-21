@@ -1,13 +1,16 @@
 import { parseBranchSelection } from '../engine/layout/branchSelection';
-import { startTransition, useCallback, useEffect, useState } from 'react';
+import { startTransition, useCallback, useEffect, useRef, useState } from 'react';
 import {
   fetchTimelineRepository,
   hydrateRemainingTimelineModules,
+  loadCampaignPackModules,
   type TimelineRepositorySnapshot,
 } from '../engine/repository/timelineRepository';
-import type { SyncManifest, TimelineDataFile } from '../types/timeline';
+import type { CampaignPackRegistryEntry, SyncManifest, TimelineDataFile } from '../types/timeline';
 
 const EMPTY_FILES: Record<string, TimelineDataFile> = {};
+const EMPTY_CAMPAIGN_PACKS: CampaignPackRegistryEntry[] = [];
+const EMPTY_STRING_LIST: string[] = [];
 
 export interface UseTimelineDataOptions {
   initialParams: URLSearchParams;
@@ -16,6 +19,10 @@ export interface UseTimelineDataOptions {
 export interface UseTimelineDataResult {
   manifest: SyncManifest | null;
   filesMap: Record<string, TimelineDataFile>;
+  campaignPacks: CampaignPackRegistryEntry[];
+  loadedCampaignIds: string[];
+  failedCampaignIds: string[];
+  loadingCampaignId: string | null;
   loading: boolean;
   loadError: string | null;
   isFullyHydrated: boolean;
@@ -24,14 +31,18 @@ export interface UseTimelineDataResult {
   partialLoadWarning: string | null;
   reloadRepository: () => Promise<void>;
   ensureAllModulesLoaded: (options?: { priority?: boolean }) => Promise<void>;
+  loadCampaignPack: (campaignId: string) => Promise<boolean>;
 }
 
 export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseTimelineDataResult {
   const [snapshot, setSnapshot] = useState<TimelineRepositorySnapshot | null>(null);
+  const snapshotRef = useRef<TimelineRepositorySnapshot | null>(null);
+  snapshotRef.current = snapshot;
   const [loading, setLoading] = useState(true);
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null);
   const [hydrationError, setHydrationError] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
+  const [loadingCampaignId, setLoadingCampaignId] = useState<string | null>(null);
 
   const ensureAllModulesLoaded = useCallback(async (options?: { priority?: boolean }) => {
     try {
@@ -44,6 +55,28 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
       }
     } catch {
       setHydrationError(true);
+    }
+  }, []);
+
+  const loadCampaignPack = useCallback(async (campaignId: string): Promise<boolean> => {
+    if (snapshotRef.current?.loadedCampaignIds.includes(campaignId)) {
+      return true;
+    }
+    setLoadingCampaignId(campaignId);
+    try {
+      const result = await loadCampaignPackModules(campaignId);
+      if (result) {
+        // Commit snapshot and clear loadingCampaignId in the same synchronous React batch
+        // to avoid startTransition starvation against the campaign auto-load effect.
+        setSnapshot(result);
+        setLoadingCampaignId((prev) => (prev === campaignId ? null : prev));
+        return result.loadedCampaignIds.includes(campaignId);
+      }
+      setLoadingCampaignId((prev) => (prev === campaignId ? null : prev));
+      return false;
+    } catch {
+      setLoadingCampaignId((prev) => (prev === campaignId ? null : prev));
+      return false;
     }
   }, []);
 
@@ -61,6 +94,7 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
         target: {
           cardId: initialParams.get('card') ?? undefined,
           personKey: initialParams.get('person') ?? undefined,
+          campaignId: initialParams.get('campaign') ?? undefined,
         },
       });
       setSnapshot(repo);
@@ -80,7 +114,8 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
   const hasUnattemptedModules =
     (snapshot?.missingModulePaths.length ?? 0) > failedModuleCount && !hydrationError;
 
-  // Phase 2: hydrate remaining non-default modules smoothly during browser idle time
+  // Phase 2: hydrate remaining non-default core modules smoothly during browser idle time
+  // (on_demand campaign packs are excluded from missingModulePaths and only fetched when requested)
   useEffect(() => {
     if (loading || !hasUnattemptedModules) return;
 
@@ -130,6 +165,10 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
   return {
     manifest: snapshot?.manifest ?? null,
     filesMap: snapshot?.files ?? EMPTY_FILES,
+    campaignPacks: snapshot?.campaignPacks ?? EMPTY_CAMPAIGN_PACKS,
+    loadedCampaignIds: snapshot?.loadedCampaignIds ?? EMPTY_STRING_LIST,
+    failedCampaignIds: snapshot?.failedCampaignIds ?? EMPTY_STRING_LIST,
+    loadingCampaignId,
     loading: loading || (!hasLoadedModules && hasUnattemptedModules),
     loadError,
     isFullyHydrated: snapshot?.isFullyHydrated ?? false,
@@ -140,5 +179,6 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
       : null,
     reloadRepository,
     ensureAllModulesLoaded,
+    loadCampaignPack,
   };
 }

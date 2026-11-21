@@ -10,9 +10,11 @@ import {
   GitCompare,
   GitCompareArrows,
   Link2,
+  Loader2,
   MapPin,
   RotateCcw,
   Search,
+  Swords,
   Tag,
   User,
   X,
@@ -22,6 +24,7 @@ import { MACRO_REGION_OPTIONS, searchPersonDossiers } from '../engine/timelineEn
 import type {
   BranchDefinition,
   BranchPairFilter,
+  CampaignPackRegistryEntry,
   MacroRegionId,
   PersonDossier,
   SyncLinkTypeFilter,
@@ -49,6 +52,12 @@ interface FilterPanelProps {
   auditFlaggedCount: number;
   personDossiers?: Map<string, PersonDossier>;
   selectedPersonDossier?: PersonDossier | null;
+  campaignPacks?: CampaignPackRegistryEntry[];
+  activeCampaignId?: string | null;
+  loadedCampaignIds?: string[];
+  loadingCampaignId?: string | null;
+  onOpenCampaign?: (campaignId: string) => void;
+  onExitCampaign?: () => void;
   isAdvancedExpanded: boolean;
   onToggleAdvanced: () => void;
   onChangeYearFrom: (year: number) => void;
@@ -89,6 +98,12 @@ export const FilterPanel = memo(function FilterPanel({
   auditFlaggedCount,
   personDossiers,
   selectedPersonDossier,
+  campaignPacks = [],
+  activeCampaignId = null,
+  loadedCampaignIds = [],
+  loadingCampaignId = null,
+  onOpenCampaign,
+  onExitCampaign,
   isAdvancedExpanded,
   onToggleAdvanced,
   onChangeYearFrom,
@@ -503,11 +518,13 @@ export const FilterPanel = memo(function FilterPanel({
         </div>
       </div>
 
-      {/* Раскрываемый блок «Расширенный анализ» (Профессиональные аналитические инструменты) */}
+      {/* Раскрываемый блок «Профи-режим анализа» (Карта полос + Режим кампаний + аналитические фильтры) */}
       {isAdvancedExpanded && (
         <div className="pt-2 border-t border-slate-800/80 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
-            <span>Расширенный анализ: связи, сюжеты, макрорегионы, пары веток, сравнение периодов и досье окна</span>
+            <span>
+              Профи-режим анализа: карта полос, режим кампаний, связи, сюжеты, пары веток, сравнение периодов и досье окна
+            </span>
             <button
               type="button"
               onClick={onToggleAdvanced}
@@ -741,6 +758,87 @@ export const FilterPanel = memo(function FilterPanel({
               </button>
             )}
           </div>
+          {campaignPacks.length > 0 && onOpenCampaign && (
+            <div className="pt-2 border-t border-slate-800/60 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-amber-300">
+                  <Swords className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Режим кампаний (углублённый разбор по державам и фронтам)</span>
+                </span>
+                <span className="text-slate-400 tabular-nums">
+                  пакетов: {campaignPacks.length}
+                </span>
+              </div>
+
+              <div className="divide-y divide-slate-800/75 border-y border-slate-800/75">
+                {campaignPacks.map((pack) => {
+                  const isActive = activeCampaignId === pack.id;
+                  const isPackLoading = loadingCampaignId === pack.id;
+                  const isPackLoaded = loadedCampaignIds.includes(pack.id);
+                  return (
+                    <div
+                      key={pack.id}
+                      className="py-2 flex flex-wrap items-center justify-between gap-2.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="text-xs sm:text-sm font-semibold text-white">
+                            {pack.title}
+                          </span>
+                          <span aria-hidden="true" className="text-slate-600 font-mono text-xs">
+                            ·
+                          </span>
+                          <span className="text-[11px] font-mono text-amber-300/90 tabular-nums">
+                            {pack.yearFrom}–{pack.yearTo} гг.
+                          </span>
+                          <span aria-hidden="true" className="text-slate-600 font-mono text-xs">
+                            ·
+                          </span>
+                          <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                            {pack.branches.length} веток · {pack.eventCount} операций
+                            {isPackLoaded && !isActive ? ' · в памяти' : ''}
+                          </span>
+                        </div>
+                        {pack.description && (
+                          <p className="text-xs text-slate-400 leading-relaxed mt-0.5 max-w-3xl">
+                            {pack.description}
+                          </p>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        disabled={isPackLoading}
+                        onClick={() => {
+                          if (isActive && onExitCampaign) {
+                            onExitCampaign();
+                          } else {
+                            onOpenCampaign(pack.id);
+                          }
+                        }}
+                        className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                          isActive
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 hover:bg-amber-400'
+                            : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/45 text-amber-100'
+                        }`}
+                      >
+                        {isPackLoading ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                            <span>Загрузка…</span>
+                          </>
+                        ) : isActive ? (
+                          <span>Выйти из кампании</span>
+                        ) : (
+                          <span>Открыть кампанию</span>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -1,8 +1,13 @@
 import type {
   BranchDefinition,
   BranchFile,
+  CampaignPackRegistryEntry,
+  DetailScope,
   ModulesIndexFile,
   MountedFileMeta,
+  OperationBelligerent,
+  OperationProfile,
+  OutcomeByScope,
   RulerPeriod,
   RulersFile,
   SourceEntry,
@@ -48,7 +53,11 @@ export function isPlainRecord(value: unknown): value is Record<string, unknown> 
 export const SAFE_HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 export const SAFE_BADGE_CLASS_RE = /^[a-zA-Z0-9_\-\s/:.%]+$/;
 
-export function sanitizeBranchDefinition(raw: unknown, fallbackPath: string): BranchDefinition | null {
+export function sanitizeBranchDefinition(
+  raw: unknown,
+  fallbackPath: string,
+  defaults?: { detailScope?: DetailScope; campaignPackId?: string },
+): BranchDefinition | null {
   if (!isPlainRecord(raw)) return null;
   const id = typeof raw.id === 'string' ? raw.id.trim() : '';
   if (!id) return null;
@@ -85,6 +94,18 @@ export function sanitizeBranchDefinition(raw: unknown, fallbackPath: string): Br
       ? raw.category
       : undefined;
 
+  const detailScope: DetailScope | undefined =
+    raw.detailScope === 'campaign'
+      ? 'campaign'
+      : raw.detailScope === 'core'
+        ? 'core'
+        : defaults?.detailScope;
+
+  const campaignPackId =
+    typeof raw.campaignPackId === 'string' && raw.campaignPackId.trim()
+      ? raw.campaignPackId.trim()
+      : defaults?.campaignPackId;
+
   return {
     id,
     gitName,
@@ -101,6 +122,8 @@ export function sanitizeBranchDefinition(raw: unknown, fallbackPath: string): Br
     isGroup: raw.isGroup === true ? true : undefined,
     defaultEnabled: raw.defaultEnabled === false ? false : raw.defaultEnabled === true ? true : undefined,
     defaultCollapsedOnTimeline: raw.defaultCollapsedOnTimeline === true ? true : undefined,
+    ...(detailScope ? { detailScope } : {}),
+    ...(campaignPackId ? { campaignPackId } : {}),
   };
 }
 
@@ -241,6 +264,25 @@ export function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): Timel
   const outcome =
     typeof raw.outcome === 'string' && raw.outcome.trim().length > 0 ? raw.outcome.trim() : undefined;
 
+  const rawOutcomesByScope = isPlainRecord(raw.outcomesByScope) ? raw.outcomesByScope : null;
+  let outcomesByScope: OutcomeByScope | undefined;
+  if (rawOutcomesByScope) {
+    const russiaOutcome =
+      typeof rawOutcomesByScope.russia === 'string' && rawOutcomesByScope.russia.trim().length > 0
+        ? rawOutcomesByScope.russia.trim()
+        : undefined;
+    const worldOutcome =
+      typeof rawOutcomesByScope.world === 'string' && rawOutcomesByScope.world.trim().length > 0
+        ? rawOutcomesByScope.world.trim()
+        : undefined;
+    if (russiaOutcome || worldOutcome) {
+      outcomesByScope = {
+        ...(russiaOutcome ? { russia: russiaOutcome } : {}),
+        ...(worldOutcome ? { world: worldOutcome } : {}),
+      };
+    }
+  }
+
   const keyFigures = parseKeyFiguresList(raw.keyFigures);
 
   const rawLit = isPlainRecord(raw.literaryProfile) ? raw.literaryProfile : null;
@@ -272,6 +314,86 @@ export function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): Timel
       }
     : undefined;
 
+  const rawOp = isPlainRecord(raw.operationProfile) ? raw.operationProfile : null;
+  let operationProfile: OperationProfile | undefined;
+  if (rawOp) {
+    const belligerents: OperationBelligerent[] = Array.isArray(rawOp.belligerents)
+      ? rawOp.belligerents
+          .map((item): OperationBelligerent | null => {
+            if (!isPlainRecord(item)) return null;
+            const side = typeof item.side === 'string' ? item.side.trim() : '';
+            if (!side) return null;
+            const commanders = Array.isArray(item.commanders)
+              ? item.commanders
+                  .filter((c): c is string => typeof c === 'string' && c.trim().length > 0)
+                  .map((c) => c.trim())
+              : [];
+            const forces =
+              typeof item.forces === 'string' && item.forces.trim().length > 0
+                ? item.forces.trim()
+                : undefined;
+            const casualties =
+              typeof item.casualties === 'string' && item.casualties.trim().length > 0
+                ? item.casualties.trim()
+                : undefined;
+            return {
+              side,
+              commanders,
+              ...(forces ? { forces } : {}),
+              ...(casualties ? { casualties } : {}),
+            };
+          })
+          .filter((b): b is OperationBelligerent => b !== null)
+      : [];
+
+    const theater =
+      typeof rawOp.theater === 'string' && rawOp.theater.trim().length > 0
+        ? rawOp.theater.trim()
+        : undefined;
+    const rawStrategicObjective =
+      typeof rawOp.strategicObjective === 'string'
+        ? rawOp.strategicObjective
+        : typeof rawOp.strategicGoal === 'string'
+          ? rawOp.strategicGoal
+          : '';
+    const strategicObjective =
+      rawStrategicObjective.trim().length > 0 ? rawStrategicObjective.trim() : undefined;
+    const rawResultSummary =
+      typeof rawOp.resultSummary === 'string'
+        ? rawOp.resultSummary
+        : typeof rawOp.operationalOutcome === 'string'
+          ? rawOp.operationalOutcome
+          : '';
+    const resultSummary = rawResultSummary.trim().length > 0 ? rawResultSummary.trim() : undefined;
+    const turningPoints = Array.isArray(rawOp.turningPoints)
+      ? rawOp.turningPoints
+          .filter((tp): tp is string => typeof tp === 'string' && tp.trim().length > 0)
+          .map((tp) => tp.trim())
+      : undefined;
+    const historiographyNote =
+      typeof rawOp.historiographyNote === 'string' && rawOp.historiographyNote.trim().length > 0
+        ? rawOp.historiographyNote.trim()
+        : undefined;
+
+    if (
+      belligerents.length > 0 ||
+      theater ||
+      strategicObjective ||
+      resultSummary ||
+      (turningPoints && turningPoints.length > 0) ||
+      historiographyNote
+    ) {
+      operationProfile = {
+        ...(theater ? { theater } : {}),
+        ...(strategicObjective ? { strategicObjective } : {}),
+        belligerents,
+        ...(resultSummary ? { resultSummary } : {}),
+        ...(turningPoints && turningPoints.length > 0 ? { turningPoints } : {}),
+        ...(historiographyNote ? { historiographyNote } : {}),
+      };
+    }
+  }
+
   return {
     id,
     startYear: hasStartYear ? (raw.startYear as number) : undefined,
@@ -298,6 +420,7 @@ export function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): Timel
     prerequisites:
       Array.isArray(prerequisites) && prerequisites.length === 0 ? undefined : prerequisites,
     outcome,
+    ...(outcomesByScope ? { outcomesByScope } : {}),
     keyFigures,
     literaryProfile:
       literaryProfile &&
@@ -309,6 +432,7 @@ export function sanitizeTimelineNode(raw: unknown, fallbackTask?: string): Timel
         (literaryProfile.majorWorks && literaryProfile.majorWorks.length > 0))
         ? literaryProfile
         : undefined,
+    ...(operationProfile ? { operationProfile } : {}),
     eventType: typeof raw.eventType === 'string' ? raw.eventType : undefined,
     task,
     region: typeof raw.region === 'string' ? raw.region : '',
@@ -491,7 +615,15 @@ export function countExpectedLeafBranchesFromManifest(manifest: SyncManifest | n
   if (!manifest || !Array.isArray(manifest.mountedFiles)) return 0;
   const leafIds = new Set<string>();
   manifest.mountedFiles.forEach((meta) => {
-    if (!meta?.enabled || !Array.isArray(meta.branchIds)) return;
+    if (
+      !meta?.enabled ||
+      meta.detailScope === 'campaign' ||
+      meta.loadPolicy === 'on_demand' ||
+      meta.role === 'campaign_pack' ||
+      !Array.isArray(meta.branchIds)
+    ) {
+      return;
+    }
     meta.branchIds.forEach((id) => {
       if (typeof id === 'string' && id.trim() && !id.endsWith('_ALL')) {
         leafIds.add(id.trim());
@@ -525,13 +657,25 @@ export function collectBranchesFromDataFile(fileData: TimelineDataFile, fallback
       ? normalizeDataPath(fileData.path)
       : normalizeDataPath(fallbackPath);
 
+  const filePackId =
+    isBranchFile(fileData) && isPlainRecord(fileData.campaignPack) && typeof fileData.campaignPack.id === 'string' && fileData.campaignPack.id.trim()
+      ? fileData.campaignPack.id.trim()
+      : undefined;
+  const fileDetailScope: DetailScope | undefined =
+    isBranchFile(fileData) &&
+    (fileData.detailScope === 'campaign' || Boolean(filePackId) || fileData.loadPolicy === 'on_demand')
+      ? 'campaign'
+      : undefined;
+  const defaults =
+    fileDetailScope || filePackId ? { detailScope: fileDetailScope, campaignPackId: filePackId } : undefined;
+
   if ('branch' in fileData && fileData.branch) {
-    const parsed = sanitizeBranchDefinition(fileData.branch, pathHint);
+    const parsed = sanitizeBranchDefinition(fileData.branch, pathHint, defaults);
     if (parsed) result.push(parsed);
   }
   if ('branches' in fileData && Array.isArray(fileData.branches)) {
     fileData.branches.forEach((b) => {
-      const parsed = sanitizeBranchDefinition(b, pathHint);
+      const parsed = sanitizeBranchDefinition(b, pathHint, defaults);
       if (parsed) result.push(parsed);
     });
   }
@@ -544,6 +688,9 @@ export interface TimelineRepositorySnapshot {
   isFullyHydrated: boolean;
   missingModulePaths: string[];
   failedModulePaths: string[];
+  campaignPacks: CampaignPackRegistryEntry[];
+  loadedCampaignIds: string[];
+  failedCampaignIds: string[];
 }
 
 interface RepositoryBootstrapState {
@@ -551,6 +698,10 @@ interface RepositoryBootstrapState {
   manifestMetaByNormPath: Map<string, MountedFileMeta>;
   orderedCandidatePaths: string[];
   requiredModulePaths: string[];
+  onDemandPaths: Set<string>;
+  campaignPacks: CampaignPackRegistryEntry[];
+  campaignPackById: Map<string, CampaignPackRegistryEntry>;
+  campaignPackByFilePath: Map<string, CampaignPackRegistryEntry>;
   cardModules?: ModulesIndexFile['cardModules'];
   personModules?: ModulesIndexFile['personModules'];
   fileHashes: Record<string, string>;
@@ -561,6 +712,7 @@ interface RepositoryCache {
   current?: { bootstrap: RepositoryBootstrapState; snapshot: TimelineRepositorySnapshot };
   initialLoad?: Promise<TimelineRepositorySnapshot>;
   hydration?: Promise<TimelineRepositorySnapshot>;
+  campaignLoads?: Map<string, Promise<TimelineRepositorySnapshot>>;
 }
 
 let repositoryCache: RepositoryCache = {};
@@ -610,9 +762,11 @@ function buildSnapshotFromFiles(
   bootstrap.orderedCandidatePaths.forEach((normPath) => {
     const existingMeta = bootstrap.manifestMetaByNormPath.get(normPath);
     const data = files[normPath];
+    const packForFile = bootstrap.campaignPackByFilePath.get(normPath);
+    const isOnDemand = bootstrap.onDemandPaths.has(normPath) || Boolean(packForFile);
 
     if (!data) {
-      if (existingMeta) {
+      if (existingMeta && !isOnDemand) {
         resolvedMountedFiles.push(existingMeta);
       }
       return;
@@ -620,11 +774,24 @@ function buildSnapshotFromFiles(
 
     const declaredBranches = collectBranchesFromDataFile(data, normPath);
     const branchIds = declaredBranches.map((b) => b.id);
+    const filePackId =
+      packForFile?.id ||
+      (isBranchFile(data) && isPlainRecord(data.campaignPack) && typeof data.campaignPack.id === 'string'
+        ? data.campaignPack.id.trim()
+        : undefined);
+    const detailScope: DetailScope =
+      isOnDemand ||
+      Boolean(filePackId) ||
+      (isBranchFile(data) && (data.detailScope === 'campaign' || data.loadPolicy === 'on_demand'))
+        ? 'campaign'
+        : 'core';
     const inferredRole: MountedFileMeta['role'] = isRulersFile(data)
       ? 'rulers_branch'
-      : declaredBranches.some((b) => b.isMilitary)
-        ? 'military_branches'
-        : 'thematic_branch';
+      : detailScope === 'campaign'
+        ? 'campaign_pack'
+        : declaredBranches.some((b) => b.isMilitary)
+          ? 'military_branches'
+          : 'thematic_branch';
 
     const isFileEnabled =
       data.enabled === false
@@ -640,10 +807,20 @@ function buildSnapshotFromFiles(
       branchIds: existingMeta?.branchIds?.length ? existingMeta.branchIds : branchIds,
       title: existingMeta?.title || declaredBranches[0]?.label || normPath,
       enabled: isFileEnabled,
+      ...(isOnDemand ? { loadPolicy: 'on_demand' as const } : {}),
+      detailScope,
+      ...(filePackId ? { campaignPackId: filePackId } : {}),
     });
   });
 
   const missingModulePaths = bootstrap.requiredModulePaths.filter((normPath) => !files[normPath]);
+  const loadedCampaignIds = bootstrap.campaignPacks
+    .filter((pack) => pack.filePaths.length > 0 && pack.filePaths.every((p) => Boolean(files[p])))
+    .map((pack) => pack.id);
+  const failedCampaignIds = bootstrap.campaignPacks
+    .filter((pack) => pack.filePaths.some((p) => failedPaths.has(p)))
+    .map((pack) => pack.id);
+
   return {
     manifest: {
       ...bootstrap.manifest,
@@ -653,7 +830,75 @@ function buildSnapshotFromFiles(
     isFullyHydrated: missingModulePaths.length === 0,
     missingModulePaths,
     failedModulePaths: missingModulePaths.filter((normPath) => failedPaths.has(normPath)),
+    campaignPacks: bootstrap.campaignPacks,
+    loadedCampaignIds,
+    failedCampaignIds,
   };
+}
+
+function sanitizeCampaignPackRegistry(raw: unknown): CampaignPackRegistryEntry[] {
+  if (!Array.isArray(raw)) return [];
+  const entries: CampaignPackRegistryEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const item of raw) {
+    if (!isPlainRecord(item)) continue;
+    const id = typeof item.id === 'string' ? item.id.trim() : '';
+    const title = typeof item.title === 'string' ? item.title.trim() : '';
+    const yearFrom = typeof item.yearFrom === 'number' && Number.isFinite(item.yearFrom) ? item.yearFrom : null;
+    const yearTo = typeof item.yearTo === 'number' && Number.isFinite(item.yearTo) ? item.yearTo : null;
+    if (!id || !title || yearFrom === null || yearTo === null || seen.has(id)) continue;
+    seen.add(id);
+
+    const filePaths = Array.isArray(item.filePaths)
+      ? Array.from(
+          new Set(
+            item.filePaths
+              .filter((p): p is string => typeof p === 'string' && p.trim().length > 0)
+              .map(normalizeDataPath),
+          ),
+        )
+      : [];
+    const branchIds = Array.isArray(item.branchIds)
+      ? Array.from(
+          new Set(item.branchIds.filter((b): b is string => typeof b === 'string' && b.trim().length > 0).map((b) => b.trim())),
+        )
+      : [];
+    const branches = Array.isArray(item.branches)
+      ? item.branches
+          .filter((b): b is Record<string, unknown> => isPlainRecord(b) && typeof b.id === 'string' && b.id.trim().length > 0)
+          .map((b) => ({
+            id: (b.id as string).trim(),
+            label: typeof b.label === 'string' && b.label.trim() ? b.label.trim() : (b.id as string).trim(),
+            short: typeof b.short === 'string' && b.short.trim() ? b.short.trim() : (b.id as string).trim().toLowerCase(),
+            color:
+              typeof b.color === 'string' && SAFE_HEX_COLOR_RE.test(b.color.trim())
+                ? b.color.trim()
+                : pickFallbackBranchColor((b.id as string).trim()),
+            description: typeof b.description === 'string' ? b.description.trim() : '',
+            eventCount: typeof b.eventCount === 'number' && Number.isFinite(b.eventCount) ? b.eventCount : 0,
+          }))
+      : [];
+
+    entries.push({
+      id,
+      title,
+      shortTitle: typeof item.shortTitle === 'string' && item.shortTitle.trim() ? item.shortTitle.trim() : undefined,
+      description: typeof item.description === 'string' ? item.description.trim() : '',
+      parentEventId:
+        typeof item.parentEventId === 'string' && item.parentEventId.trim() ? item.parentEventId.trim() : undefined,
+      yearFrom,
+      yearTo: Math.max(yearFrom, yearTo),
+      groupBranchId:
+        typeof item.groupBranchId === 'string' && item.groupBranchId.trim() ? item.groupBranchId.trim() : undefined,
+      filePaths,
+      branchIds,
+      eventCount: typeof item.eventCount === 'number' && Number.isFinite(item.eventCount) ? item.eventCount : 0,
+      branches,
+    });
+  }
+
+  return entries;
 }
 
 async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
@@ -685,6 +930,8 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
 
   let discoveredPaths: string[] = [];
   let disabledPaths: string[] = [];
+  let onDemandPathsList: string[] = [];
+  let campaignPacks: CampaignPackRegistryEntry[] = [];
   let cardModules: ModulesIndexFile['cardModules'];
   let personModules: ModulesIndexFile['personModules'];
   let fileHashes: Record<string, string> = {};
@@ -702,6 +949,10 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
       if (Array.isArray(idxData?.disabledFiles)) {
         disabledPaths = idxData.disabledFiles.filter((file) => typeof file === 'string').map(normalizeDataPath);
       }
+      if (Array.isArray(idxData?.onDemandFiles)) {
+        onDemandPathsList = idxData.onDemandFiles.filter((file) => typeof file === 'string').map(normalizeDataPath);
+      }
+      campaignPacks = sanitizeCampaignPackRegistry(idxData?.campaignPacks);
       cardModules = idxData?.cardModules;
       personModules = idxData?.personModules;
       if (idxData?.fileHashes && isPlainRecord(idxData.fileHashes)) {
@@ -719,17 +970,41 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
     // Фоллбек на явный список из sync.manifest.json
   }
 
+  const campaignPackById = new Map<string, CampaignPackRegistryEntry>();
+  const campaignPackByFilePath = new Map<string, CampaignPackRegistryEntry>();
+  const onDemandPaths = new Set<string>(onDemandPathsList);
+
+  campaignPacks.forEach((pack) => {
+    campaignPackById.set(pack.id, pack);
+    pack.filePaths.forEach((filePath) => {
+      onDemandPaths.add(filePath);
+      campaignPackByFilePath.set(filePath, pack);
+    });
+  });
+
   const manifestMetaByNormPath = new Map<string, MountedFileMeta>();
   manifest.mountedFiles.forEach((meta) => {
     if (meta?.path) {
       const file = normalizeDataPath(meta.path);
+      if (meta.loadPolicy === 'on_demand') {
+        onDemandPaths.add(file);
+      }
       manifestMetaByNormPath.set(file, disabledPaths.includes(file) ? { ...meta, enabled: false } : meta);
     }
   });
 
-  const orderedCandidatePaths = [...new Set([...manifestMetaByNormPath.keys(), ...discoveredPaths])];
+  const orderedCandidatePaths = [
+    ...new Set([
+      ...manifestMetaByNormPath.keys(),
+      ...discoveredPaths,
+      ...Array.from(onDemandPaths),
+    ]),
+  ];
   const requiredModulePaths = orderedCandidatePaths.filter(
-    (normPath) => !disabledPaths.includes(normPath) && manifestMetaByNormPath.get(normPath)?.enabled !== false,
+    (normPath) =>
+      !disabledPaths.includes(normPath) &&
+      !onDemandPaths.has(normPath) &&
+      manifestMetaByNormPath.get(normPath)?.enabled !== false,
   );
 
   return {
@@ -737,6 +1012,10 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
     manifestMetaByNormPath,
     orderedCandidatePaths,
     requiredModulePaths,
+    onDemandPaths,
+    campaignPacks,
+    campaignPackById,
+    campaignPackByFilePath,
     cardModules,
     personModules,
     fileHashes,
@@ -748,23 +1027,60 @@ function selectInitialModulePaths(
   bootstrap: RepositoryBootstrapState,
   progressive: boolean,
   requiredBranchIds?: Set<string>,
-  target?: { cardId?: string; personKey?: string },
+  target?: { cardId?: string; personKey?: string; campaignId?: string },
 ): string[] {
+  const extraOnDemandPaths = new Set<string>();
+
+  if (target?.campaignId) {
+    const pack = bootstrap.campaignPackById.get(target.campaignId);
+    if (pack) {
+      pack.filePaths.forEach((p) => extraOnDemandPaths.add(p));
+    }
+  }
+
+  if (target?.cardId && Object.hasOwn(bootstrap.cardModules ?? {}, target.cardId)) {
+    const file = bootstrap.cardModules?.[target.cardId];
+    if (typeof file === 'string') {
+      const norm = normalizeDataPath(file);
+      const pack = bootstrap.campaignPackByFilePath.get(norm);
+      if (pack) {
+        pack.filePaths.forEach((p) => extraOnDemandPaths.add(p));
+      } else if (bootstrap.onDemandPaths.has(norm)) {
+        extraOnDemandPaths.add(norm);
+      }
+    }
+  }
+
+  if (requiredBranchIds && requiredBranchIds.size > 0) {
+    bootstrap.campaignPacks.forEach((pack) => {
+      if (pack.branchIds.some((bId) => requiredBranchIds.has(bId))) {
+        pack.filePaths.forEach((p) => extraOnDemandPaths.add(p));
+      }
+    });
+  }
+
   if (!progressive) {
-    return bootstrap.requiredModulePaths;
+    return [...new Set([...bootstrap.requiredModulePaths, ...extraOnDemandPaths])];
   }
 
   const requiredPaths = new Set<string>();
   if (target?.cardId && Object.hasOwn(bootstrap.cardModules ?? {}, target.cardId)) {
     const file = bootstrap.cardModules?.[target.cardId];
-    if (typeof file === 'string') requiredPaths.add(file);
+    if (typeof file === 'string') requiredPaths.add(normalizeDataPath(file));
   }
   if (target?.personKey && Object.hasOwn(bootstrap.personModules ?? {}, target.personKey)) {
     const files = bootstrap.personModules?.[target.personKey];
-    if (Array.isArray(files)) files.forEach((file) => requiredPaths.add(file));
+    if (Array.isArray(files)) {
+      files.forEach((file) => {
+        const norm = normalizeDataPath(file);
+        if (!bootstrap.onDemandPaths.has(norm)) {
+          requiredPaths.add(norm);
+        }
+      });
+    }
   }
 
-  const initialPaths = bootstrap.requiredModulePaths.filter((normPath) => {
+  const initialCorePaths = bootstrap.requiredModulePaths.filter((normPath) => {
     if (CORE_INITIAL_MODULE_PATHS.has(normPath) || requiredPaths.has(normPath)) return true;
     if (requiredBranchIds && requiredBranchIds.size > 0) {
       const meta = bootstrap.manifestMetaByNormPath.get(normPath);
@@ -775,7 +1091,8 @@ function selectInitialModulePaths(
     return false;
   });
 
-  return initialPaths.length > 0 ? initialPaths : bootstrap.requiredModulePaths.slice(0, 1);
+  const base = initialCorePaths.length > 0 ? initialCorePaths : bootstrap.requiredModulePaths.slice(0, 1);
+  return [...new Set([...base, ...extraOnDemandPaths])];
 }
 
 function yieldToMainThread(): Promise<void> {
@@ -833,8 +1150,19 @@ function hydrateSnapshot(
   const batchSize = Math.max(1, options?.batchSize ?? (options?.priority ? paths.length : 5));
   cache.hydration = loadModuleBatch(bootstrap, paths, snapshot, batchSize, !options?.priority)
     .then((result) => {
-      cache.current = { bootstrap, snapshot: result };
-      return result;
+      // Preserve any concurrent on-demand campaign pack modules loaded while core hydration was in flight
+      const mergedFiles: Record<string, TimelineDataFile> = {
+        ...(cache.current?.snapshot.files ?? {}),
+        ...result.files,
+      };
+      const mergedFailed = new Set<string>([
+        ...(cache.current?.snapshot.failedModulePaths ?? []),
+        ...result.failedModulePaths,
+      ]);
+      Object.keys(mergedFiles).forEach((p) => mergedFailed.delete(p));
+      const mergedSnapshot = buildSnapshotFromFiles(bootstrap, mergedFiles, mergedFailed);
+      cache.current = { bootstrap, snapshot: mergedSnapshot };
+      return mergedSnapshot;
     })
     .finally(() => {
       cache.hydration = undefined;
@@ -849,11 +1177,70 @@ export async function hydrateRemainingTimelineModules(
   return cache.current ? hydrateSnapshot(cache, cache.current, options) : null;
 }
 
+export async function loadCampaignPackModules(
+  campaignId: string,
+): Promise<TimelineRepositorySnapshot | null> {
+  const cache = repositoryCache;
+  if (!cache.current) return null;
+  const { bootstrap } = cache.current;
+  const pack = bootstrap.campaignPackById.get(campaignId);
+  if (!pack) return cache.current.snapshot;
+
+  const missingPackPaths = pack.filePaths.filter((p) => !cache.current?.snapshot.files[p]);
+  if (missingPackPaths.length === 0) {
+    return cache.current.snapshot;
+  }
+
+  if (!cache.campaignLoads) {
+    cache.campaignLoads = new Map();
+  }
+  const existingPromise = cache.campaignLoads.get(campaignId);
+  if (existingPromise) return existingPromise;
+
+  const loadPromise = (async () => {
+    const latestSnapshot = cache.current?.snapshot;
+    if (!latestSnapshot) {
+      throw new Error('Репозиторий таймлайна ещё не инициализирован');
+    }
+    const pathsToFetch = pack.filePaths.filter((p) => !latestSnapshot.files[p]);
+    if (pathsToFetch.length === 0) return latestSnapshot;
+
+    const result = await loadModuleBatch(
+      bootstrap,
+      pathsToFetch,
+      latestSnapshot,
+      pathsToFetch.length,
+      false,
+    );
+    // Merge with any concurrent hydration updates that landed while campaign files were downloading
+    const mergedFiles: Record<string, TimelineDataFile> = {
+      ...(cache.current?.snapshot.files ?? {}),
+      ...result.files,
+    };
+    const mergedFailed = new Set<string>([
+      ...(cache.current?.snapshot.failedModulePaths ?? []),
+      ...result.failedModulePaths,
+    ]);
+    Object.keys(mergedFiles).forEach((p) => mergedFailed.delete(p));
+    pathsToFetch.forEach((p) => {
+      if (!mergedFiles[p]) mergedFailed.add(p);
+    });
+    const mergedSnapshot = buildSnapshotFromFiles(bootstrap, mergedFiles, mergedFailed);
+    cache.current = { bootstrap, snapshot: mergedSnapshot };
+    return mergedSnapshot;
+  })().finally(() => {
+    cache.campaignLoads?.delete(campaignId);
+  });
+
+  cache.campaignLoads.set(campaignId, loadPromise);
+  return loadPromise;
+}
+
 export async function fetchTimelineRepository(options?: {
   forceRefresh?: boolean;
   progressive?: boolean;
   requiredBranchIds?: string[];
-  target?: { cardId?: string; personKey?: string };
+  target?: { cardId?: string; personKey?: string; campaignId?: string };
 }): Promise<TimelineRepositorySnapshot> {
   if (options?.forceRefresh) {
     clearTimelineRepositoryCache();

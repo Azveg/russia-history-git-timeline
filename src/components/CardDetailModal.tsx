@@ -12,12 +12,15 @@ import {
   Crown,
   FlaskConical,
   GitBranch,
+  Globe2,
   History,
   Layers,
   Link2,
   MapPin,
   ScrollText,
   Search,
+  Shield,
+  Swords,
   User,
   Users,
 } from 'lucide-react';
@@ -41,6 +44,7 @@ import {
 } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
+  CampaignPackRegistryEntry,
   EnrichedEvent,
   MacroEra,
   MacroRegionId,
@@ -72,6 +76,9 @@ interface CardDetailModalProps {
   onFilterByPerson?: (personName: string) => void;
   onOpenRulerModal?: (rulerId: string) => void;
   onOpenEraModal?: (eraId: string) => void;
+  linkedCampaignPack?: CampaignPackRegistryEntry | null;
+  onOpenCampaign?: (campaignId: string) => void;
+  onOpenCausalTracer?: (eventId: string) => void;
 }
 
 type CardModalTabId = 'details' | 'links' | 'concurrent';
@@ -122,6 +129,9 @@ export function CardDetailModal({
   onFilterByPerson,
   onOpenRulerModal,
   onOpenEraModal,
+  linkedCampaignPack = null,
+  onOpenCampaign,
+  onOpenCausalTracer,
 }: CardDetailModalProps) {
   const [activeTab, setActiveTab] = useState<CardModalTabId>('details');
   const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
@@ -431,6 +441,9 @@ export function CardDetailModal({
           {items.map((item, idx) => {
             const ob = branchById.get(item.otherEvent.task);
             const hiddenBranch = isBranchHidden(item.otherEvent);
+            const isExternalAtlasLink = Boolean(
+              card.campaignPackId && item.otherEvent.campaignPackId !== card.campaignPackId,
+            );
             return (
               <div key={`${item.otherId}-${item.category}-${idx}`} className="py-3 space-y-1.5">
                 <button
@@ -455,6 +468,17 @@ export function CardDetailModal({
                             ·
                           </span>
                           <span className="text-slate-400 truncate">{ob.label}</span>
+                        </>
+                      )}
+                      {isExternalAtlasLink && (
+                        <>
+                          <span aria-hidden="true" className="text-slate-600">
+                            ·
+                          </span>
+                          <span className="text-sky-300 inline-flex items-center gap-1">
+                            <Globe2 className="w-3 h-3 shrink-0" />
+                            <span>Внешний атлас</span>
+                          </span>
                         </>
                       )}
                     </span>
@@ -546,6 +570,21 @@ export function CardDetailModal({
           }
           actions={
             <>
+              {linkedCampaignPack && onOpenCampaign && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onOpenCampaign(linkedCampaignPack.id);
+                  }}
+                  className="h-8 px-2.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                  title={`Перейти к многоветвевой детализации кампании «${linkedCampaignPack.title}»`}
+                >
+                  <Swords className="w-3.5 h-3.5 shrink-0" />
+                  <span>Кампания ({linkedCampaignPack.branchIds.length} вет.)</span>
+                </button>
+              )}
+
               <button
                 type="button"
                 onClick={() => {
@@ -591,6 +630,18 @@ export function CardDetailModal({
                 <Compass className="w-3.5 h-3.5 shrink-0" />
                 <span>Показать на графике</span>
               </button>
+
+              {onOpenCausalTracer && totalUniqueLinksCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onOpenCausalTracer(card.id)}
+                  className="h-8 px-2.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-mono font-semibold text-amber-200 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
+                  title="Проследить цепочку причин и следствий от этого события на всю глубину"
+                >
+                  <GitBranch className="w-3.5 h-3.5 shrink-0" />
+                  <span>Цепочка</span>
+                </button>
+              )}
 
               <button
                 type="button"
@@ -823,11 +874,16 @@ export function CardDetailModal({
           ))}
           {activeTab === 'details' && (
             <div {...panelProps('details')} className="space-y-6">
-              {/* Предпосылки + Главный итог */}
-              {(card.prerequisitesList.length > 0 || card.outcome) && (
+              {/* Предпосылки + Главный итог (или раздельные итоги Россия / Мир) */}
+              {(card.prerequisitesList.length > 0 ||
+                card.outcome ||
+                card.outcomesByScope?.russia ||
+                card.outcomesByScope?.world) && (
                 <div
                   className={`grid grid-cols-1 ${
-                    card.prerequisitesList.length > 0 && card.outcome ? 'md:grid-cols-2' : ''
+                    !card.outcomesByScope && card.prerequisitesList.length > 0 && card.outcome
+                      ? 'md:grid-cols-2'
+                      : ''
                   } gap-3`}
                 >
                   {card.prerequisitesList.length > 0 && (
@@ -861,22 +917,69 @@ export function CardDetailModal({
                     </div>
                   )}
 
-                  {card.outcome && (
-                    <div className="rounded-xl bg-amber-950/25 border border-amber-500/30 p-4 space-y-2">
-                      <div className="text-xs font-mono uppercase tracking-wider font-semibold text-amber-300 inline-flex items-center gap-1.5">
-                        <Award className="w-3.5 h-3.5 shrink-0" />
-                        <span>
-                          {isWork
-                            ? 'Художественное значение'
-                            : isBio
-                              ? 'Место в истории'
-                              : 'Главный итог и значение'}
+                  {card.outcomesByScope &&
+                  (card.outcomesByScope.russia || card.outcomesByScope.world) ? (
+                    <div className="rounded-xl bg-amber-950/25 border border-amber-500/30 p-4 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="text-xs font-mono uppercase tracking-wider font-semibold text-amber-300 inline-flex items-center gap-1.5">
+                          <Award className="w-3.5 h-3.5 shrink-0" />
+                          <span>Итоги и значение</span>
+                        </div>
+                        <span className="text-[11px] font-mono text-amber-200/75">
+                          Россия · Мир
                         </span>
                       </div>
-                      <p className="text-xs sm:text-sm text-amber-50/95 leading-relaxed">
-                        {card.outcome}
-                      </p>
+                      <div
+                        className={`grid grid-cols-1 ${
+                          card.outcomesByScope.russia && card.outcomesByScope.world
+                            ? 'md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-amber-500/20'
+                            : ''
+                        }`}
+                      >
+                        {card.outcomesByScope.russia && (
+                          <div className="pb-3 md:pb-0 md:pr-4 space-y-1.5">
+                            <div className="text-[11px] font-mono uppercase tracking-wider text-amber-300 font-semibold">
+                              Для России
+                            </div>
+                            <p className="text-xs sm:text-sm text-amber-50/95 leading-relaxed">
+                              {card.outcomesByScope.russia}
+                            </p>
+                          </div>
+                        )}
+                        {card.outcomesByScope.world && (
+                          <div
+                            className={`${
+                              card.outcomesByScope.russia ? 'pt-3 md:pt-0 md:pl-4' : ''
+                            } space-y-1.5`}
+                          >
+                            <div className="text-[11px] font-mono uppercase tracking-wider text-sky-300 font-semibold">
+                              Для мира
+                            </div>
+                            <p className="text-xs sm:text-sm text-amber-50/95 leading-relaxed">
+                              {card.outcomesByScope.world}
+                            </p>
+                          </div>
+                        )}
+                      </div>
                     </div>
+                  ) : (
+                    card.outcome && (
+                      <div className="rounded-xl bg-amber-950/25 border border-amber-500/30 p-4 space-y-2">
+                        <div className="text-xs font-mono uppercase tracking-wider font-semibold text-amber-300 inline-flex items-center gap-1.5">
+                          <Award className="w-3.5 h-3.5 shrink-0" />
+                          <span>
+                            {isWork
+                              ? 'Художественное значение'
+                              : isBio
+                                ? 'Место в истории'
+                                : 'Главный итог и значение'}
+                          </span>
+                        </div>
+                        <p className="text-xs sm:text-sm text-amber-50/95 leading-relaxed">
+                          {card.outcome}
+                        </p>
+                      </div>
+                    )
                   )}
                 </div>
               )}
@@ -946,6 +1049,139 @@ export function CardDetailModal({
                       );
                     })}
                   </div>
+                </section>
+              )}
+
+              {/* Операционный паспорт события кампании */}
+              {card.operationProfile && (
+                <section className="space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h4 className="text-xs font-mono uppercase tracking-wider text-amber-300 font-semibold inline-flex items-center gap-2">
+                      <Shield className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Операционный паспорт</span>
+                    </h4>
+                    {card.operationProfile.theater && (
+                      <span className="text-[11px] font-mono text-slate-400">
+                        {card.operationProfile.theater}
+                      </span>
+                    )}
+                  </div>
+
+                  {card.operationProfile.belligerents &&
+                    card.operationProfile.belligerents.length > 0 && (
+                      <div className="overflow-x-auto border-y border-slate-800/80">
+                        <table className="w-full text-left text-xs sm:text-sm border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-800/80 text-[11px] font-mono uppercase tracking-wider text-slate-400">
+                              <th className="py-2 pr-3 font-semibold">Сторона</th>
+                              <th className="py-2 px-3 font-semibold">Командование</th>
+                              <th className="py-2 px-3 font-semibold">Силы</th>
+                              <th className="py-2 pl-3 font-semibold">Потери</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/70">
+                            {card.operationProfile.belligerents.map((b, idx) => (
+                              <tr key={`${b.side}-${idx}`} className="align-top">
+                                <td className="py-2.5 pr-3 font-semibold text-white whitespace-nowrap">
+                                  {b.side}
+                                </td>
+                                <td className="py-2.5 px-3 text-slate-200 leading-relaxed">
+                                  {b.commanders.length > 0 ? (
+                                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                                      {b.commanders.map((cmd, cIdx) => {
+                                        const pKey = personDossiers
+                                          ? resolvePersonKey(cmd, personDossiers)
+                                          : null;
+                                        return (
+                                          <span
+                                            key={`${cmd}-${cIdx}`}
+                                            className="inline-flex items-center gap-1.5"
+                                          >
+                                            {cIdx > 0 && (
+                                              <span aria-hidden="true" className="text-slate-600">
+                                                ·
+                                              </span>
+                                            )}
+                                            {onOpenPersonModal && pKey ? (
+                                              <button
+                                                type="button"
+                                                onClick={() => onOpenPersonModal(pKey)}
+                                                className="text-sky-200 hover:text-amber-200 underline decoration-sky-500/40 underline-offset-4 transition-colors cursor-pointer"
+                                              >
+                                                {cmd}
+                                              </button>
+                                            ) : (
+                                              <span>{cmd}</span>
+                                            )}
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-500">—</span>
+                                  )}
+                                </td>
+                                <td className="py-2.5 px-3 font-mono text-xs text-slate-300 tabular-nums leading-relaxed">
+                                  {b.forces || '—'}
+                                </td>
+                                <td className="py-2.5 pl-3 font-mono text-xs text-amber-200/90 tabular-nums leading-relaxed">
+                                  {b.casualties || '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                  <dl className="divide-y divide-slate-800/80 border-b border-slate-800/80 text-xs sm:text-sm">
+                    {card.operationProfile.strategicObjective && (
+                      <div className="py-2.5 grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-1 sm:gap-4">
+                        <dt className="text-xs text-slate-400 font-medium">Стратегическая цель</dt>
+                        <dd className="text-slate-100 leading-relaxed">
+                          {card.operationProfile.strategicObjective}
+                        </dd>
+                      </div>
+                    )}
+                    {card.operationProfile.resultSummary && (
+                      <div className="py-2.5 grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-1 sm:gap-4">
+                        <dt className="text-xs text-slate-400 font-medium">Оперативный итог</dt>
+                        <dd className="text-slate-100 leading-relaxed">
+                          {card.operationProfile.resultSummary}
+                        </dd>
+                      </div>
+                    )}
+                    {card.operationProfile.turningPoints &&
+                      card.operationProfile.turningPoints.length > 0 && (
+                        <div className="py-2.5 grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-1 sm:gap-4">
+                          <dt className="text-xs text-slate-400 font-medium">
+                            Переломные моменты
+                          </dt>
+                          <dd className="text-slate-200 leading-relaxed">
+                            <ul className="space-y-1">
+                              {card.operationProfile.turningPoints.map((tp, idx) => (
+                                <li key={idx} className="flex items-start gap-2">
+                                  <span aria-hidden="true" className="text-amber-400/80 select-none">
+                                    ·
+                                  </span>
+                                  <span>{tp}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </dd>
+                        </div>
+                      )}
+                    {card.operationProfile.historiographyNote && (
+                      <div className="py-2.5 grid grid-cols-1 sm:grid-cols-[190px_1fr] gap-1 sm:gap-4">
+                        <dt className="text-xs text-slate-400 font-medium">
+                          Историографическая оценка
+                        </dt>
+                        <dd className="text-slate-300 leading-relaxed">
+                          {card.operationProfile.historiographyNote}
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
                 </section>
               )}
 
@@ -1062,7 +1298,7 @@ export function CardDetailModal({
                     {card.subEvents.map((sub, idx) => (
                       <div
                         key={`${sub.year}-${sub.title}-${idx}`}
-                        className="py-3 grid grid-cols-1 sm:grid-cols-[110px_1fr] gap-1 sm:gap-4"
+                        className="py-3 grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-1 sm:gap-4"
                       >
                         <div className="font-mono text-xs font-bold text-amber-300 tabular-nums">
                           {sub.year !== undefined && sub.year !== '' ? sub.year : `Этап ${idx + 1}`}
@@ -1189,11 +1425,23 @@ export function CardDetailModal({
                   </button>
                 </div>
 
-                {hiddenBranchLinksCount > 0 && (
-                  <span className="text-xs font-mono text-amber-300/90 tabular-nums">
-                    В скрытых ветках: {hiddenBranchLinksCount}
-                  </span>
-                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {hiddenBranchLinksCount > 0 && (
+                    <span className="text-xs font-mono text-amber-300/90 tabular-nums">
+                      В скрытых ветках: {hiddenBranchLinksCount}
+                    </span>
+                  )}
+                  {onOpenCausalTracer && totalUniqueLinksCount > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenCausalTracer(card.id)}
+                      className="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-mono font-semibold text-amber-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                    >
+                      <GitBranch className="w-3.5 h-3.5 shrink-0" />
+                      <span>Трассировать цепочку на всю глубину</span>
+                    </button>
+                  )}
+                </div>
               </div>
 
               {totalUniqueLinksCount === 0 ? (

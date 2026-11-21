@@ -4,6 +4,7 @@ import {
   getDescendantBranchIds,
   groupBranchesByCategory,
   isBranchOrDescendantActive,
+  isCampaignBranch,
 } from '../engine/timelineEngine';
 import { useWheelScrollContainment } from '../utils/scrollIsolation';
 import type {
@@ -44,15 +45,21 @@ export function BranchSelectorPopover({
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const [collapsedTreeGroups, setCollapsedTreeGroups] = useState<Record<string, boolean>>({});
   const containerRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useWheelScrollContainment(listRef, isOpen);
 
-  const leafControls = useMemo(
-    () => branchControls.filter((b) => !b.isGroup),
+  const coreBranchControls = useMemo(
+    () => branchControls.filter((b) => !isCampaignBranch(b)),
     [branchControls],
+  );
+
+  const leafControls = useMemo(
+    () => coreBranchControls.filter((b) => !b.isGroup),
+    [coreBranchControls],
   );
 
   const activeItems = useMemo(
@@ -66,12 +73,12 @@ export function BranchSelectorPopover({
 
   const filteredControls = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return branchControls;
+    if (!q) return coreBranchControls;
 
-    const byId = new Map(branchControls.map((b) => [b.id, b]));
+    const byId = new Map(coreBranchControls.map((b) => [b.id, b]));
     const matchedIds = new Set<string>();
 
-    branchControls.forEach((b) => {
+    coreBranchControls.forEach((b) => {
       const hit =
         b.label.toLowerCase().includes(q) ||
         b.gitName.toLowerCase().includes(q) ||
@@ -89,8 +96,8 @@ export function BranchSelectorPopover({
       }
     });
 
-    return branchControls.filter((b) => matchedIds.has(b.id));
-  }, [branchControls, searchQuery]);
+    return coreBranchControls.filter((b) => matchedIds.has(b.id));
+  }, [coreBranchControls, searchQuery]);
 
   const categoryLeaves = useMemo(() => new Map(
     groupBranchesByCategory(leafControls).map((group) => [group.key, group.items]),
@@ -178,6 +185,8 @@ export function BranchSelectorPopover({
     }
 
     const isTimelineCollapsed = hasChildren && Boolean(collapsedParents[b.id]);
+    const isSubtreeCollapsed =
+      hasChildren && searchQuery.trim() === '' && Boolean(collapsedTreeGroups[b.id]);
 
     return (
       <div key={b.id}>
@@ -186,43 +195,61 @@ export function BranchSelectorPopover({
             isChecked ? 'hover:bg-slate-900/90' : 'opacity-65 hover:opacity-100 hover:bg-slate-900/50'
           }`}
         >
-          <button
-            type="button"
-            onClick={() => onToggleBranch(b.id)}
-            className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
-            title={
-              isIndeterminate
-                ? `${b.description} (частично включена — клик отключит все подветки)`
-                : b.description
-            }
-          >
-            <span
-              className={`w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0 ${
-                isChecked
-                  ? 'border-transparent text-slate-950'
-                  : 'border-slate-700 bg-slate-950 text-transparent'
-              }`}
-              style={isChecked ? { backgroundColor: b.color } : undefined}
-            >
-              {isIndeterminate ? (
-                <Minus className="w-3 h-3 stroke-[3]" />
-              ) : (
-                <Check className="w-3 h-3 stroke-[3]" />
-              )}
-            </span>
-
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <span className="text-xs font-semibold text-white truncate">{b.label}</span>
-              </div>
-              <div className="text-[10px] text-slate-400 truncate">
-                {b.description}
-                {depth > 0 && (
-                  <span className="text-slate-600 ml-1.5">· подветка</span>
+          <div className="flex items-center gap-1 min-w-0 flex-1">
+            {hasChildren && (
+              <button
+                type="button"
+                onClick={() =>
+                  setCollapsedTreeGroups((prev) => ({ ...prev, [b.id]: !prev[b.id] }))
+                }
+                aria-label={isSubtreeCollapsed ? `Развернуть подветки «${b.label}»` : `Свернуть подветки «${b.label}»`}
+                className="p-0.5 rounded text-slate-500 hover:text-white cursor-pointer shrink-0"
+              >
+                {isSubtreeCollapsed ? (
+                  <ChevronRight className="w-3.5 h-3.5" />
+                ) : (
+                  <ChevronDown className="w-3.5 h-3.5" />
                 )}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onToggleBranch(b.id)}
+              className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
+              title={
+                isIndeterminate
+                  ? `${b.description} (частично включена — клик отключит все подветки)`
+                  : b.description
+              }
+            >
+              <span
+                className={`w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0 ${
+                  isChecked
+                    ? 'border-transparent text-slate-950'
+                    : 'border-slate-700 bg-slate-950 text-transparent'
+                }`}
+                style={isChecked ? { backgroundColor: b.color } : undefined}
+              >
+                {isIndeterminate ? (
+                  <Minus className="w-3 h-3 stroke-[3]" />
+                ) : (
+                  <Check className="w-3 h-3 stroke-[3]" />
+                )}
+              </span>
+
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-xs font-semibold text-white truncate">{b.label}</span>
+                </div>
+                <div className="text-[10px] text-slate-400 truncate">
+                  {b.description}
+                  {depth > 0 && (
+                    <span className="text-slate-600 ml-1.5">· подветка</span>
+                  )}
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
+          </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
             {hasChildren && (
@@ -271,7 +298,7 @@ export function BranchSelectorPopover({
           </div>
         </div>
 
-        {hasChildren && (
+        {hasChildren && !isSubtreeCollapsed && (
           <div className="ml-4 pl-2.5 border-l border-slate-800 space-y-0.5 mt-0.5 mb-1">
             {childItems.map((child) => renderBranchNode(child, childrenMap, depth + 1))}
           </div>
@@ -501,6 +528,7 @@ export function BranchSelectorPopover({
                 );
               })
             )}
+
             {isHydratingBranches && (
               <div className="px-3 py-2 bg-slate-950/80 text-[11px] font-mono text-amber-300/90 flex items-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />

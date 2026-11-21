@@ -7,13 +7,14 @@
 
 ## 1. Сводка состояния базы
 
-- **Модульных JSON-файлов:** 23
-- **Объявленных веток:** 33 (групп: 6, листовых: 27)
-- **Событий (nodes):** 764
+- **Модульных JSON-файлов:** 30
+- **Объявленных веток:** 40 (групп: 6, листовых: 34)
+- **Событий (nodes):** 795
 - **Правлений (rulers):** 77
 - **Фактический диапазон оси времени:** `862–2019`
 - **Активных тегов (`syncTags` / `campaignId` / `referenceTags`):** 522
-- **Явных связей (`crossLinks` + `linksTo`):** 1095
+- **Явных связей (`crossLinks` + `linksTo`):** 1172
+- **Пакетов кампаний (`on_demand`):** 1
 
 ---
 
@@ -25,6 +26,13 @@
 | `ARCHITECTS_BIO` | `arch/architects` | Выдающиеся архитекторы, зодчие и инженеры | `ARCHITECTURE_ALL` | Тематическая | `#60a5fa` | выкл (по умолч.) | 22 | `data/architects_bio.json` |
 | `ARCHITECTURE_WORKS` | `arch/works` | Архитектура: постройки, ансамбли и технологии | `ARCHITECTURE_ALL` | Тематическая | `#2563eb` | выкл (по умолч.) | 30 | `data/architecture_works.json` |
 | `ARTS_CULTURE` | `feat/arts-culture` | Искусство, музыка, театр и кино | — | Тематическая | `#f472b6` | выкл (по умолч.) | 23 | `data/arts_culture.json` |
+| `WW1_AUSTRIA_HUNGARY` | `campaign/ww1-austria-hungary` | Австро-Венгрия (Балканы, Карпаты, Италия) | — | Кампания (`ww1`) | `#fb7185` | по требованию | 4 | `data/campaigns/ww1/austria_hungary.json` |
+| `WW1_BRITAIN` | `campaign/ww1-britain` | Британская империя (море и континент) | — | Кампания (`ww1`) | `#34d399` | по требованию | 4 | `data/campaigns/ww1/britain.json` |
+| `WW1_FRANCE` | `campaign/ww1-france` | Франция (Западный фронт) | — | Кампания (`ww1`) | `#38bdf8` | по требованию | 4 | `data/campaigns/ww1/france.json` |
+| `WW1_GERMANY` | `campaign/ww1-germany` | Германская империя (Запад, Восток и Атлантика) | — | Кампания (`ww1`) | `#94a3b8` | по требованию | 5 | `data/campaigns/ww1/germany.json` |
+| `WW1_OTTOMAN` | `campaign/ww1-ottoman` | Османская империя (Проливы, Кавказ, Ближний Восток) | — | Кампания (`ww1`) | `#fb923c` | по требованию | 4 | `data/campaigns/ww1/ottoman.json` |
+| `WW1_RUSSIA` | `campaign/ww1-russia` | Российская империя (Восточный и Кавказский фронты) | — | Кампания (`ww1`) | `#f59e0b` | по требованию | 6 | `data/campaigns/ww1/russia.json` |
+| `WW1_USA` | `campaign/ww1-usa` | США (кредитование, вступление и АЭК) | — | Кампания (`ww1`) | `#818cf8` | по требованию | 4 | `data/campaigns/ww1/usa.json` |
 | `DIPLOMACY_TREATIES` | `diplomacy/treaties` | Дипломатия, союзы и мирные договоры | — | Тематическая | `#06b6d4` | выкл (по умолч.) | 30 | `data/diplomacy.json` |
 | `MEDICINE_ALL` | `med/all` | Медицина: врачи, клиники и открытия (общая) | — | Группа (`isGroup`) | `#0d9488` | свёрнута | 0 | `data/doctors_bio.json` |
 | `DOCTORS_BIO` | `med/doctors` | Выдающиеся врачи и учёные-медики | `MEDICINE_ALL` | Тематическая | `#2dd4bf` | выкл (по умолч.) | 30 | `data/doctors_bio.json` |
@@ -54,6 +62,12 @@
 | `LITERATURE_ALL` | `lit/all` | Литература: писатели и произведения (общая) | — | Группа (`isGroup`) | `#d946ef` | свёрнута | 0 | `data/writers_bio.json` |
 | `WRITERS_BIO` | `culture/writers` | Русские писатели и летописцы | `LITERATURE_ALL` | Тематическая | `#e879f9` | выкл (по умолч.) | 41 | `data/writers_bio.json` |
 | `WRITERS_WORKS` | `culture/books` | Ключевые произведения литературы | `LITERATURE_ALL` | Тематическая | `#c084fc` | выкл (по умолч.) | 82 | `data/writers_works.json` |
+
+### Пакеты детализации кампаний (`on_demand`)
+
+| `id` | Кампания | Период | Якорная карточка | Ветки | Узлов | Файлов |
+| :--- | :--- | :---: | :--- | :--- | :---: | :---: |
+| `ww1` | Первая мировая война (1914–1918) | 1914–1918 | `1914-ww1` | `WW1_AUSTRIA_HUNGARY`, `WW1_BRITAIN`, `WW1_FRANCE`, `WW1_GERMANY`, `WW1_OTTOMAN`, `WW1_RUSSIA`, `WW1_USA` | 31 | 7 |
 
 ---
 
@@ -585,7 +599,7 @@
 | `world-warsaw-pact` | sync (±3 г.) | 1955–1961 | `WORLD_DIPLOMACY` | `1955-world-warsaw-pact` (1955–1961) |
 | `world-westphalia-1648` | sync (±3 г.) | 1618–1648 | `WORLD_DIPLOMACY` | `1618-thirty-years-westphalia` (1618–1648) |
 | `world-yalta-nato` | sync (±3 г.) | 1946–1949 | `WORLD_DIPLOMACY` | `1945-world-yalta-nato` (1946–1949) |
-| `ww1` | sync + ref | 1914–1991 | `WAR_CONTINENTAL`, `WORLD_DIPLOMACY`, `WRITERS_WORKS` | `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1914-world-july-crisis` (1914 (28 июня — 4 августа н. ст.)), `1914-ww1` (1914–1918), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `1925-sholokhov-tikhiy-don` (1925–1940), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
+| `ww1` | sync + ref | 1914–1991 | `WAR_CONTINENTAL`, `WORLD_DIPLOMACY`, `WRITERS_WORKS`, `WW1_AUSTRIA_HUNGARY`, `WW1_BRITAIN`, `WW1_FRANCE`, `WW1_GERMANY`, `WW1_OTTOMAN`, `WW1_RUSSIA`, `WW1_USA` | `1914-mayakovsky-oblako-v-shtanakh` (1914–1915), `1914-world-july-crisis` (1914 (28 июня — 4 августа н. ст.)), `1914-ww1` (28 июля 1914 — 11 ноября 1918), `ww1-ah-serbia-1914` (июль–декабрь 1914), `ww1-de-schlieffen` (август–сентябрь 1914), `ww1-de-tannenberg` (26–30 августа 1914), `ww1-fr-marne` (5–12 сентября 1914), `ww1-gb-blockade` (1914–1918), `ww1-ot-sarikamish` (декабрь 1914 — январь 1915), `ww1-ru-east-prussia` (август–сентябрь 1914), `ww1-ru-galicia` (август–сентябрь 1914), `ww1-ru-sarikamish` (декабрь 1914 — январь 1915), `1915-bunin-gospodin-iz-san-frantsisko` (1915), `ww1-ah-carpathians-przemysl` (январь–апрель 1915), `ww1-de-gorlice` (май–июнь 1915), `ww1-gb-gallipoli` (февраль 1915 — январь 1916), `ww1-ot-gallipoli-defense` (март 1915 — январь 1916), `ww1-ru-great-retreat` (май–сентябрь 1915), `ww1-us-neutrality-zimmermann` (май 1915 — март 1917), `ww1-fr-verdun` (февраль–декабрь 1916), `ww1-gb-jutland` (31 мая — 1 июня 1916), `ww1-gb-somme` (июль–ноябрь 1916), `ww1-ot-arab-revolt` (июнь 1916 — октябрь 1918), `ww1-ru-brusilov` (июнь–сентябрь 1916), `ww1-ah-caporetto` (октябрь–ноябрь 1917), `ww1-de-unrestricted-sub` (февраль–октябрь 1917), `ww1-fr-nivelle` (апрель–май 1917), `ww1-us-entry-aef` (апрель 1917 — июнь 1918), `ww1-ah-vittorio-veneto` (октябрь–ноябрь 1918), `ww1-de-kaiserschlacht` (март–июль 1918), `ww1-fr-compiegne` (июль–ноябрь 1918), `ww1-ot-mudros-armistice` (30 октября 1918), `ww1-ru-brest-litovsk` (3 марта 1918), `ww1-us-fourteen-points` (январь–ноябрь 1918), `ww1-us-meuse-argonne` (сентябрь–ноябрь 1918), `1925-sholokhov-tikhiy-don` (1925–1940), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1971-solzhenitsyn-krasnoe-koleso` (1971–1991) |
 | `ww2` | sync + ref | 1940–1962 | `WAR_CONTINENTAL`, `WRITERS_WORKS` | `1940-akhmatova-poema-bez-geroya` (1940–1962), `1941-ww2` (1941–1945), `1945-pasternak-doktor-zhivago` (1945–1955 (изд. 1957)), `1956-sholokhov-sudba-cheloveka` (1956) |
 
 ---
@@ -602,8 +616,8 @@
 | `ERA_6` | 1725–1762 | Период VI: Эпоха дворцовых переворотов | 55 | 6 |
 | `ERA_7` | 1762–1855 | Период VII: Расцвет и кризис Российской империи | 193 | 5 |
 | `ERA_8` | 1855–1894 | Период VIII: Эпоха Великих реформ | 149 | 2 |
-| `ERA_9` | 1894–1917 | Период IX: Кризис и падение Российской империи | 125 | 2 |
-| `ERA_10` | 1917–1991 | Период X: Советский период (РСФСР и СССР) | 237 | 9 |
+| `ERA_9` | 1894–1917 | Период IX: Кризис и падение Российской империи | 148 | 2 |
+| `ERA_10` | 1917–1991 | Период X: Советский период (РСФСР и СССР) | 250 | 9 |
 | `ERA_11` | 1991–2000 | Период XI: Российская Федерация (постсоветский период) | 36 | 1 |
 
 ---
@@ -779,6 +793,58 @@
 - `1964-taganka-sovremennik-bdt-theatre` (1964–1984) — Театральный ренессанс 1960–1970-х: БДТ Г. Товстоногова, «Современник», Таганка Ю. Любимова и «Ленком» — теги: `#person-tovstonogov-georgy` `#person-lyubimov-yury` `#person-yefremov-oleg` `#topic-theatre` · отсылки: `@era-10` `@ruler-khrushchev` `@ruler-brezhnev`
 - `1965-bard-song-soviet-rock-schnittke` (1965–1991) — Авторская песня, русский рок и музыкальный поставангард: Высоцкий, Окуджава, «Кино» и Альфред Шнитке — теги: `#person-vysotsky-vladimir` `#person-tsoi-viktor` `#person-shnitke-alfred` `#topic-music` · отсылки: `@era-10` `@ruler-brezhnev` `@ruler-gorbachev`
 - `1992-post-soviet-culture-global-stage` (1992–2000) — Культура России 1990-х: возвращение наследия, Мариинский театр, концептуализм и новое кино — теги: `#person-gergiev-valery` `#person-kabakov-ilya` `#person-sokurov-alexander` `#topic-cinema` `#topic-music` `#topic-theatre` `#topic-fine-arts` · отсылки: `@era-11` `@ruler-yeltsin`
+
+### `WW1_AUSTRIA_HUNGARY` — Австро-Венгрия (Балканы, Карпаты, Италия) (`campaign/ww1-austria-hungary`, 4)
+
+- `ww1-ah-serbia-1914` (июль–декабрь 1914) — Балканские кампании Австро-Венгрии против Сербии — теги: `#ww1`
+- `ww1-ah-carpathians-przemysl` (январь–апрель 1915) — Карпатская зимняя кампания и падение Перемышля — теги: `#ww1`
+- `ww1-ah-caporetto` (октябрь–ноябрь 1917) — Прорыв при Капоретто на Итальянском фронте — теги: `#ww1`
+- `ww1-ah-vittorio-veneto` (октябрь–ноябрь 1918) — Битва при Витторио-Венето и распад Австро-Венгрии — теги: `#ww1`
+
+### `WW1_BRITAIN` — Британская империя (море и континент) (`campaign/ww1-britain`, 4)
+
+- `ww1-gb-blockade` (1914–1918) — Морская блокада Германии в Северном море — теги: `#ww1`
+- `ww1-gb-gallipoli` (февраль 1915 — январь 1916) — Дарданелльская (Галлиполийская) операция — теги: `#ww1`
+- `ww1-gb-jutland` (31 мая — 1 июня 1916) — Ютландское морское сражение — теги: `#ww1`
+- `ww1-gb-somme` (июль–ноябрь 1916) — Сражение на Сомме и первое применение танков — теги: `#ww1`
+
+### `WW1_FRANCE` — Франция (Западный фронт) (`campaign/ww1-france`, 4)
+
+- `ww1-fr-marne` (5–12 сентября 1914) — Первое сражение на Марне — теги: `#ww1`
+- `ww1-fr-verdun` (февраль–декабрь 1916) — Верденская оборонительная операция — теги: `#ww1`
+- `ww1-fr-nivelle` (апрель–май 1917) — Наступление Нивеля и кризис во французской армии — теги: `#ww1`
+- `ww1-fr-compiegne` (июль–ноябрь 1918) — Стодневное наступление Антанты и Компьенское перемирие — теги: `#ww1`
+
+### `WW1_GERMANY` — Германская империя (Запад, Восток и Атлантика) (`campaign/ww1-germany`, 5)
+
+- `ww1-de-schlieffen` (август–сентябрь 1914) — Вторжение в Бельгию и наступление по плану Шлиффена — теги: `#ww1`
+- `ww1-de-tannenberg` (26–30 августа 1914) — Сражение при Танненберге — теги: `#ww1`
+- `ww1-de-gorlice` (май–июнь 1915) — Горлицко-Тарнувская наступательная операция — теги: `#ww1`
+- `ww1-de-unrestricted-sub` (февраль–октябрь 1917) — Неограниченная подводная война Германии — теги: `#ww1`
+- `ww1-de-kaiserschlacht` (март–июль 1918) — Весеннее наступление Германии на Западном фронте — теги: `#ww1`
+
+### `WW1_OTTOMAN` — Османская империя (Проливы, Кавказ, Ближний Восток) (`campaign/ww1-ottoman`, 4)
+
+- `ww1-ot-sarikamish` (декабрь 1914 — январь 1915) — Вступление Османской империи и зимний поход на Сарыкамыш — теги: `#ww1`
+- `ww1-ot-gallipoli-defense` (март 1915 — январь 1916) — Оборона Чанаккале (Галлиполи) османской 5-й армией — теги: `#ww1`
+- `ww1-ot-arab-revolt` (июнь 1916 — октябрь 1918) — Арабское восстание и Синайско-Палестинский фронт — теги: `#ww1`
+- `ww1-ot-mudros-armistice` (30 октября 1918) — Мудросское перемирие и выход Османской империи из войны — теги: `#ww1`
+
+### `WW1_RUSSIA` — Российская империя (Восточный и Кавказский фронты) (`campaign/ww1-russia`, 6)
+
+- `ww1-ru-east-prussia` (август–сентябрь 1914) — Восточно-Прусская операция русской армии — теги: `#ww1`
+- `ww1-ru-galicia` (август–сентябрь 1914) — Галицийская битва Юго-Западного фронта — теги: `#ww1`
+- `ww1-ru-sarikamish` (декабрь 1914 — январь 1915) — Сарыкамышская операция Кавказской армии — теги: `#ww1`
+- `ww1-ru-great-retreat` (май–сентябрь 1915) — Великое отступление русской армии — теги: `#ww1`
+- `ww1-ru-brusilov` (июнь–сентябрь 1916) — Брусиловский (Луцкий) прорыв — теги: `#ww1`
+- `ww1-ru-brest-litovsk` (3 марта 1918) — Брест-Литовский мир и выход России из войны — теги: `#ww1`
+
+### `WW1_USA` — США (кредитование, вступление и АЭК) (`campaign/ww1-usa`, 4)
+
+- `ww1-us-neutrality-zimmermann` (май 1915 — март 1917) — Нейтралитет США, гибель «Лузитании» и телеграмма Циммермана — теги: `#ww1`
+- `ww1-us-entry-aef` (апрель 1917 — июнь 1918) — Вступление США в войну и развёртывание АЭК в Европе — теги: `#ww1`
+- `ww1-us-fourteen-points` (январь–ноябрь 1918) — «Четырнадцать пунктов» В. Вильсона и дипломатия мира — теги: `#ww1`
+- `ww1-us-meuse-argonne` (сентябрь–ноябрь 1918) — Мёз-Аргоннское наступление 1-й армии США — теги: `#ww1`
 
 ### `DIPLOMACY_TREATIES` — Дипломатия, союзы и мирные договоры (`diplomacy/treaties`, 30)
 
@@ -1067,7 +1133,7 @@
 - `1756-seven-years` (1756–1763) — Семилетняя война
 - `1805-coalitions-3-4` (1805–1807) — Войны Третьей и Четвертой антифранцузских коалиций — теги: `#napoleonic`
 - `1812-patriotic-war` (1812) — Отечественная война 1812 года — теги: `#napoleonic`
-- `1914-ww1` (1914–1918) — Первая мировая война — теги: `#ww1`
+- `1914-ww1` (28 июля 1914 — 11 ноября 1918) — Первая мировая война — теги: `#ww1`
 - `1919-soviet-polish` (1919–1921) — Советско-польская война
 - `1941-ww2` (1941–1945) — Великая Отечественная война (и Советско-японская война 1945 г.) — теги: `#ww2`
 

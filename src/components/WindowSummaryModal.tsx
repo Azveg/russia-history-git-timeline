@@ -33,8 +33,11 @@ import {
   ERA_SPHERE_META,
   ERA_SPHERE_ORDER,
   classifyEventToEraSphere,
+  countCampaignEventsInRange,
+  filterEventsForAnalyticsScope,
   formatEventTitleWithPeriod,
   getCustomWindowSummaryData,
+  isCampaignBranch,
 } from '../engine/timelineEngine';
 import type {
   BranchDefinition,
@@ -65,6 +68,7 @@ interface WindowSummaryModalProps {
   onOpenPersonModal?: (personKey: string) => void;
   onRevealBranches?: (branchIds: string[]) => void;
   onCompareWithWindow?: (from: number, to: number) => void;
+  activeCampaignId?: string | null;
 }
 
 type WindowModalTabId = 'overview' | 'people' | 'events' | 'culture';
@@ -264,10 +268,14 @@ export function WindowSummaryModal({
   onOpenPersonModal,
   onRevealBranches,
   onCompareWithWindow,
+  activeCampaignId = null,
 }: WindowSummaryModalProps) {
   const [activeTab, setActiveTab] = useState<WindowModalTabId>('overview');
   const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
   const [showCitationPanel, setShowCitationPanel] = useState(false);
+  const [includeCampaignDetails, setIncludeCampaignDetails] = useState<boolean>(() =>
+    Boolean(activeCampaignId),
+  );
 
   // Tab 1: Обзор
   const [expandCarryIn, setExpandCarryIn] = useState(false);
@@ -310,23 +318,34 @@ export function WindowSummaryModal({
 
   const branchById = useMemo(() => new Map(branches.map((b) => [b.id, b])), [branches]);
 
+  const loadedCampaignCount = useMemo(() => {
+    if (!windowRange) return 0;
+    return countCampaignEventsInRange(enrichedEvents, branches, windowRange.from, windowRange.to);
+  }, [windowRange, enrichedEvents, branches]);
+
+  const scopedEvents = useMemo(
+    () => filterEventsForAnalyticsScope(enrichedEvents, { includeCampaignDetails }),
+    [enrichedEvents, includeCampaignDetails],
+  );
+
   const summary = useMemo(() => {
     if (!windowRange) return null;
     return getCustomWindowSummaryData(
       windowRange.from,
       windowRange.to,
       rulers,
-      enrichedEvents,
+      scopedEvents,
       branches,
       eras,
       personDossiers,
       activeBranches,
     );
-  }, [windowRange, rulers, enrichedEvents, branches, eras, personDossiers, activeBranches]);
+  }, [windowRange, rulers, scopedEvents, branches, eras, personDossiers, activeBranches]);
 
   useEffect(() => {
     setActiveTab('overview');
     setShowCitationPanel(false);
+    setIncludeCampaignDetails(Boolean(activeCampaignId));
     setExpandCarryIn(false);
     setExpandCarryOut(false);
     setOpenCrossLinks(false);
@@ -368,7 +387,7 @@ export function WindowSummaryModal({
       retrospective: 12,
     });
     bodyRef.current?.scrollTo({ top: 0 });
-  }, [windowRange?.from, windowRange?.to]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [windowRange?.from, windowRange?.to, activeCampaignId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scrollToTabsIfNeeded = () => {
     const body = bodyRef.current;
@@ -544,13 +563,17 @@ export function WindowSummaryModal({
     startedInWindow,
     carryOverInEvents,
     carryOverOutEvents,
-    hiddenActiveBranches,
+    hiddenActiveBranches: rawHiddenActiveBranches,
     centers,
     peakInterval,
     topConnectedEvents,
     crossBranchLinks,
     totalUniqueLinks,
   } = summary;
+
+  const hiddenActiveBranches = includeCampaignDetails
+    ? rawHiddenActiveBranches
+    : rawHiddenActiveBranches.filter((b) => !isCampaignBranch(b));
 
   const lastHistoryItem = modalHistory.length > 0 ? modalHistory[modalHistory.length - 1] : null;
   const cultureTotalCount =
@@ -825,6 +848,22 @@ export function WindowSummaryModal({
           }
           actions={
             <>
+              {loadedCampaignCount > 0 && (
+                <button
+                  type="button"
+                  aria-pressed={includeCampaignDetails}
+                  onClick={() => setIncludeCampaignDetails((prev) => !prev)}
+                  className={`h-8 px-2.5 rounded-lg border text-xs font-mono inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 ${
+                    includeCampaignDetails
+                      ? 'bg-amber-500/20 border-amber-400/60 text-amber-100 font-semibold'
+                      : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+                  }`}
+                  title="Включить или исключить детальные события загруженных военных кампаний из сводки окна"
+                >
+                  <Swords className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Детали кампаний (+{loadedCampaignCount})</span>
+                </button>
+              )}
               <CiteTriggerButton
                 isOpen={showCitationPanel}
                 onToggle={() => setShowCitationPanel((prev) => !prev)}

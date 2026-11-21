@@ -16,12 +16,14 @@ export interface UseTimelineUrlSyncOptions extends TimelineUrlModalState {
   yearTo: number | undefined;
   searchQuery: string;
   selectedMacroRegion?: MacroRegionId;
+  activeCampaignId?: string | null;
   branchSelection: BranchSelection;
   setYearFrom: Dispatch<SetStateAction<number | undefined>>;
   setYearTo: Dispatch<SetStateAction<number | undefined>>;
   setSearchQuery: Dispatch<SetStateAction<string>>;
   setSelectedMacroRegion?: Dispatch<SetStateAction<MacroRegionId>>;
   restoreBranchSelection: (value: string | null) => void;
+  onPopCampaignFromUrl?: (campaignId: string | null) => void;
   onPopModalFromUrl: (next: {
     cardId: string | null;
     rulerId: string | null;
@@ -82,6 +84,7 @@ export function useTimelineUrlSync({
   yearTo,
   searchQuery,
   selectedMacroRegion = 'all',
+  activeCampaignId = null,
   activeCardId,
   activeRulerModalId,
   activePersonModalKey,
@@ -93,6 +96,7 @@ export function useTimelineUrlSync({
   setSearchQuery,
   setSelectedMacroRegion,
   restoreBranchSelection,
+  onPopCampaignFromUrl,
   onPopModalFromUrl,
 }: UseTimelineUrlSyncOptions): void {
   useEffect(() => {
@@ -112,6 +116,9 @@ export function useTimelineUrlSync({
       } else {
         params.delete('region');
       }
+
+      if (activeCampaignId) params.set('campaign', activeCampaignId);
+      else params.delete('campaign');
 
       if (activeCardId) params.set('card', activeCardId);
       else params.delete('card');
@@ -146,6 +153,7 @@ export function useTimelineUrlSync({
     yearTo,
     searchQuery,
     selectedMacroRegion,
+    activeCampaignId,
     activeCardId,
     activeRulerModalId,
     activePersonModalKey,
@@ -163,6 +171,9 @@ export function useTimelineUrlSync({
       if (setSelectedMacroRegion) {
         setSelectedMacroRegion(parseMacroRegionParam(params.get('region')));
       }
+      if (onPopCampaignFromUrl) {
+        onPopCampaignFromUrl(params.get('campaign'));
+      }
 
       onPopModalFromUrl({
         cardId: params.get('card'),
@@ -177,5 +188,13 @@ export function useTimelineUrlSync({
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [setYearFrom, setYearTo, setSearchQuery, setSelectedMacroRegion, restoreBranchSelection, onPopModalFromUrl]);
+  }, [
+    setYearFrom,
+    setYearTo,
+    setSearchQuery,
+    setSelectedMacroRegion,
+    restoreBranchSelection,
+    onPopCampaignFromUrl,
+    onPopModalFromUrl,
+  ]);
 }

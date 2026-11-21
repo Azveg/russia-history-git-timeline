@@ -22,6 +22,8 @@ const VALID_LINK_TYPES = new Set([
   'consequence',
 ]);
 const VALID_CALENDAR_STYLES = new Set(['julian', 'gregorian', 'both']);
+const VALID_LOAD_POLICIES = new Set(['eager', 'background', 'on_demand']);
+const VALID_DETAIL_SCOPES = new Set(['core', 'campaign']);
 const VALID_SOURCE_TYPES = new Set(['primary', 'document', 'historiography', 'reference']);
 const VALID_RULER_RELATION_TYPES = new Set(['ally', 'opponent', 'diplomacy', 'family', 'military']);
 const VALID_RULER_KINSHIP_GROUPS = new Set(['parent', 'uncle_aunt', 'spouse', 'sibling', 'child']);
@@ -371,6 +373,14 @@ function auditRecordAcademicStyle(file, entityLabel, record, isRuler = false) {
   for (const fld of ['title', 'subtitle', 'details', 'outcome']) {
     auditStyleText(file, entityLabel, fld, record[fld]);
   }
+  if (isPlainObject(record.outcomesByScope)) {
+    if (typeof record.outcomesByScope.russia === 'string') {
+      auditStyleText(file, entityLabel, 'outcomesByScope.russia', record.outcomesByScope.russia);
+    }
+    if (typeof record.outcomesByScope.world === 'string') {
+      auditStyleText(file, entityLabel, 'outcomesByScope.world', record.outcomesByScope.world);
+    }
+  }
   if (Array.isArray(record.prerequisites)) {
     record.prerequisites.forEach((p, idx) => auditStyleText(file, entityLabel, `prerequisites[${idx}]`, p));
   }
@@ -388,6 +398,27 @@ function auditRecordAcademicStyle(file, entityLabel, record, isRuler = false) {
       if (typeof v === 'string') {
         auditStyleText(file, entityLabel, `literaryProfile.${k}`, v);
       }
+    }
+  }
+  if (isPlainObject(record.operationProfile)) {
+    for (const fld of ['theater', 'strategicObjective', 'resultSummary', 'historiographyNote']) {
+      if (typeof record.operationProfile[fld] === 'string') {
+        auditStyleText(file, entityLabel, `operationProfile.${fld}`, record.operationProfile[fld]);
+      }
+    }
+    if (Array.isArray(record.operationProfile.turningPoints)) {
+      record.operationProfile.turningPoints.forEach((tp, idx) => {
+        auditStyleText(file, entityLabel, `operationProfile.turningPoints[${idx}]`, tp);
+      });
+    }
+    if (Array.isArray(record.operationProfile.belligerents)) {
+      record.operationProfile.belligerents.forEach((b, idx) => {
+        if (isPlainObject(b)) {
+          auditStyleText(file, entityLabel, `operationProfile.belligerents[${idx}].side`, b.side);
+          auditStyleText(file, entityLabel, `operationProfile.belligerents[${idx}].forces`, b.forces);
+          auditStyleText(file, entityLabel, `operationProfile.belligerents[${idx}].casualties`, b.casualties);
+        }
+      });
     }
   }
 }
@@ -446,6 +477,7 @@ function main() {
   const collectedNodes = [];
   const collectedRulerActionLinks = [];
   const collectedRulerFamilyLinks = [];
+  const collectedCampaignParents = [];
   const syncTagsSet = new Set();
   const sourcesStats = { total: 0, withSources: 0, byFile: new Map() };
 
@@ -478,6 +510,71 @@ function main() {
       addWarning(
         relFromPublic,
         `Поле "path" ("${parsed.path}") отличается от фактического пути ("${relFromPublic}").`,
+      );
+    }
+
+    if (parsed.loadPolicy !== undefined) {
+      if (typeof parsed.loadPolicy !== 'string' || !VALID_LOAD_POLICIES.has(parsed.loadPolicy)) {
+        addError(
+          relFromPublic,
+          `Недопустимое значение loadPolicy ("${parsed.loadPolicy}"). Допустимы: eager, background, on_demand.`,
+        );
+      }
+    }
+
+    if (parsed.detailScope !== undefined) {
+      if (typeof parsed.detailScope !== 'string' || !VALID_DETAIL_SCOPES.has(parsed.detailScope)) {
+        addError(
+          relFromPublic,
+          `Недопустимое значение detailScope ("${parsed.detailScope}"). Допустимы: core, campaign.`,
+        );
+      }
+    }
+
+    if (parsed.campaignPack !== undefined) {
+      if (!isPlainObject(parsed.campaignPack)) {
+        addError(relFromPublic, 'Поле "campaignPack" должно быть объектом.');
+      } else {
+        const cp = parsed.campaignPack;
+        const cpId = typeof cp.id === 'string' ? cp.id.trim() : '';
+        if (!cpId) {
+          addError(relFromPublic, 'campaignPack: отсутствует обязательное поле "id".');
+        } else if (!TAG_FORMAT_REGEX.test(cpId)) {
+          addError(relFromPublic, `campaignPack.id ("${cpId}") должен быть в формате kebab-case [a-z0-9-].`);
+        }
+        if (typeof cp.title !== 'string' || !cp.title.trim()) {
+          addError(relFromPublic, 'campaignPack: отсутствует обязательное поле "title".');
+        }
+        if (typeof cp.yearFrom !== 'number' || typeof cp.yearTo !== 'number') {
+          addError(relFromPublic, 'campaignPack: поля "yearFrom" и "yearTo" должны быть числами.');
+        } else if (cp.yearTo < cp.yearFrom) {
+          addError(
+            relFromPublic,
+            `campaignPack: yearTo (${cp.yearTo}) меньше yearFrom (${cp.yearFrom}).`,
+          );
+        }
+        if (cp.parentEventId !== undefined) {
+          if (typeof cp.parentEventId !== 'string' || !cp.parentEventId.trim()) {
+            addError(relFromPublic, 'campaignPack.parentEventId должен быть непустой строкой.');
+          } else {
+            collectedCampaignParents.push({
+              file: relFromPublic,
+              campaignId: cpId || relFromPublic,
+              parentEventId: cp.parentEventId.trim(),
+            });
+          }
+        }
+        if (parsed.loadPolicy !== 'on_demand') {
+          addWarning(
+            relFromPublic,
+            'Модуль с campaignPack должен объявлять "loadPolicy": "on_demand", чтобы не нагружать стартовую загрузку атласа.',
+          );
+        }
+      }
+    } else if (parsed.detailScope === 'campaign') {
+      addError(
+        relFromPublic,
+        'Модуль с detailScope="campaign" обязан объявлять объект "campaignPack" (id, title, yearFrom, yearTo).',
       );
     }
 
@@ -863,6 +960,65 @@ function main() {
           }
         }
 
+        if (node.operationProfile !== undefined) {
+          if (!isPlainObject(node.operationProfile)) {
+            addError(relFromPublic, `Узел "${nId}": поле "operationProfile" должно быть объектом.`);
+          } else {
+            const op = node.operationProfile;
+            if (op.belligerents !== undefined) {
+              if (!Array.isArray(op.belligerents)) {
+                addError(relFromPublic, `Узел "${nId}": operationProfile.belligerents должно быть массивом.`);
+              } else {
+                op.belligerents.forEach((b, bIdx) => {
+                  if (!isPlainObject(b) || typeof b.side !== 'string' || !b.side.trim()) {
+                    addError(
+                      relFromPublic,
+                      `Узел "${nId}": operationProfile.belligerents[${bIdx}] должен содержать непустую строку "side".`,
+                    );
+                  }
+                  if (b && b.commanders !== undefined && !Array.isArray(b.commanders)) {
+                    addError(
+                      relFromPublic,
+                      `Узел "${nId}": operationProfile.belligerents[${bIdx}].commanders должно быть массивом строк.`,
+                    );
+                  }
+                });
+              }
+            }
+            if (op.turningPoints !== undefined) {
+              if (
+                !Array.isArray(op.turningPoints) ||
+                op.turningPoints.some((tp) => typeof tp !== 'string' || !tp.trim())
+              ) {
+                addError(
+                  relFromPublic,
+                  `Узел "${nId}": operationProfile.turningPoints должно быть массивом непустых строк.`,
+                );
+              }
+            }
+          }
+        }
+
+        if (node.outcomesByScope !== undefined) {
+          if (!isPlainObject(node.outcomesByScope)) {
+            addError(relFromPublic, `Узел "${nId}": поле "outcomesByScope" должно быть объектом.`);
+          } else {
+            const os = node.outcomesByScope;
+            if (os.russia !== undefined && (typeof os.russia !== 'string' || !os.russia.trim())) {
+              addError(relFromPublic, `Узел "${nId}": outcomesByScope.russia должно быть непустой строкой.`);
+            }
+            if (os.world !== undefined && (typeof os.world !== 'string' || !os.world.trim())) {
+              addError(relFromPublic, `Узел "${nId}": outcomesByScope.world должно быть непустой строкой.`);
+            }
+            if (!os.russia && !os.world) {
+              addError(
+                relFromPublic,
+                `Узел "${nId}": outcomesByScope должно содержать хотя бы одно из полей "russia" или "world".`,
+              );
+            }
+          }
+        }
+
         collectedNodes.push({ file: relFromPublic, id: nId, task: node.task });
       });
 
@@ -941,6 +1097,16 @@ function main() {
       addError(
         item.file,
         `Правитель "${item.rulerId}": family[${item.familyIndex}].rulerId ссылается на несуществующего правителя "${item.targetRulerId}".`,
+      );
+    }
+  }
+
+  // Проверка целостности parentEventId в пакетах кампаний
+  for (const item of collectedCampaignParents) {
+    if (!allNodesById.has(item.parentEventId)) {
+      addError(
+        item.file,
+        `campaignPack "${item.campaignId}": parentEventId ссылается на несуществующий узел "${item.parentEventId}".`,
       );
     }
   }

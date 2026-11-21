@@ -7,14 +7,19 @@ import {
   Crosshair,
   Crown,
   ExternalLink,
+  GitBranch,
+  Globe2,
   Layers,
   Link2,
+  Shield,
+  Swords,
   Users,
   X,
 } from 'lucide-react';
 import { Fragment, memo, useEffect, useMemo, useState } from 'react';
 import type {
   BranchDefinition,
+  CampaignPackRegistryEntry,
   EnrichedEvent,
   EraEventSphereId,
   RulerPeriod,
@@ -29,6 +34,8 @@ export interface ReaderLinkItem {
   rowDelta: number | null;
   yearDelta: number;
   isHiddenBranch: boolean;
+  linkLabel?: string;
+  isExternalAtlas?: boolean;
   direction: 'up' | 'down' | 'off';
 }
 
@@ -44,6 +51,9 @@ interface TimelineLiveReaderProps {
   hasNext: boolean;
   isFocused: boolean;
   linkItems: ReaderLinkItem[];
+  linkedCampaignPack?: CampaignPackRegistryEntry | null;
+  onOpenCampaign?: (campaignId: string) => void;
+  onOpenCausalTracer?: (eventId: string) => void;
   onStep: (direction: -1 | 1) => void;
   onSelectEvent: (eventId: string) => void;
   onJumpToEvent: (eventId: string) => void;
@@ -67,6 +77,9 @@ export const TimelineLiveReader = memo(function TimelineLiveReader({
   hasNext,
   isFocused,
   linkItems,
+  linkedCampaignPack,
+  onOpenCampaign,
+  onOpenCausalTracer,
   onStep,
   onSelectEvent,
   onJumpToEvent,
@@ -298,14 +311,84 @@ export const TimelineLiveReader = memo(function TimelineLiveReader({
               </p>
             )}
 
-            {event.outcome && (
-              <div className="pt-3 border-t border-slate-800/80 space-y-1">
+            {event.outcomesByScope &&
+            (event.outcomesByScope.russia || event.outcomesByScope.world) ? (
+              <div className="pt-3 border-t border-slate-800/80 space-y-2.5">
                 <div className="text-[11px] font-mono text-amber-300/90 uppercase tracking-wider">
-                  Итог и значение
+                  Итоги · Россия и мир
                 </div>
-                <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
-                  {event.outcome}
-                </p>
+                <div className="divide-y divide-slate-800/70 space-y-2.5">
+                  {event.outcomesByScope.russia && (
+                    <div className="space-y-1">
+                      <div className="text-[11px] font-mono text-amber-300 font-semibold">
+                        Для России
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                        {event.outcomesByScope.russia}
+                      </p>
+                    </div>
+                  )}
+                  {event.outcomesByScope.world && (
+                    <div className="pt-2.5 space-y-1">
+                      <div className="text-[11px] font-mono text-sky-300 font-semibold">
+                        Для мира
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                        {event.outcomesByScope.world}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              event.outcome && (
+                <div className="pt-3 border-t border-slate-800/80 space-y-1">
+                  <div className="text-[11px] font-mono text-amber-300/90 uppercase tracking-wider">
+                    Итог и значение
+                  </div>
+                  <p className="text-xs sm:text-sm text-slate-200 leading-relaxed">
+                    {event.outcome}
+                  </p>
+                </div>
+              )
+            )}
+
+            {event.operationProfile && (
+              <div className="pt-3 border-t border-slate-800/80 space-y-2">
+                <div className="text-[11px] font-mono text-amber-300/90 uppercase tracking-wider inline-flex items-center gap-1.5">
+                  <Shield className="w-3 h-3 shrink-0" />
+                  <span>Операционный паспорт</span>
+                </div>
+                {event.operationProfile.strategicObjective && (
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    <span className="font-mono text-[11px] text-slate-400">Цель: </span>
+                    {event.operationProfile.strategicObjective}
+                  </p>
+                )}
+                {event.operationProfile.belligerents &&
+                  event.operationProfile.belligerents.length > 0 && (
+                    <div className="divide-y divide-slate-800/70 border-y border-slate-800/70 text-xs">
+                      {event.operationProfile.belligerents.map((b, idx) => (
+                        <div key={`${b.side}-${idx}`} className="py-2 space-y-0.5">
+                          <div className="font-semibold text-white">{b.side}</div>
+                          {b.commanders.length > 0 && (
+                            <div className="text-[11px] text-slate-300">
+                              <span className="font-mono text-slate-400">Командование: </span>
+                              {b.commanders.join(' · ')}
+                            </div>
+                          )}
+                          {(b.forces || b.casualties) && (
+                            <div className="text-[11px] font-mono text-slate-400 tabular-nums space-y-0.5">
+                              {b.forces && <div>Силы: {b.forces}</div>}
+                              {b.casualties && (
+                                <div className="text-amber-200/90">Потери: {b.casualties}</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
               </div>
             )}
 
@@ -315,8 +398,13 @@ export const TimelineLiveReader = memo(function TimelineLiveReader({
                   Ключевые этапы ({event.subEvents.length})
                 </div>
                 <div className="divide-y divide-slate-800/60">
-                  {event.subEvents.slice(0, 6).map((sub, idx) => (
+                  {event.subEvents.map((sub, idx) => (
                     <div key={`${sub.title}-${idx}`} className="py-2 first:pt-0 last:pb-0">
+                      {sub.year !== undefined && sub.year !== '' && (
+                        <div className="text-[11px] font-mono text-amber-300/90 tabular-nums">
+                          {sub.year}
+                        </div>
+                      )}
                       <div className="text-xs font-semibold text-white">{sub.title}</div>
                       <p className="text-xs text-slate-400 leading-relaxed mt-0.5">{sub.text}</p>
                     </div>
@@ -394,29 +482,40 @@ export const TimelineLiveReader = memo(function TimelineLiveReader({
                               }}
                               className="w-full text-left px-3 py-2 hover:bg-slate-900 transition-colors cursor-pointer"
                             >
-                              <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
-                                <span className="text-amber-300 font-semibold tabular-nums shrink-0">
-                                  {lnk.targetEvent.period}
-                                </span>
-                                <span className="text-slate-400 truncate">{lnk.branchLabel}</span>
-                                {lnk.yearDelta !== 0 && (
-                                  <span className="text-emerald-300 tabular-nums shrink-0">
-                                    {lnk.yearDelta > 0 ? `+${lnk.yearDelta}` : lnk.yearDelta} л.
+                                <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+                                  <span className="text-amber-300 font-semibold tabular-nums shrink-0">
+                                    {lnk.targetEvent.period}
                                   </span>
+                                  <span className="text-slate-400 truncate">{lnk.branchLabel}</span>
+                                  {lnk.yearDelta !== 0 && (
+                                    <span className="text-emerald-300 tabular-nums shrink-0">
+                                      {lnk.yearDelta > 0 ? `+${lnk.yearDelta}` : lnk.yearDelta} л.
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs font-semibold text-white mt-0.5 leading-snug">
+                                  {lnk.targetEvent.title}
+                                </div>
+                                {lnk.isExternalAtlas && (
+                                  <div className="text-[10px] font-mono text-sky-300 inline-flex items-center gap-1 mt-0.5">
+                                    <Globe2 className="w-2.5 h-2.5 shrink-0" />
+                                    <span>Внешний атлас</span>
+                                  </div>
                                 )}
-                              </div>
-                              <div className="text-xs font-semibold text-white mt-0.5 leading-snug">
-                                {lnk.targetEvent.title}
-                              </div>
-                            </button>
-                          ))}
+                                {lnk.linkLabel && (
+                                  <p className="text-[11px] text-slate-400 mt-0.5 leading-snug line-clamp-2">
+                                    {lnk.linkLabel}
+                                  </p>
+                                )}
+                              </button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-              </>
-            )}
-          </div>
+                      );
+                    })}
+                </>
+              )}
+            </div>
         )}
 
         {activeTab === 'concurrent' && (
@@ -482,29 +581,59 @@ export const TimelineLiveReader = memo(function TimelineLiveReader({
       </div>
 
       {/* Нижняя панель действий */}
-      <div className="px-3.5 py-2.5 border-t border-slate-800 bg-slate-950/85 flex items-center justify-between gap-2">
-        <button
-          type="button"
-          onClick={() => onToggleFocusEvent(event.id)}
-          className={`px-2.5 py-1.5 rounded-lg border text-xs font-mono inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
-            isFocused
-              ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
-              : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
-          }`}
-          title="Оставить на ленте только это событие и его связи"
-        >
-          <Crosshair className="w-3.5 h-3.5 shrink-0" />
-          <span>{isFocused ? 'В фокусе' : 'Фокус'}</span>
-        </button>
+      <div className="px-3.5 py-2.5 border-t border-slate-800 bg-slate-950/85 space-y-2">
+        {linkedCampaignPack && onOpenCampaign && (
+          <button
+            type="button"
+            onClick={() => onOpenCampaign(linkedCampaignPack.id)}
+            className="w-full px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-mono font-bold inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            title={`Открыть многоветвевую кампанию «${linkedCampaignPack.title}»`}
+          >
+            <Swords className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              Открыть кампанию ({linkedCampaignPack.branches.length} вет. · {linkedCampaignPack.eventCount} соб.)
+            </span>
+          </button>
+        )}
 
-        <button
-          type="button"
-          onClick={() => onOpenCardModal(event.id)}
-          className="px-3 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-mono font-semibold text-amber-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
-        >
-          <span>Полная карточка</span>
-          <ExternalLink className="w-3.5 h-3.5 shrink-0" />
-        </button>
+        <div className="flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => onToggleFocusEvent(event.id)}
+              className={`px-2 py-1.5 rounded-lg border text-xs font-mono inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                isFocused
+                  ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
+                  : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
+              }`}
+              title="Оставить на ленте только это событие и его связи"
+            >
+              <Crosshair className="w-3.5 h-3.5 shrink-0" />
+              <span>{isFocused ? 'Фокус' : 'Фокус'}</span>
+            </button>
+
+            {onOpenCausalTracer && linkItems.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onOpenCausalTracer(event.id)}
+                className="px-2 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs font-mono text-amber-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+                title="Трассировать всю цепочку причин и следствий от этого события"
+              >
+                <GitBranch className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>Цепочка</span>
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => onOpenCardModal(event.id)}
+            className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-mono font-semibold text-amber-200 inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+          >
+            <span>Карточка</span>
+            <ExternalLink className="w-3.5 h-3.5 shrink-0" />
+          </button>
+        </div>
       </div>
     </section>
   );

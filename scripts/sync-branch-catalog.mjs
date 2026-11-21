@@ -61,12 +61,23 @@ function generateCatalogMarkdown() {
   const branchById = new Map();
   const nodes = [];
   const rulers = [];
+  const campaignPacksById = new Map();
   let explicitLinksCount = manifestLinks.length;
 
   for (const { relFromPublic, data: parsed, enabled } of moduleFiles) {
     if (!isPlainObject(parsed)) continue;
 
     const isFileDisabled = !enabled;
+    const isCampaignModule =
+      parsed.loadPolicy === 'on_demand' ||
+      parsed.detailScope === 'campaign' ||
+      isPlainObject(parsed.campaignPack) ||
+      relFromPublic.startsWith('data/campaigns/');
+    const fileCampaignPack = isPlainObject(parsed.campaignPack) ? parsed.campaignPack : null;
+    const fileCampaignId =
+      typeof fileCampaignPack?.id === 'string' && fileCampaignPack.id.trim()
+        ? fileCampaignPack.id.trim()
+        : null;
     const declared = [];
     if (isPlainObject(parsed.branch)) declared.push(parsed.branch);
     if (Array.isArray(parsed.branches)) declared.push(...parsed.branches.filter(isPlainObject));
@@ -86,13 +97,39 @@ function generateCatalogMarkdown() {
         isMilitary: Boolean(br.isMilitary),
         category: br.category || (id === 'MAIN_RULERS' ? 'rulers' : br.isMilitary ? 'military' : 'other'),
         color: br.color || '#94a3b8',
-        defaultEnabled: !isFileDisabled && br.defaultEnabled !== false,
+        defaultEnabled: !isFileDisabled && !isCampaignModule && br.defaultEnabled !== false,
         defaultCollapsedOnTimeline: Boolean(br.defaultCollapsedOnTimeline),
+        detailScope: isCampaignModule ? 'campaign' : 'core',
+        campaignPackId: fileCampaignId,
         file: relFromPublic,
         fileEnabled: !isFileDisabled,
       };
       branchById.set(id, entry);
       branches.push(entry);
+    }
+
+    if (!isFileDisabled && isCampaignModule && fileCampaignId) {
+      const existing = campaignPacksById.get(fileCampaignId) || {
+        id: fileCampaignId,
+        title: typeof fileCampaignPack?.title === 'string' ? fileCampaignPack.title.trim() : fileCampaignId,
+        parentEventId:
+          typeof fileCampaignPack?.parentEventId === 'string' ? fileCampaignPack.parentEventId.trim() : null,
+        yearFrom: typeof fileCampaignPack?.yearFrom === 'number' ? fileCampaignPack.yearFrom : null,
+        yearTo: typeof fileCampaignPack?.yearTo === 'number' ? fileCampaignPack.yearTo : null,
+        branchIds: [],
+        files: [],
+        nodesCount: 0,
+      };
+      existing.files.push(relFromPublic);
+      for (const br of declared) {
+        if (typeof br.id === 'string' && br.id.trim() && !br.isGroup && !existing.branchIds.includes(br.id.trim())) {
+          existing.branchIds.push(br.id.trim());
+        }
+      }
+      if (Array.isArray(parsed.nodes)) {
+        existing.nodesCount += parsed.nodes.length;
+      }
+      campaignPacksById.set(fileCampaignId, existing);
     }
 
     if (isFileDisabled) continue;
@@ -219,6 +256,7 @@ function generateCatalogMarkdown() {
   lines.push(`- **Фактический диапазон оси времени:** \`${minYear}–${maxYear}\``);
   lines.push(`- **Активных тегов (\`syncTags\` / \`campaignId\` / \`referenceTags\`):** ${sortedTags.length}`);
   lines.push(`- **Явных связей (\`crossLinks\` + \`linksTo\`):** ${explicitLinksCount}`);
+  lines.push(`- **Пакетов кампаний (\`on_demand\`):** ${campaignPacksById.size}`);
   lines.push('');
   lines.push('---');
   lines.push('');
@@ -229,21 +267,45 @@ function generateCatalogMarkdown() {
 
   for (const br of branches) {
     const count = br.id === 'MAIN_RULERS' ? rulers.length : (nodeCountByTask.get(br.id) || 0);
-    const kind = br.isGroup ? 'Группа (`isGroup`)' : br.isMilitary ? 'Военная' : 'Тематическая';
+    const kind = br.isGroup
+      ? 'Группа (`isGroup`)'
+      : br.detailScope === 'campaign'
+        ? `Кампания (\`${br.campaignPackId || 'on_demand'}\`)`
+        : br.isMilitary
+          ? 'Военная'
+          : 'Тематическая';
     const startFlag = !br.fileEnabled
       ? 'выкл (файл)'
-      : br.isGroup
-        ? br.defaultCollapsedOnTimeline
-          ? 'свёрнута'
-          : 'группа'
-        : br.id === 'MAIN_RULERS'
-          ? 'вкл (по умолч.)'
-          : 'выкл (по умолч.)';
+      : br.detailScope === 'campaign'
+        ? 'по требованию'
+        : br.isGroup
+          ? br.defaultCollapsedOnTimeline
+            ? 'свёрнута'
+            : 'группа'
+          : br.id === 'MAIN_RULERS'
+            ? 'вкл (по умолч.)'
+            : 'выкл (по умолч.)';
     lines.push(
       `| \`${br.id}\` | \`${br.gitName}\` | ${escapeMd(br.label)} | ${br.parentBranchId ? `\`${br.parentBranchId}\`` : '—'} | ${kind} | \`${br.color}\` | ${startFlag} | ${count} | \`${br.file}\` |`,
     );
   }
   lines.push('');
+
+  if (campaignPacksById.size > 0) {
+    lines.push('### Пакеты детализации кампаний (`on_demand`)');
+    lines.push('');
+    lines.push('| `id` | Кампания | Период | Якорная карточка | Ветки | Узлов | Файлов |');
+    lines.push('| :--- | :--- | :---: | :--- | :--- | :---: | :---: |');
+    for (const pack of Array.from(campaignPacksById.values()).sort((a, b) => (a.yearFrom ?? 0) - (b.yearFrom ?? 0) || a.id.localeCompare(b.id))) {
+      const period = pack.yearFrom !== null && pack.yearTo !== null ? `${pack.yearFrom}–${pack.yearTo}` : '—';
+      const anchor = pack.parentEventId ? `\`${pack.parentEventId}\`` : '—';
+      const brList = pack.branchIds.map((id) => `\`${id}\``).join(', ');
+      lines.push(
+        `| \`${pack.id}\` | ${escapeMd(pack.title)} | ${period} | ${anchor} | ${brList} | ${pack.nodesCount} | ${pack.files.length} |`,
+      );
+    }
+    lines.push('');
+  }
 
   lines.push('---');
   lines.push('');

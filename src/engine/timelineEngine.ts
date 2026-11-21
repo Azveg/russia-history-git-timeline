@@ -61,6 +61,8 @@ export * from './repository/timelineRepository';
 export * from './layout/subLaneLayout';
 export * from './analytics/periodAnalytics';
 export * from './regionFilter';
+export * from './campaigns/campaignPacks';
+export * from './campaigns/causalChainTracer';
 
 export function getEnrichedEvents(
   manifest: SyncManifest,
@@ -85,7 +87,22 @@ export function getEnrichedEvents(
     const fileObj = filesMap[fileMeta.path];
     if (!isBranchFile(fileObj)) return;
 
-    const fallbackBranchId = collectBranchesFromDataFile(fileObj, fileMeta.path).find((b) => !b.isGroup)?.id;
+    const declaredBranches = collectBranchesFromDataFile(fileObj, fileMeta.path);
+    const fallbackBranchId = declaredBranches.find((b) => !b.isGroup)?.id;
+    const branchScopeById = new Map(declaredBranches.map((b) => [b.id, b]));
+    const filePackId =
+      fileMeta.campaignPackId ||
+      (isPlainRecord(fileObj.campaignPack) && typeof fileObj.campaignPack.id === 'string' && fileObj.campaignPack.id.trim()
+        ? fileObj.campaignPack.id.trim()
+        : undefined);
+    const fileDetailScope =
+      fileMeta.detailScope === 'campaign' ||
+      fileMeta.loadPolicy === 'on_demand' ||
+      fileObj.detailScope === 'campaign' ||
+      fileObj.loadPolicy === 'on_demand' ||
+      Boolean(filePackId)
+        ? ('campaign' as const)
+        : ('core' as const);
 
     if (Array.isArray(fileObj.crossLinks)) {
       fileObj.crossLinks.forEach((lnk) => {
@@ -147,9 +164,15 @@ export function getEnrichedEvents(
 
       const eraObj = findMacroEraForYear(startYear, resolvedEras, startPrecision.month);
 
+      const declaredBranch = branchScopeById.get(ev.task);
+      const eventDetailScope = declaredBranch?.detailScope ?? fileDetailScope;
+      const eventCampaignPackId = declaredBranch?.campaignPackId ?? filePackId;
+
       list.push({
         ...ev,
         sourceFile: fileMeta.path,
+        detailScope: eventDetailScope,
+        ...(eventCampaignPackId ? { campaignPackId: eventCampaignPackId } : {}),
         seq: seq++,
         startYear,
         endYear,
@@ -847,6 +870,14 @@ export function buildUnifiedTimelineStream(
   const focusTarget = filters.focusedEventId
     ? (enrichedEvents.find((ev) => ev.id === filters.focusedEventId) ?? null)
     : null;
+  const tracedChainIds =
+    filters.tracedChainEventIds && filters.tracedChainEventIds.size > 0
+      ? filters.tracedChainEventIds
+      : null;
+  const tracedRootTarget =
+    tracedChainIds && filters.tracedChainRootId
+      ? (enrichedEvents.find((ev) => ev.id === filters.tracedChainRootId) ?? null)
+      : null;
 
   let matchingEvents: EnrichedEvent[] = [];
   let matchingRulers: RulerPeriod[] = [];
@@ -869,7 +900,31 @@ export function buildUnifiedTimelineStream(
       ? resolvedEras.find((e) => e.id === filters.selectedEra) ?? null
       : null;
 
-  if (focusTarget) {
+  if (tracedChainIds) {
+    matchingEvents = enrichedEvents.filter((ev) => tracedChainIds.has(ev.id));
+    matchingEvents.forEach((ev) => {
+      focusDistanceMap.set(ev.id, ev.id === filters.tracedChainRootId ? 0 : 1);
+    });
+    const minEventYear = matchingEvents.reduce(
+      (m, e) => Math.min(m, e.startYear),
+      tracedRootTarget?.startYear ?? filters.yearFrom,
+    );
+    const maxEventYear = matchingEvents.reduce(
+      (m, e) => Math.max(m, e.endYear),
+      tracedRootTarget?.endYear ?? filters.yearTo,
+    );
+    effectiveYearFrom = Math.max(yearBounds.minYear, minEventYear);
+    effectiveYearTo = Math.min(yearBounds.maxYear, Math.max(effectiveYearFrom + 1, maxEventYear));
+
+    const touchedRulerIds = new Set<string>();
+    matchingEvents.forEach((ev) => {
+      ev.overlappingRulers.forEach((r) => touchedRulerIds.add(r.id));
+    });
+    matchingRulers = rulers.filter((r) => {
+      if (!isRulersFileMounted || filters.activeBranches.MAIN_RULERS === false) return false;
+      return touchedRulerIds.has(r.id);
+    });
+  } else if (focusTarget) {
     const focusDepth: FocusDepth = filters.focusDepth ?? 1;
     const focusKeepWindow = Boolean(filters.focusKeepWindow);
     const byId = new Map(enrichedEvents.map((ev) => [ev.id, ev]));
@@ -1017,6 +1072,12 @@ export function buildUnifiedTimelineStream(
         ev.type.toLowerCase().includes(q) ||
         ev.prerequisitesList.some((p) => p.toLowerCase().includes(q)) ||
         Boolean(ev.outcome && ev.outcome.toLowerCase().includes(q)) ||
+        Boolean(
+          ev.outcomesByScope?.russia && ev.outcomesByScope.russia.toLowerCase().includes(q),
+        ) ||
+        Boolean(
+          ev.outcomesByScope?.world && ev.outcomesByScope.world.toLowerCase().includes(q),
+        ) ||
         Boolean(ev.keyFigures?.some((person) => person.toLowerCase().includes(q))) ||
         Boolean(ev.literaryProfile?.genre && ev.literaryProfile.genre.toLowerCase().includes(q)) ||
         Boolean(ev.literaryProfile?.movement && ev.literaryProfile.movement.toLowerCase().includes(q)) ||
@@ -1030,6 +1091,29 @@ export function buildUnifiedTimelineStream(
             ev.literaryProfile.culturalImpact.toLowerCase().includes(q),
         ) ||
         Boolean(ev.literaryProfile?.majorWorks?.some((work) => work.toLowerCase().includes(q))) ||
+        Boolean(ev.operationProfile?.theater && ev.operationProfile.theater.toLowerCase().includes(q)) ||
+        Boolean(
+          ev.operationProfile?.strategicObjective &&
+            ev.operationProfile.strategicObjective.toLowerCase().includes(q),
+        ) ||
+        Boolean(
+          ev.operationProfile?.resultSummary &&
+            ev.operationProfile.resultSummary.toLowerCase().includes(q),
+        ) ||
+        Boolean(
+          ev.operationProfile?.historiographyNote &&
+            ev.operationProfile.historiographyNote.toLowerCase().includes(q),
+        ) ||
+        Boolean(
+          ev.operationProfile?.turningPoints?.some((tp) => tp.toLowerCase().includes(q)),
+        ) ||
+        Boolean(
+          ev.operationProfile?.belligerents?.some(
+            (b) =>
+              b.side.toLowerCase().includes(q) ||
+              b.commanders.some((c) => c.toLowerCase().includes(q)),
+          ),
+        ) ||
         Boolean(ev.syncTags?.some((tag) => tag.toLowerCase().includes(q))) ||
         Boolean(ev.referenceTags?.some((tag) => tag.toLowerCase().includes(q))) ||
         Boolean(ev.explicitLinks?.some((lnk) => lnk.label.toLowerCase().includes(q))) ||

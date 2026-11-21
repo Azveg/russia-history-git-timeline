@@ -31,6 +31,37 @@ export type BranchPresetId =
   | 'eco_world'
   | 'rulers_only';
 
+export type DetailScope = 'core' | 'campaign';
+
+export type ModuleLoadPolicy = 'eager' | 'background' | 'on_demand';
+
+export interface CampaignPackMeta {
+  id: string;
+  title: string;
+  shortTitle?: string;
+  description: string;
+  parentEventId?: string;
+  yearFrom: number;
+  yearTo: number;
+  groupBranchId?: string;
+}
+
+export interface CampaignPackBranchSummary {
+  id: string;
+  label: string;
+  short: string;
+  color: string;
+  description: string;
+  eventCount: number;
+}
+
+export interface CampaignPackRegistryEntry extends CampaignPackMeta {
+  filePaths: string[];
+  branchIds: string[];
+  eventCount: number;
+  branches: CampaignPackBranchSummary[];
+}
+
 export interface BranchDefinition {
   id: string;
   gitName: string;
@@ -48,6 +79,8 @@ export interface BranchDefinition {
   isGroup?: boolean;
   defaultEnabled?: boolean;
   defaultCollapsedOnTimeline?: boolean;
+  detailScope?: DetailScope;
+  campaignPackId?: string;
 }
 
 export interface MacroEra {
@@ -187,6 +220,27 @@ export interface LiteraryProfile {
   majorWorks?: string[];
 }
 
+export interface OperationBelligerent {
+  side: string;
+  commanders: string[];
+  forces?: string;
+  casualties?: string;
+}
+
+export interface OperationProfile {
+  theater?: string;
+  strategicObjective?: string;
+  belligerents: OperationBelligerent[];
+  resultSummary?: string;
+  turningPoints?: string[];
+  historiographyNote?: string;
+}
+
+export interface OutcomeByScope {
+  russia?: string;
+  world?: string;
+}
+
 export interface TimelineNode {
   id: string;
   startYear?: number;
@@ -207,8 +261,10 @@ export interface TimelineNode {
   eventType?: string;
   prerequisites?: string | string[];
   outcome?: string;
+  outcomesByScope?: OutcomeByScope;
   keyFigures?: string[];
   literaryProfile?: LiteraryProfile;
+  operationProfile?: OperationProfile;
   subEvents?: SubEvent[];
   linksTo?: InlineNodeLink[];
   sources?: SourceEntry[];
@@ -237,16 +293,21 @@ export interface CrossLink {
 export interface MountedFileMeta {
   fileId: string;
   path: string;
-  role: 'trunk' | 'military_branches' | 'thematic_branch' | 'rulers_branch' | string;
+  role: 'trunk' | 'military_branches' | 'thematic_branch' | 'rulers_branch' | 'campaign_pack' | string;
   branchIds: string[];
   title: string;
   enabled: boolean;
+  loadPolicy?: ModuleLoadPolicy;
+  detailScope?: DetailScope;
+  campaignPackId?: string;
 }
 
 export interface ModulesIndexFile {
   schemaVersion?: string;
   generatedAt?: string;
   files: string[];
+  onDemandFiles?: string[];
+  campaignPacks?: CampaignPackRegistryEntry[];
   fileHashes?: Record<string, string>;
   disabledFiles?: string[];
   cardModules?: Record<string, string>;
@@ -284,6 +345,9 @@ export interface BranchFile {
   path: string;
   version?: string;
   enabled?: boolean;
+  loadPolicy?: ModuleLoadPolicy;
+  detailScope?: DetailScope;
+  campaignPack?: CampaignPackMeta;
   branch?: BranchDefinition;
   branches?: BranchDefinition[];
   nodes: TimelineNode[];
@@ -312,6 +376,8 @@ export interface RetrospectiveLinkInfo {
 
 export interface EnrichedEvent extends TimelineNode {
   sourceFile: string;
+  detailScope: DetailScope;
+  campaignPackId?: string;
   seq: number;
   startYear: number;
   endYear: number;
@@ -486,8 +552,69 @@ export interface FilterState {
   focusScope: FocusScope;
   focusDepth?: FocusDepth;
   focusKeepWindow?: boolean;
+  tracedChainEventIds?: Set<string> | null;
+  tracedChainRootId?: string | null;
   showEndNodes: boolean;
   showOverlapMatrix: boolean;
+}
+
+export type CausalChainMode = 'causal_only' | 'all_links';
+export type CausalChainScope = 'all' | 'campaign_only';
+
+export interface CausalChainStepEdge {
+  fromId: string;
+  toId: string;
+  type: string;
+  label: string;
+  relationKind: 'cause' | 'effect' | 'sync' | 'cultural';
+}
+
+export interface CausalChainNodeEntry {
+  event: EnrichedEvent;
+  branchLabel: string;
+  branchShort: string;
+  depth: number;
+  relationKind: 'root' | 'cause' | 'effect' | 'sync' | 'cultural';
+  viaEdge: CausalChainStepEdge | null;
+  pathFromRoot: CausalChainStepEdge[];
+  isExternalToCampaign: boolean;
+}
+
+export interface CausalChainLayer {
+  depth: number;
+  items: CausalChainNodeEntry[];
+}
+
+export interface CausalChainResult {
+  root: EnrichedEvent;
+  rootBranchLabel: string;
+  upstreamLayers: CausalChainLayer[];
+  downstreamLayers: CausalChainLayer[];
+  synchronousItems: CausalChainNodeEntry[];
+  culturalItems: CausalChainNodeEntry[];
+  allEventIds: Set<string>;
+  distanceMap: Map<string, number>;
+  stats: {
+    totalNodes: number;
+    upstreamCount: number;
+    downstreamCount: number;
+    synchronousCount: number;
+    culturalCount: number;
+    maxUpstreamDepth: number;
+    maxDownstreamDepth: number;
+    externalAtlasCount: number;
+    touchedBranchesCount: number;
+    yearFrom: number;
+    yearTo: number;
+  };
+}
+
+export interface TracedChainFilter {
+  rootEventId: string;
+  rootTitle: string;
+  eventIds: Set<string>;
+  distanceMap: Map<string, number>;
+  mode: CausalChainMode;
 }
 
 export interface OverlapYearBucket {
@@ -577,8 +704,8 @@ export type ComparisonTarget =
   | { kind: 'window'; from: number; to: number; label?: string };
 
 export interface ModalHistoryItem {
-  type: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare';
-  kind?: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare';
+  type: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare' | 'tracer';
+  kind?: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare' | 'tracer';
   id: string;
   label: string;
   windowRange?: { from: number; to: number };

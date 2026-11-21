@@ -23,6 +23,7 @@ import { getMacroRegionOption } from '../engine/regionFilter';
 import {
   computeBranchSubLaneLayout,
   computeRulerSubLaneLayout,
+  findCampaignPackForEvent,
   findMacroEraForYear,
   formatAxisGutterDate,
   formatCalendarDetailBadge,
@@ -43,6 +44,7 @@ import type {
   AuditCandidateInfo,
   AxisResolution,
   BranchDefinition,
+  CampaignPackRegistryEntry,
   CardDensity,
   EnrichedEvent,
   FocusDepth,
@@ -116,6 +118,10 @@ interface GitTimelineProps {
   onOpenWindowModal?: (from: number, to: number) => void;
   onOpenPersonModal?: (personKeyOrRaw: string) => void;
   onSelectYearRange: (from: number, to: number) => void;
+  campaignPacks?: CampaignPackRegistryEntry[];
+  activeCampaignId?: string | null;
+  onOpenCampaign?: (campaignId: string) => void;
+  onOpenCausalTracer?: (eventId: string) => void;
 }
 
 interface HoveredCardTooltipState {
@@ -231,6 +237,10 @@ export const GitTimeline = memo(function GitTimeline({
   onOpenWindowModal,
   onOpenPersonModal,
   onSelectYearRange,
+  campaignPacks = [],
+  activeCampaignId = null,
+  onOpenCampaign,
+  onOpenCausalTracer,
 }: GitTimelineProps) {
   const isDesktopGraph = useIsSmUp();
   const streamContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1050,6 +1060,10 @@ export const GitTimeline = memo(function GitTimeline({
   const activeReaderBranch = activeReaderEvent
     ? branchByIdMap.get(activeReaderEvent.task)
     : undefined;
+  const activeReaderCampaignPack = useMemo(
+    () => findCampaignPackForEvent(campaignPacks, activeReaderEvent?.id),
+    [campaignPacks, activeReaderEvent?.id],
+  );
 
   const readerLinkGeometry = useMemo(
     () => buildLinkGeometryForEvent(activeReaderEvent, false),
@@ -1058,6 +1072,9 @@ export const GitTimeline = memo(function GitTimeline({
 
   const readerLinkItems = useMemo<ReaderLinkItem[]>(() => {
     if (!readerLinkGeometry) return [];
+    const currentCampaignId = activeCampaignId || activeReaderEvent?.campaignPackId || null;
+    const isExt = (ev: EnrichedEvent) =>
+      Boolean(currentCampaignId && ev.campaignPackId !== currentCampaignId);
     return [
       ...readerLinkGeometry.upItems.map((i) => ({
         targetEvent: i.targetEvent,
@@ -1065,6 +1082,8 @@ export const GitTimeline = memo(function GitTimeline({
         rowDelta: i.rowDelta,
         yearDelta: i.yearDelta,
         isHiddenBranch: i.isHiddenBranch,
+        linkLabel: i.linkLabel,
+        isExternalAtlas: isExt(i.targetEvent),
         direction: 'up' as const,
       })),
       ...readerLinkGeometry.downItems.map((i) => ({
@@ -1073,6 +1092,8 @@ export const GitTimeline = memo(function GitTimeline({
         rowDelta: i.rowDelta,
         yearDelta: i.yearDelta,
         isHiddenBranch: i.isHiddenBranch,
+        linkLabel: i.linkLabel,
+        isExternalAtlas: isExt(i.targetEvent),
         direction: 'down' as const,
       })),
       ...readerLinkGeometry.offStreamItems.map((i) => ({
@@ -1081,10 +1102,12 @@ export const GitTimeline = memo(function GitTimeline({
         rowDelta: i.rowDelta,
         yearDelta: i.yearDelta,
         isHiddenBranch: i.isHiddenBranch,
+        linkLabel: i.linkLabel,
+        isExternalAtlas: isExt(i.targetEvent),
         direction: 'off' as const,
       })),
     ];
-  }, [readerLinkGeometry]);
+  }, [readerLinkGeometry, activeCampaignId, activeReaderEvent?.campaignPackId]);
 
   const activeJumpEraId = displayMode === 'chronicle'
     ? chronicleData.chapters.find(({ events }) => events.some(({ id }) => id === activeReaderEvent?.id))?.era.id ?? null
@@ -1963,6 +1986,9 @@ export const GitTimeline = memo(function GitTimeline({
           onOpenPeriodModal={onOpenPeriodModal}
           onOpenPersonModal={onOpenPersonModal}
           onToggleFocusEvent={onToggleFocusEvent}
+          linkedCampaignPack={activeReaderCampaignPack}
+          onOpenCampaign={onOpenCampaign}
+          onOpenCausalTracer={onOpenCausalTracer}
         />
 
         <section className="rounded-2xl border border-slate-800/90 bg-[#080e1c]/90 backdrop-blur-md p-3.5 space-y-2.5 shadow-lg">
@@ -2337,6 +2363,23 @@ export const GitTimeline = memo(function GitTimeline({
                     : undefined
                 }
                 onToggleFocusEvent={onToggleFocusEvent}
+                linkedCampaignPack={activeReaderCampaignPack}
+                onOpenCampaign={
+                  onOpenCampaign
+                    ? (campaignId) => {
+                        setIsMobileReaderOpen(false);
+                        onOpenCampaign(campaignId);
+                      }
+                    : undefined
+                }
+                onOpenCausalTracer={
+                  onOpenCausalTracer
+                    ? (eventId) => {
+                        setIsMobileReaderOpen(false);
+                        onOpenCausalTracer(eventId);
+                      }
+                    : undefined
+                }
                 onCloseMobileSheet={closeMobileReader}
               />
             </MobileReaderDialog>

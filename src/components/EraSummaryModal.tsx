@@ -31,6 +31,8 @@ import {
   ERA_SPHERE_META,
   ERA_SPHERE_ORDER,
   classifyEventToEraSphere,
+  countCampaignEventsInRange,
+  filterEventsForAnalyticsScope,
   formatEventTitleWithPeriod,
   getMacroEraSummaryData,
   resolveMacroEra,
@@ -265,6 +267,7 @@ export function EraSummaryModal({
   const [activeTab, setActiveTab] = useState<EraModalTabId>('overview');
   const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
   const [showCitationPanel, setShowCitationPanel] = useState(false);
+  const [includeCampaignDetails, setIncludeCampaignDetails] = useState(false);
 
   // Tab 1: Обзор — раскрытие переходящих событий при длинных списках
   const [expandCarryIn, setExpandCarryIn] = useState(false);
@@ -305,18 +308,39 @@ export function EraSummaryModal({
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
   const branchById = useMemo(() => new Map(branches.map((b) => [b.id, b])), [branches]);
 
-  const summary = useMemo(() => {
+  const resolvedEraForScope = useMemo(() => {
     if (!era) return null;
-    const resolved =
+    return (
       resolvedEras.find((e) => e.id === era.id) ??
-      resolveMacroEra(era, eras.findIndex((e) => e.id === era.id));
-    return getMacroEraSummaryData(resolved, rulers, enrichedEvents, branches, personDossiers);
-  }, [era, resolvedEras, eras, rulers, enrichedEvents, branches, personDossiers]);
+      resolveMacroEra(era, eras.findIndex((e) => e.id === era.id))
+    );
+  }, [era, resolvedEras, eras]);
+
+  const loadedCampaignCount = useMemo(() => {
+    if (!resolvedEraForScope) return 0;
+    return countCampaignEventsInRange(
+      enrichedEvents,
+      branches,
+      resolvedEraForScope.startYear,
+      resolvedEraForScope.endYear,
+    );
+  }, [resolvedEraForScope, enrichedEvents, branches]);
+
+  const scopedEvents = useMemo(
+    () => filterEventsForAnalyticsScope(enrichedEvents, { includeCampaignDetails }),
+    [enrichedEvents, includeCampaignDetails],
+  );
+
+  const summary = useMemo(() => {
+    if (!resolvedEraForScope) return null;
+    return getMacroEraSummaryData(resolvedEraForScope, rulers, scopedEvents, branches, personDossiers);
+  }, [resolvedEraForScope, rulers, scopedEvents, branches, personDossiers]);
 
   // Reset modal state cleanly when switching era
   useEffect(() => {
     setActiveTab('overview');
     setShowCitationPanel(false);
+    setIncludeCampaignDetails(false);
     setExpandCarryIn(false);
     setExpandCarryOut(false);
     setPeopleGroup('all');
@@ -779,6 +803,22 @@ export function EraSummaryModal({
           }
           actions={
             <>
+              {loadedCampaignCount > 0 && (
+                <button
+                  type="button"
+                  aria-pressed={includeCampaignDetails}
+                  onClick={() => setIncludeCampaignDetails((prev) => !prev)}
+                  className={`h-8 px-2.5 rounded-lg border text-xs font-mono inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70 ${
+                    includeCampaignDetails
+                      ? 'bg-amber-500/20 border-amber-400/60 text-amber-100 font-semibold'
+                      : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300'
+                  }`}
+                  title="Включить или исключить детальные события загруженных военных кампаний из сводки эпохи"
+                >
+                  <Swords className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Детали кампаний (+{loadedCampaignCount})</span>
+                </button>
+              )}
               <CiteTriggerButton
                 isOpen={showCitationPanel}
                 onToggle={() => setShowCitationPanel((prev) => !prev)}

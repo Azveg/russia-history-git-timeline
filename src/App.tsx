@@ -6,6 +6,7 @@ import { FilterPanel } from './components/FilterPanel';
 import { GitTimeline } from './components/GitTimeline';
 import { HiddenLinksNotice } from './components/HiddenLinksNotice';
 import { OverlapMapSection } from './components/OverlapMapSection';
+import { CampaignModeBar } from './components/timeline/CampaignModeBar';
 import { TopControlBar } from './components/TopControlBar';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 
@@ -21,6 +22,10 @@ const loadPersonDossierModal = () =>
   import('./components/PersonDossierModal').then((m) => ({ default: m.PersonDossierModal }));
 const loadWindowSummaryModal = () =>
   import('./components/WindowSummaryModal').then((m) => ({ default: m.WindowSummaryModal }));
+const loadCampaignCausalTracerModal = () =>
+  import('./components/CampaignCausalTracerModal').then((m) => ({
+    default: m.CampaignCausalTracerModal,
+  }));
 
 const CardDetailModal = lazyWithRetry(loadCardDetailModal);
 const ComparePeriodsModal = lazyWithRetry(loadComparePeriodsModal);
@@ -28,8 +33,14 @@ const EraSummaryModal = lazyWithRetry(loadEraSummaryModal);
 const PeriodSummaryModal = lazyWithRetry(loadPeriodSummaryModal);
 const PersonDossierModal = lazyWithRetry(loadPersonDossierModal);
 const WindowSummaryModal = lazyWithRetry(loadWindowSummaryModal);
+const CampaignCausalTracerModal = lazyWithRetry(loadCampaignCausalTracerModal);
 
-import { parseBranchSelection, resolveBranchSelection, updateBranchSelection } from './engine/layout/branchSelection';
+import {
+  parseBranchSelection,
+  resolveBranchSelection,
+  updateBranchSelection,
+  type BranchSelection,
+} from './engine/layout/branchSelection';
 import { useTimelineData } from './hooks/useTimelineData';
 import {
   parseInitialYearBound,
@@ -43,6 +54,7 @@ import {
   parseMacroRegionParam,
 } from './engine/regionFilter';
 import {
+  buildCampaignBranchMask,
   buildPersonDossierIndex,
   buildSyncTagIndex,
   buildUnifiedTimelineStream,
@@ -52,6 +64,11 @@ import {
   doesIntervalBelongToEra,
   extractBranchesFromStore,
   extractRulersFromStore,
+  filterEventsForAnalyticsScope,
+  findCampaignPackById,
+  findCampaignPackForEvent,
+  getCampaignBranches,
+  getCoreBranches,
   getDescendantBranchIds,
   getEnrichedEvents,
   getEventEffectiveEndYear,
@@ -73,6 +90,8 @@ import type {
   BranchPairFilter,
   BranchPresetId,
   CardDensity,
+  CausalChainMode,
+  CausalChainResult,
   ComparisonTarget,
   FocusDepth,
   FocusScope,
@@ -82,6 +101,7 @@ import type {
   SyncLinkTypeFilter,
   SyncTagOption,
   TimeScaleMode,
+  TracedChainFilter,
   YearRangeStep,
 } from './types/timeline';
 
@@ -96,7 +116,8 @@ type ActiveModalState =
   | { type: 'ERA'; eraId: string }
   | { type: 'PERSON'; personKey: string }
   | { type: 'WINDOW'; from: number; to: number }
-  | { type: 'COMPARE'; pair: { left: ComparisonTarget; right: ComparisonTarget } };
+  | { type: 'COMPARE'; pair: { left: ComparisonTarget; right: ComparisonTarget } }
+  | { type: 'TRACER'; eventId: string };
 
 function mergeMissingCollapsedParents(
   prev: Record<string, boolean>,
@@ -129,6 +150,10 @@ export default function App() {
   const {
     manifest,
     filesMap,
+    campaignPacks,
+    loadedCampaignIds,
+    failedCampaignIds,
+    loadingCampaignId,
     loading,
     loadError,
     isFullyHydrated,
@@ -137,6 +162,7 @@ export default function App() {
     partialLoadWarning,
     reloadRepository,
     ensureAllModulesLoaded,
+    loadCampaignPack,
   } = useTimelineData({ initialParams });
 
   const [isPersonIndexReady, setIsPersonIndexReady] = useState<boolean>(() =>
@@ -155,6 +181,22 @@ export default function App() {
 
   const [requestedYearFrom, setYearFrom] = useState(() => parseInitialYearBound(initialParams, 'from', undefined));
   const [requestedYearTo, setYearTo] = useState(() => parseInitialYearBound(initialParams, 'to', undefined));
+  const [activeCampaignId, setActiveCampaignId] = useState<string | null>(() => {
+    const raw = initialParams.get('campaign')?.trim();
+    return raw ? raw : null;
+  });
+  const [campaignEnabledBranchIds, setCampaignEnabledBranchIds] = useState<string[] | null>(null);
+  const [includeAtlasContext, setIncludeAtlasContext] = useState(false);
+  const [tracedChainFilter, setTracedChainFilter] = useState<TracedChainFilter | null>(null);
+  const campaignReturnSnapshotRef = useRef<{
+    yearFrom: number | undefined;
+    yearTo: number | undefined;
+    branchSelection: BranchSelection;
+    collapsedParents: Record<string, boolean>;
+    selectedEra: string;
+    selectedReign: string;
+  } | null>(null);
+  const hasAppliedInitialCampaignWindowRef = useRef(false);
   const [zoomHistory, setZoomHistory] = useState<YearRangeStep[]>([]);
   const [selectedEra, setSelectedEra] = useState('ALL');
   const [selectedReign, setSelectedReign] = useState('ALL');
@@ -193,8 +235,8 @@ export default function App() {
   const [highlightedJumpId, setHighlightedJumpId] = useState<string | null>(null);
 
   const [showEndNodes, setShowEndNodes] = useState(true);
-  const [showOverlapMatrix] = useState(true);
   const [isFiltersCollapsed, setIsFiltersCollapsed] = useState(true);
+  const showOverlapMatrix = !isFiltersCollapsed;
   const [forceShowHiddenLinks, setForceShowHiddenLinks] = useState(false);
   const [dismissedHiddenLinks, setDismissedHiddenLinks] = useState(false);
 
@@ -428,11 +470,20 @@ export default function App() {
     [],
   );
 
+  const handlePopCampaignFromUrl = useCallback((campaignId: string | null) => {
+    const normalized = campaignId?.trim() || null;
+    setActiveCampaignId(normalized);
+    setCampaignEnabledBranchIds(null);
+    setIncludeAtlasContext(false);
+    setTracedChainFilter(null);
+  }, []);
+
   useTimelineUrlSync({
     yearFrom: requestedYearFrom,
     yearTo: requestedYearTo,
     searchQuery,
     selectedMacroRegion,
+    activeCampaignId,
     activeCardId,
     activeRulerModalId,
     activePersonModalKey,
@@ -444,6 +495,7 @@ export default function App() {
     setSearchQuery,
     setSelectedMacroRegion,
     restoreBranchSelection,
+    onPopCampaignFromUrl: handlePopCampaignFromUrl,
     onPopModalFromUrl: handlePopModalFromUrl,
   });
 
@@ -466,6 +518,50 @@ export default function App() {
     if (!manifest) return [];
     return getEnrichedEvents(manifest, filesMap, rulers);
   }, [manifest, filesMap, rulers]);
+
+  const coreEnrichedEvents = useMemo(
+    () => filterEventsForAnalyticsScope(enrichedEvents, { includeCampaignDetails: false }),
+    [enrichedEvents],
+  );
+
+  const activeCampaignPack = useMemo(
+    () => findCampaignPackById(campaignPacks, activeCampaignId),
+    [campaignPacks, activeCampaignId],
+  );
+
+  const activeCampaignBranches = useMemo(
+    () => (activeCampaignPack ? getCampaignBranches(branches, activeCampaignPack.id) : []),
+    [branches, activeCampaignPack],
+  );
+
+  const coreBranches = useMemo(() => getCoreBranches(branches), [branches]);
+
+  useEffect(() => {
+    if (!manifestReady || !activeCampaignId) return;
+    if (
+      !loadedCampaignIds.includes(activeCampaignId) &&
+      !failedCampaignIds.includes(activeCampaignId) &&
+      loadingCampaignId !== activeCampaignId
+    ) {
+      void loadCampaignPack(activeCampaignId);
+    }
+  }, [
+    manifestReady,
+    activeCampaignId,
+    loadedCampaignIds,
+    failedCampaignIds,
+    loadingCampaignId,
+    loadCampaignPack,
+  ]);
+
+  useEffect(() => {
+    if (!activeCampaignPack || hasAppliedInitialCampaignWindowRef.current) return;
+    hasAppliedInitialCampaignWindowRef.current = true;
+    if (requestedYearFrom === undefined && requestedYearTo === undefined) {
+      setYearFrom(activeCampaignPack.yearFrom);
+      setYearTo(activeCampaignPack.yearTo);
+    }
+  }, [activeCampaignPack, requestedYearFrom, requestedYearTo]);
 
   const shouldComputePersonIndex =
     isPersonIndexReady ||
@@ -504,6 +600,12 @@ export default function App() {
       setFocusedEventId(null);
     }
     if (activeModal.type === 'CARD' && !enrichedEvents.some((e) => e.id === activeModal.cardId)) {
+      setActiveModal({ type: 'NONE' });
+    }
+    if (
+      activeModal.type === 'TRACER' &&
+      !enrichedEvents.some((e) => e.id === activeModal.eventId)
+    ) {
       setActiveModal({ type: 'NONE' });
     }
     if (activeModal.type === 'REIGN' && !rulers.some((r) => r.id === activeModal.rulerId)) {
@@ -546,9 +648,19 @@ export default function App() {
     [manifest, isFiltersCollapsed, selectedSyncTag, enrichedEvents, rulers],
   );
 
-  const thematicLeafBranches = useMemo(() => getLeafBranches(branches), [branches]);
+  const thematicLeafBranches = useMemo(
+    () => getLeafBranches(activeCampaignPack ? [...coreBranches, ...activeCampaignBranches] : coreBranches),
+    [coreBranches, activeCampaignBranches, activeCampaignPack],
+  );
 
   const effectiveActiveBranches = useMemo(() => {
+    if (activeCampaignPack) {
+      return buildCampaignBranchMask(branches, activeCampaignPack, {
+        enabledBranchIds: campaignEnabledBranchIds,
+        includeRulers: true,
+        includeAtlasContext,
+      });
+    }
     if (!branchPairFilter) return resolvedActiveBranches;
     const next: Record<string, boolean> = {};
     branches.forEach((b) => {
@@ -560,7 +672,14 @@ export default function App() {
       }
     });
     return next;
-  }, [resolvedActiveBranches, branchPairFilter, branches]);
+  }, [
+    activeCampaignPack,
+    campaignEnabledBranchIds,
+    includeAtlasContext,
+    resolvedActiveBranches,
+    branchPairFilter,
+    branches,
+  ]);
 
   const visibleLanes = useMemo(
     () => getVisibleLanes(branches, effectiveActiveBranches, resolvedCollapsedParents),
@@ -613,6 +732,8 @@ export default function App() {
       focusScope,
       focusDepth,
       focusKeepWindow,
+      tracedChainEventIds: tracedChainFilter?.eventIds ?? null,
+      tracedChainRootId: tracedChainFilter?.rootEventId ?? null,
       showEndNodes,
       showOverlapMatrix,
     });
@@ -640,6 +761,7 @@ export default function App() {
     focusScope,
     focusDepth,
     focusKeepWindow,
+    tracedChainFilter,
     showEndNodes,
     showOverlapMatrix,
   ]);
@@ -660,7 +782,7 @@ export default function App() {
   );
 
   const displayLanes = useMemo(() => {
-    if (!focusedEvent) return visibleLanes;
+    if (!focusedEvent && !tracedChainFilter) return visibleLanes;
     const laneIds = new Set(visibleLanes.map((l) => l.id));
     const extras: BranchDefinition[] = [];
     matchingEvents.forEach((ev) => {
@@ -671,7 +793,7 @@ export default function App() {
       }
     });
     return extras.length > 0 ? [...visibleLanes, ...extras] : visibleLanes;
-  }, [focusedEvent, visibleLanes, matchingEvents, branches, resolvedCollapsedParents]);
+  }, [focusedEvent, tracedChainFilter, visibleLanes, matchingEvents, branches, resolvedCollapsedParents]);
 
   const branchControls = useMemo(() => {
     const byBranchCount: Record<string, number> = {};
@@ -748,6 +870,14 @@ export default function App() {
     [activeModal],
   );
 
+  const activeTracerEvent = useMemo(
+    () =>
+      activeModal.type === 'TRACER'
+        ? (enrichedEvents.find((e) => e.id === activeModal.eventId) ?? null)
+        : null,
+    [activeModal, enrichedEvents],
+  );
+
   // Реф актуального состояния модальных окон для стабильных коллбеков (чтобы открытие/закрытие модалок не перерисовывало ленту)
   const modalStateRef = useRef({
     activeModal,
@@ -757,6 +887,7 @@ export default function App() {
     activePersonObj,
     activeWindowRange,
     activeComparePair,
+    activeTracerEvent,
     personDossiers,
     personRawToKey,
     enrichedEvents,
@@ -771,6 +902,7 @@ export default function App() {
     activePersonObj,
     activeWindowRange,
     activeComparePair,
+    activeTracerEvent,
     personDossiers,
     personRawToKey,
     enrichedEvents,
@@ -829,6 +961,16 @@ export default function App() {
           comparePair: curCompare,
         },
       ]);
+    } else if (modalStateRef.current.activeTracerEvent) {
+      const curTraced = modalStateRef.current.activeTracerEvent;
+      setModalHistory((prev) => [
+        ...prev.slice(-9),
+        {
+          type: 'tracer',
+          id: curTraced.id,
+          label: `Цепочка: ${curTraced.title}`,
+        },
+      ]);
     }
   }, []);
 
@@ -851,6 +993,16 @@ export default function App() {
       transitionToModal({ type: 'CARD', cardId });
     },
     [transitionToModal],
+  );
+
+  const handleOpenCausalTracer = useCallback(
+    (eventId: string) => {
+      void ensureAllModulesLoaded({ priority: true });
+      const cur = modalStateRef.current.activeModal;
+      if (cur.type === 'TRACER' && cur.eventId === eventId) return;
+      transitionToModal({ type: 'TRACER', eventId });
+    },
+    [ensureAllModulesLoaded, transitionToModal],
   );
 
   const handleOpenPeriodModal = useCallback(
@@ -1062,6 +1214,8 @@ export default function App() {
       });
     } else if (last.type === 'compare' && last.comparePair) {
       setActiveModal({ type: 'COMPARE', pair: last.comparePair });
+    } else if (last.type === 'tracer') {
+      setActiveModal({ type: 'TRACER', eventId: last.id });
     }
   }, [modalHistory]);
 
@@ -1262,6 +1416,7 @@ export default function App() {
     setOnlyWithSyncLinks(false);
     setSyncLinkTypeFilter('all');
     setFocusedEventId(null);
+    setTracedChainFilter(null);
     setForceShowHiddenLinks(false);
     setDismissedHiddenLinks(false);
     setZoomHistory([]);
@@ -1305,7 +1460,134 @@ export default function App() {
     handleRevealBranches([pair.branchA, pair.branchB]);
   }
 
+  function handleOpenCampaign(campaignId: string) {
+    const pack = findCampaignPackById(campaignPacks, campaignId);
+    if (!pack) return;
+    if (!activeCampaignId) {
+      campaignReturnSnapshotRef.current = {
+        yearFrom: requestedYearFrom,
+        yearTo: requestedYearTo,
+        branchSelection,
+        collapsedParents,
+        selectedEra,
+        selectedReign,
+      };
+    }
+    hasAppliedInitialCampaignWindowRef.current = true;
+    handleCloseAllModals();
+    setActiveCampaignId(pack.id);
+    setCampaignEnabledBranchIds(null);
+    setIncludeAtlasContext(false);
+    setTracedChainFilter(null);
+    setSelectedEra('ALL');
+    setSelectedReign('ALL');
+    setSearchQuery('');
+    setSelectedPersonKey(null);
+    setSelectedSyncTag(null);
+    setSelectedMacroRegion('all');
+    setBranchPairFilter(null);
+    setFocusedEventId(null);
+    setYearFrom(pack.yearFrom);
+    setYearTo(pack.yearTo);
+    void loadCampaignPack(pack.id);
+    void ensureAllModulesLoaded({ priority: false });
+    showToast(`Режим кампании: «${pack.title}» (${pack.yearFrom}–${pack.yearTo}).`);
+  }
+
+  function handleExitCampaign() {
+    const snap = campaignReturnSnapshotRef.current;
+    campaignReturnSnapshotRef.current = null;
+    setActiveCampaignId(null);
+    setCampaignEnabledBranchIds(null);
+    setIncludeAtlasContext(false);
+    setTracedChainFilter(null);
+    setFocusedEventId(null);
+    if (snap) {
+      setYearFrom(snap.yearFrom);
+      setYearTo(snap.yearTo);
+      setBranchSelection(snap.branchSelection);
+      setCollapsedParents(snap.collapsedParents);
+      setSelectedEra(snap.selectedEra);
+      setSelectedReign(snap.selectedReign);
+    } else {
+      setYearFrom(undefined);
+      setYearTo(undefined);
+      setSelectedEra('ALL');
+      setSelectedReign('ALL');
+    }
+    showToast('Возврат к общему атласу.');
+  }
+
+  function handleToggleAtlasContext() {
+    setIncludeAtlasContext((prev) => {
+      const next = !prev;
+      if (next) {
+        void ensureAllModulesLoaded({ priority: true });
+        showToast('Контекст атласа включён: дипломатия, экономика, кризисы и обзор войн.');
+      } else {
+        showToast('Контекст атласа скрыт: на ленте только ветки кампании.');
+      }
+      return next;
+    });
+  }
+
+  function handleOpenCampaignTracer() {
+    if (!activeCampaignPack) return;
+    const defaultRoot =
+      (focusedEventId && enrichedEvents.some((e) => e.id === focusedEventId) ? focusedEventId : null) ||
+      matchingEvents.find((e) => e.campaignPackId === activeCampaignPack.id)?.id ||
+      enrichedEvents.find((e) => e.campaignPackId === activeCampaignPack.id)?.id ||
+      activeCampaignPack.parentEventId;
+    if (defaultRoot) {
+      handleOpenCausalTracer(defaultRoot);
+    }
+  }
+
+  function handleApplyTracedChain(result: CausalChainResult, mode: CausalChainMode) {
+    setFocusedEventId(null);
+    setTracedChainFilter({
+      rootEventId: result.root.id,
+      rootTitle: result.root.title,
+      eventIds: new Set(result.allEventIds),
+      distanceMap: new Map(result.distanceMap),
+      mode,
+    });
+    setHighlightedJumpId(result.root.id);
+    showToast(
+      `На ленте выделена цепочка «${result.root.title}» (${result.stats.totalNodes} звеньев, ${result.stats.yearFrom}–${result.stats.yearTo} гг.).`,
+    );
+  }
+
+  function handleClearTracedChain() {
+    setTracedChainFilter(null);
+    showToast('Изоляция цепочки снята.');
+  }
+
+  function handleToggleCampaignBranch(branchId: string) {
+    if (!activeCampaignPack) return;
+    const allIds = activeCampaignPack.branchIds;
+    setCampaignEnabledBranchIds((prev) => {
+      const current = prev && prev.length > 0 ? prev : allIds;
+      const isEnabled = current.includes(branchId);
+      if (isEnabled) {
+        if (current.length <= 1) return current;
+        return current.filter((id) => id !== branchId);
+      }
+      const next = [...current, branchId];
+      return next.length >= allIds.length ? null : next;
+    });
+  }
+
+  function handleEnableAllCampaignBranches() {
+    setCampaignEnabledBranchIds(null);
+  }
+
   function handleResetAll() {
+    campaignReturnSnapshotRef.current = null;
+    setActiveCampaignId(null);
+    setCampaignEnabledBranchIds(null);
+    setIncludeAtlasContext(false);
+    setTracedChainFilter(null);
     handleResetFiltersOnly();
     const nextCollapsed: Record<string, boolean> = {};
     branches.forEach((b) => {
@@ -1336,11 +1618,29 @@ export default function App() {
 
     const adjustments: string[] = [];
 
-    if (!isEventBranchActive(target, resolvedActiveBranches)) {
-      setActiveBranches((prev) => ({
-        ...prev,
-        [target.task]: true,
-      }));
+    if (target.campaignPackId && activeCampaignId !== target.campaignPackId) {
+      handleOpenCampaign(target.campaignPackId);
+      setHighlightedJumpId(target.id);
+      return;
+    }
+
+    if (activeCampaignPack && !target.campaignPackId && !includeAtlasContext) {
+      setIncludeAtlasContext(true);
+      adjustments.push('включён контекст атласа');
+    } else if (!isEventBranchActive(target, effectiveActiveBranches)) {
+      if (activeCampaignPack && target.campaignPackId === activeCampaignPack.id) {
+        setCampaignEnabledBranchIds((prev) => {
+          if (!prev) return null;
+          if (prev.includes(target.task)) return prev;
+          const next = [...prev, target.task];
+          return next.length >= activeCampaignPack.branchIds.length ? null : next;
+        });
+      } else {
+        setActiveBranches((prev) => ({
+          ...prev,
+          [target.task]: true,
+        }));
+      }
       const branch = branches.find((b) => b.id === target.task);
       if (branch?.parentBranchId) {
         setCollapsedParents((prev) => {
@@ -1354,6 +1654,11 @@ export default function App() {
         });
       }
       adjustments.push('включена ветка');
+    }
+
+    if (tracedChainFilter && !tracedChainFilter.eventIds.has(target.id)) {
+      setTracedChainFilter(null);
+      adjustments.push('снята изоляция цепочки');
     }
 
     if (target.endYear < yearFrom || target.startYear > yearTo) {
@@ -1723,6 +2028,8 @@ export default function App() {
     handleToggleFocusEvent,
     handleRevealBranches,
     handleJumpToEvent,
+    handleOpenCampaign,
+    handleExitCampaign,
     effectiveYearFrom,
     effectiveYearTo,
   });
@@ -1751,6 +2058,8 @@ export default function App() {
     handleToggleFocusEvent,
     handleRevealBranches,
     handleJumpToEvent,
+    handleOpenCampaign,
+    handleExitCampaign,
     effectiveYearFrom,
     effectiveYearTo,
   };
@@ -1875,6 +2184,8 @@ export default function App() {
     [],
   );
   const stableJumpToEvent = useCallback((id: string) => actionsRef.current.handleJumpToEvent(id), []);
+  const stableOpenCampaign = useCallback((id: string) => actionsRef.current.handleOpenCampaign(id), []);
+  const stableExitCampaign = useCallback(() => actionsRef.current.handleExitCampaign(), []);
 
   const memoizedWindowRange = useMemo(
     () => ({ from: yearFrom, to: yearTo }),
@@ -1933,7 +2244,7 @@ export default function App() {
         onIsolateBranch={stableIsolateBranch}
         onToggleCollapseParent={stableToggleCollapseParent}
         eras={manifest.macroEras}
-        enrichedEventsForEras={enrichedEvents}
+        enrichedEventsForEras={coreEnrichedEvents}
         selectedEraId={selectedEra}
         onSelectEra={stableSelectEra}
         onOpenEraModal={handleOpenEraModal}
@@ -1996,6 +2307,69 @@ export default function App() {
       />
 
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-3.5 space-y-3.5">
+        {activeCampaignPack && (
+          <CampaignModeBar
+            pack={activeCampaignPack}
+            campaignBranches={activeCampaignBranches}
+            activeBranches={effectiveActiveBranches}
+            isLoading={loadingCampaignId === activeCampaignPack.id}
+            includeAtlasContext={includeAtlasContext}
+            isProAnalysisOpen={!isFiltersCollapsed}
+            tracedChainFilter={tracedChainFilter}
+            onToggleCampaignBranch={handleToggleCampaignBranch}
+            onEnableAllCampaignBranches={handleEnableAllCampaignBranches}
+            onToggleAtlasContext={handleToggleAtlasContext}
+            onToggleProAnalysis={stableToggleFilters}
+            onOpenAnchorCard={handleOpenCardModal}
+            onOpenCausalTracer={handleOpenCampaignTracer}
+            onReopenTracedChain={
+              tracedChainFilter
+                ? () => handleOpenCausalTracer(tracedChainFilter.rootEventId)
+                : undefined
+            }
+            onClearTracedChain={handleClearTracedChain}
+            onExitCampaign={stableExitCampaign}
+          />
+        )}
+
+        {!activeCampaignPack && tracedChainFilter && (
+          <section
+            aria-label="Активный фильтр цепочки связей"
+            className="rounded-2xl border border-emerald-500/40 bg-[#0b1325]/95 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs font-mono shadow-lg"
+          >
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+              <span className="text-emerald-300 font-semibold uppercase tracking-wider">
+                Изолирована цепочка:
+              </span>
+              <span className="text-white font-semibold truncate">
+                {tracedChainFilter.rootTitle}
+              </span>
+              <span aria-hidden="true" className="text-slate-600">
+                ·
+              </span>
+              <span className="text-slate-300 tabular-nums">
+                звеньев: {tracedChainFilter.eventIds.size}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => handleOpenCausalTracer(tracedChainFilter.rootEventId)}
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-200 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Открыть схему
+              </button>
+              <button
+                type="button"
+                onClick={handleClearTracedChain}
+                className="px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-100 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                Сбросить цепочку
+              </button>
+            </div>
+          </section>
+        )}
+
         <FilterPanel
           yearFrom={effectiveYearFrom}
           yearTo={effectiveYearTo}
@@ -2018,6 +2392,12 @@ export default function App() {
           }
           personDossiers={personDossiers}
           selectedPersonDossier={selectedPersonDossier}
+          campaignPacks={campaignPacks}
+          activeCampaignId={activeCampaignId}
+          loadedCampaignIds={loadedCampaignIds}
+          loadingCampaignId={loadingCampaignId}
+          onOpenCampaign={stableOpenCampaign}
+          onExitCampaign={stableExitCampaign}
           isAdvancedExpanded={!isFiltersCollapsed}
           onToggleAdvanced={stableToggleFilters}
           onChangeYearFrom={stableChangeYearFrom}
@@ -2038,30 +2418,32 @@ export default function App() {
           onResetFilters={stableResetFiltersOnly}
         />
 
-        <OverlapMapSection
-          matchingEvents={matchingEvents}
-          rulers={rulers}
-          branches={branches}
-          activeBranches={effectiveActiveBranches}
-          yearFrom={effectiveYearFrom}
-          yearTo={effectiveYearTo}
-          minYear={timelineBounds.minYear}
-          maxYear={timelineBounds.maxYear}
-          hoveredEventId={hoveredEventId}
-          onHoverEvent={setHoveredEventId}
-          onOpenCardModal={handleOpenCardModal}
-          onOpenPeriodModal={handleOpenPeriodModal}
-          onOpenWindowModal={handleOpenWindowModal}
-          onSelectYearRange={stableSelectYearRangeResettingEra}
-          zoomHistoryCount={zoomHistory.length}
-          lastZoomStep={lastZoomStep}
-          onStepBackZoom={stableStepBackZoom}
-          onZoomIn={stableZoomIn}
-          onZoomOut={stableZoomOut}
-          onShiftWindow={stableShiftWindow}
-          onApplySpanPreset={stableApplySpanPreset}
-          onRecordZoomCheckpoint={stableRecordZoomCheckpoint}
-        />
+        {showOverlapMatrix && (
+          <OverlapMapSection
+            matchingEvents={matchingEvents}
+            rulers={rulers}
+            branches={branches}
+            activeBranches={effectiveActiveBranches}
+            yearFrom={effectiveYearFrom}
+            yearTo={effectiveYearTo}
+            minYear={timelineBounds.minYear}
+            maxYear={timelineBounds.maxYear}
+            hoveredEventId={hoveredEventId}
+            onHoverEvent={setHoveredEventId}
+            onOpenCardModal={handleOpenCardModal}
+            onOpenPeriodModal={handleOpenPeriodModal}
+            onOpenWindowModal={handleOpenWindowModal}
+            onSelectYearRange={stableSelectYearRangeResettingEra}
+            zoomHistoryCount={zoomHistory.length}
+            lastZoomStep={lastZoomStep}
+            onStepBackZoom={stableStepBackZoom}
+            onZoomIn={stableZoomIn}
+            onZoomOut={stableZoomOut}
+            onShiftWindow={stableShiftWindow}
+            onApplySpanPreset={stableApplySpanPreset}
+            onRecordZoomCheckpoint={stableRecordZoomCheckpoint}
+          />
+        )}
 
         {shouldShowHiddenLinksNotice && (
           <HiddenLinksNotice
@@ -2146,6 +2528,10 @@ export default function App() {
             onOpenWindowModal={handleOpenWindowModal}
             onOpenPersonModal={handleOpenPersonModal}
             onSelectYearRange={stableYearRangeChange}
+            campaignPacks={campaignPacks}
+            activeCampaignId={activeCampaignId}
+            onOpenCampaign={stableOpenCampaign}
+            onOpenCausalTracer={handleOpenCausalTracer}
           />
         )}
       </main>
@@ -2212,6 +2598,25 @@ export default function App() {
               }}
               onOpenRulerModal={handleOpenPeriodModal}
               onOpenEraModal={handleOpenEraModal}
+              linkedCampaignPack={findCampaignPackForEvent(campaignPacks, activeCardObj.id)}
+              onOpenCampaign={stableOpenCampaign}
+              onOpenCausalTracer={handleOpenCausalTracer}
+            />
+          )}
+
+          {activeTracerEvent && (
+            <CampaignCausalTracerModal
+              rootEventId={activeTracerEvent.id}
+              enrichedEvents={enrichedEvents}
+              branches={branches}
+              activeCampaignId={activeCampaignId}
+              activeCampaignTitle={activeCampaignPack?.title ?? null}
+              modalHistory={modalHistory}
+              onClose={handleCloseAllModals}
+              onNavigateBack={handleModalNavigateBack}
+              onOpenCard={handleOpenCardModal}
+              onJumpToTimelineRow={handleJumpToEvent}
+              onApplyTracedChain={handleApplyTracedChain}
             />
           )}
 
@@ -2219,7 +2624,7 @@ export default function App() {
             <PeriodSummaryModal
               ruler={activeRulerObj}
               rulers={rulers}
-              enrichedEvents={enrichedEvents}
+              enrichedEvents={coreEnrichedEvents}
               branches={branches}
               personDossiers={personDossiers}
               modalHistory={modalHistory}
@@ -2278,7 +2683,8 @@ export default function App() {
               rulers={rulers}
               enrichedEvents={enrichedEvents}
               branches={branches}
-              activeBranches={resolvedActiveBranches}
+              activeBranches={effectiveActiveBranches}
+              activeCampaignId={activeCampaignId}
               personDossiers={personDossiers}
               modalHistory={modalHistory}
               onClose={handleCloseAllModals}
@@ -2297,7 +2703,7 @@ export default function App() {
               comparePair={activeComparePair}
               rulers={rulers}
               eras={manifest.macroEras}
-              enrichedEvents={enrichedEvents}
+              enrichedEvents={coreEnrichedEvents}
               branches={branches}
               personDossiers={personDossiers}
               modalHistory={modalHistory}

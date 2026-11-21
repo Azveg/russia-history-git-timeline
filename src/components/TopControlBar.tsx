@@ -886,8 +886,8 @@ export const TopControlBar = memo(function TopControlBar({
               aria-expanded={!isFiltersCollapsed}
               aria-label={
                 isFiltersCollapsed
-                  ? 'Развернуть инструменты расширенного анализа'
-                  : 'Свернуть инструменты расширенного анализа'
+                  ? 'Включить профи-режим анализа: карта полос, режим кампаний и расширенные фильтры'
+                  : 'Свернуть профи-режим анализа'
               }
               className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                 !isFiltersCollapsed
@@ -896,7 +896,7 @@ export const TopControlBar = memo(function TopControlBar({
                     ? 'bg-emerald-500/15 border-emerald-400/55 text-emerald-200 hover:bg-emerald-500/25'
                     : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
               }`}
-              title="Развернуть или свернуть панель «Расширенный анализ» (связи, сюжеты, макрорегионы, пара веток, сравнение периодов и досье окна)"
+              title="Профи-режим анализа: открыть или свернуть карту полос, режим кампаний, связи, сюжеты, сравнение периодов и досье окна"
             >
               <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
               <span className="hidden min-[360px]:inline">Анализ</span>
