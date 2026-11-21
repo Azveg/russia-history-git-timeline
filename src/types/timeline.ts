@@ -650,6 +650,7 @@ export interface ComparisonSideSummary {
   crossBranchLinksCount: number;
   worksAboutPeriodCount: number;
   branchBreakdown: Array<{ branch: BranchDefinition; count: number; sharePct: number }>;
+  sphereCounts: Record<EraEventSphereId, number>;
   crossBranchPairs: ReignBranchPairSummary[];
   topConnectedEvents: EnrichedEvent[];
   syncTags: Array<{ tag: string; label: string; count: number }>;

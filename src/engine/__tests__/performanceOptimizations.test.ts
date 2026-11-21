@@ -8,6 +8,7 @@ import {
   classifyEventToEraSphere,
   computeBranchPresetMap,
   computeBranchSubLaneLayout,
+  computePeriodComparison,
   computeRulerSubLaneLayout,
   countExpectedLeafBranchesFromManifest,
   extractBranchesFromStore,
@@ -376,5 +377,111 @@ describe('Performance optimizations — semantic equivalence & caching', () => {
     );
     expect(cached3).not.toBe(cached1);
     expect(cached3.eraFigures.length).toBe(cached1.eraFigures.length);
+  });
+
+  it('getCustomWindowSummaryData builds 5 complete spheres, 4 role-explained figure groups, deduplicates figures, and caches properly', () => {
+    const { enrichedEvents, rulers, manifest, branches } = dataset;
+    const { dossiers } = buildPersonDossierIndex(enrichedEvents, rulers);
+    const branchById = new Map(branches.map((b) => [b.id, b]));
+
+    const summary = getCustomWindowSummaryData(
+      1700,
+      1825,
+      rulers,
+      enrichedEvents,
+      branches,
+      manifest.macroEras,
+      dossiers,
+    );
+
+    expect(summary.sphereSummaries.map((s) => s.id)).toEqual(ERA_SPHERE_ORDER);
+    const totalAcrossSpheres = summary.sphereSummaries.reduce(
+      (acc, s) => acc + s.events.length,
+      0,
+    );
+    expect(totalAcrossSpheres).toBe(summary.windowSphereEvents.length);
+    expect(summary.windowSphereEvents.length).toBeGreaterThan(0);
+
+    for (const sphere of summary.sphereSummaries) {
+      for (const ev of sphere.events) {
+        expect(classifyEventToEraSphere(ev, branchById, branches)).toBe(sphere.id);
+      }
+    }
+
+    const groupKeys = ['rulers', 'politics_military', 'writers', 'scientists'] as const;
+    const seenIds = new Set<string>();
+    let totalInGroups = 0;
+    for (const group of groupKeys) {
+      const items = summary.windowFiguresByGroup[group];
+      expect(Array.isArray(items)).toBe(true);
+      totalInGroups += items.length;
+      for (const fig of items) {
+        expect(fig.group).toBe(group);
+        expect(fig.name.trim().length).toBeGreaterThan(0);
+        expect(fig.roleLabel.trim().length).toBeGreaterThan(0);
+        expect(fig.description.trim().length).toBeGreaterThan(0);
+        expect(seenIds.has(fig.id)).toBe(false);
+        seenIds.add(fig.id);
+      }
+    }
+    expect(totalInGroups).toBe(summary.windowFigures.length);
+    expect(summary.windowFiguresByGroup.rulers.length).toBe(summary.overlappingRulers.length);
+    expect(summary.literaryWorksInPeriod.every((w) => w.task !== 'ARCHITECTURE_WORKS')).toBe(true);
+
+    // WeakMap cache hit & invalidation on personDossiers change
+    const cachedAgain = getCustomWindowSummaryData(
+      1700,
+      1825,
+      rulers,
+      enrichedEvents,
+      branches,
+      manifest.macroEras,
+      dossiers,
+    );
+    expect(cachedAgain).toBe(summary);
+
+    const clonedDossiers = new Map(dossiers);
+    const invalidated = getCustomWindowSummaryData(
+      1700,
+      1825,
+      rulers,
+      enrichedEvents,
+      branches,
+      manifest.macroEras,
+      clonedDossiers,
+    );
+    expect(invalidated).not.toBe(summary);
+    expect(invalidated.windowFigures.length).toBe(summary.windowFigures.length);
+  });
+
+  it('computePeriodComparison populates all 5 sphereCounts consistently for both sides', () => {
+    const { enrichedEvents, rulers, manifest, branches } = dataset;
+    const { dossiers } = buildPersonDossierIndex(enrichedEvents, rulers);
+    const resolvedEras = resolveMacroEras(manifest.macroEras);
+
+    const eraA = resolvedEras[4];
+    const eraB = resolvedEras[5];
+    const comparison = computePeriodComparison(
+      { kind: 'era', eraId: eraA.id },
+      { kind: 'era', eraId: eraB.id },
+      rulers,
+      enrichedEvents,
+      branches,
+      manifest.macroEras,
+      dossiers,
+    );
+
+    expect(comparison).not.toBeNull();
+    for (const side of [comparison!.left, comparison!.right]) {
+      let sphereTotal = 0;
+      for (const sphereId of ERA_SPHERE_ORDER) {
+        const count = side.sphereCounts[sphereId];
+        expect(typeof count).toBe('number');
+        expect(Number.isInteger(count)).toBe(true);
+        expect(count).toBeGreaterThanOrEqual(0);
+        sphereTotal += count;
+      }
+      expect(sphereTotal).toBeGreaterThanOrEqual(side.historicalEventsCount);
+    }
   });
 });

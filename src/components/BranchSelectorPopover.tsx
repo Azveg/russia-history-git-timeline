@@ -292,24 +292,9 @@ export function BranchSelectorPopover({
         <GitBranch className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
         <span>Ветки</span>
 
-        <span className="hidden xl:inline-flex items-center gap-1" aria-hidden="true">
-          {activeItems.slice(0, 4).map((b) => (
-            <span
-              key={b.id}
-              className="w-2 h-2 rounded-full shrink-0"
-              style={{ backgroundColor: b.color }}
-            />
-          ))}
-          {activeItems.length > 4 && (
-            <span className="text-[10px] text-slate-400">+{activeItems.length - 4}</span>
-          )}
-        </span>
-
         <span
           className={`tabular-nums text-[10px] ${
-            hasFilteredBranches
-              ? 'px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-bold'
-              : 'text-slate-400 font-normal'
+            hasFilteredBranches ? 'text-amber-300 font-bold' : 'text-slate-400 font-normal'
           }`}
         >
           {activeCount}/{displayTotalCount}
@@ -327,7 +312,7 @@ export function BranchSelectorPopover({
           role="dialog"
           aria-modal="false"
           aria-label="Управление ветками таймлайна"
-          className="fixed lg:absolute left-3 right-3 lg:left-0 lg:right-auto top-[54px] lg:top-full lg:mt-2 max-w-[500px] lg:max-w-[calc(100vw-2rem)] lg:w-[490px] mx-auto lg:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"
+          className="fixed xl:absolute left-3 right-3 xl:left-0 xl:right-auto top-[calc(var(--top-bar-height,49px)+6px)] xl:top-full xl:mt-2 max-w-[500px] xl:max-w-[calc(100vw-2rem)] xl:w-[490px] mx-auto xl:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 overflow-hidden animate-modal"
         >
           <div className="p-3 border-b border-slate-800/90 space-y-2.5 bg-slate-950/70">
             <div className="flex items-center justify-between gap-2">

@@ -842,6 +842,294 @@ function normalizeEraFigureKey(rawName: string): string {
   return stripped;
 }
 
+function buildSphereEventsAndSummaries(
+  historicalEvents: EnrichedEvent[],
+  discoveries: EnrichedEvent[],
+  branchById: Map<string, BranchDefinition>,
+  branches: BranchDefinition[],
+): {
+  sphereEvents: EnrichedEvent[];
+  sphereSummaries: EraEventSphereSummary[];
+} {
+  const seen = new Set<string>();
+  const sphereEvents: EnrichedEvent[] = [];
+  for (const ev of historicalEvents) {
+    if (!seen.has(ev.id)) {
+      seen.add(ev.id);
+      sphereEvents.push(ev);
+    }
+  }
+  for (const disc of discoveries) {
+    if (!seen.has(disc.id)) {
+      seen.add(disc.id);
+      sphereEvents.push(disc);
+    }
+  }
+
+  const eventsBySphere = new Map<EraEventSphereId, EnrichedEvent[]>();
+  for (const sphereId of ERA_SPHERE_ORDER) {
+    eventsBySphere.set(sphereId, []);
+  }
+  for (const ev of sphereEvents) {
+    const sphereId = classifyEventToEraSphere(ev, branchById, branches);
+    eventsBySphere.get(sphereId)!.push(ev);
+  }
+
+  const sphereSummaries: EraEventSphereSummary[] = ERA_SPHERE_ORDER.map((sphereId) => {
+    const meta = ERA_SPHERE_META[sphereId];
+    const items = [...(eventsBySphere.get(sphereId) || [])].sort(
+      (a, b) => a.startYear - b.startYear || a.endYear - b.endYear,
+    );
+    const topEvents = [...items]
+      .sort((a, b) => {
+        if (b.explicitLinks.length !== a.explicitLinks.length) {
+          return b.explicitLinks.length - a.explicitLinks.length;
+        }
+        return a.startYear - b.startYear;
+      })
+      .slice(0, 4);
+    const linkCount = items.reduce((sum, ev) => sum + ev.explicitLinks.length, 0);
+    return {
+      id: sphereId,
+      label: meta.label,
+      shortLabel: meta.shortLabel,
+      description: meta.description,
+      events: items,
+      topEvents,
+      linkCount,
+    };
+  });
+
+  return { sphereEvents, sphereSummaries };
+}
+
+function buildGroupedFigures(params: {
+  idPrefix: string;
+  allRulers: RulerPeriod[];
+  periodRulers: RulerPeriod[];
+  contemporaryStatesmen: EnrichedEvent[];
+  contemporaryWriters: EnrichedEvent[];
+  contemporaryScientists: EnrichedEvent[];
+  contemporaryDoctorsAndArchitects: EnrichedEvent[];
+  personDossiers?: Map<string, PersonDossier>;
+  extraParticipants?: RulerParticipantEntry[];
+}): {
+  figures: EraFigureEntry[];
+  figuresByGroup: Record<EraFigureGroupId, EraFigureEntry[]>;
+} {
+  const {
+    idPrefix,
+    allRulers,
+    periodRulers,
+    contemporaryStatesmen,
+    contemporaryWriters,
+    contemporaryScientists,
+    contemporaryDoctorsAndArchitects,
+    personDossiers,
+    extraParticipants = [],
+  } = params;
+
+  const rulerByNormName = new Map<string, RulerPeriod>();
+  for (const r of allRulers) {
+    rulerByNormName.set(normalizeEraFigureKey(r.ruler), r);
+    rulerByNormName.set(normalizeEraFigureKey(r.shortRuler), r);
+  }
+
+  const periodRulerNormNames = new Set<string>();
+  const rulerFigures: EraFigureEntry[] = periodRulers.map((r) => {
+    periodRulerNormNames.add(normalizeEraFigureKey(r.ruler));
+    periodRulerNormNames.add(normalizeEraFigureKey(r.shortRuler));
+    const roleParts = [r.dynastyOrTitle, r.center].filter(Boolean);
+    return {
+      id: `${idPrefix}-ruler-${r.id}`,
+      group: 'rulers',
+      name: r.ruler,
+      period: r.reignPeriod,
+      sortYear: r.startYear,
+      roleLabel: roleParts.length > 0 ? roleParts.join(' · ') : 'Правитель периода',
+      description: r.reignThesis || r.biography || r.reignTitle,
+      metaNote: `${Math.max(1, r.endYear - r.startYear)} л.`,
+      targetKind: 'ruler',
+      targetId: r.id,
+    };
+  });
+
+  const politicsSeenNames = new Set<string>(periodRulerNormNames);
+  const politicsSeenBioIds = new Set<string>();
+  const politicsFigures: EraFigureEntry[] = [];
+
+  for (const st of contemporaryStatesmen) {
+    const norm = normalizeEraFigureKey(st.title);
+    if (norm) politicsSeenNames.add(norm);
+    politicsSeenBioIds.add(st.id);
+    politicsFigures.push({
+      id: `${idPrefix}-statesman-${st.id}`,
+      group: 'politics_military',
+      name: st.title,
+      period: st.period,
+      sortYear: st.activeFrom,
+      roleLabel: st.type || 'Государственный деятель',
+      description: st.subtitle || st.outcome || st.details.slice(0, 180),
+      metaNote: st.region || undefined,
+      targetKind: 'event',
+      targetId: st.id,
+      linkCount: st.explicitLinks.length,
+    });
+  }
+
+  const hasMatchingSeenName = (norm: string, seen: Set<string>): boolean => {
+    if (seen.has(norm)) return true;
+    const tokens = norm.split(' ').filter((t) => t.length >= 4);
+    const lastToken = tokens[tokens.length - 1];
+    if (!lastToken) return false;
+    for (const existing of seen) {
+      if (existing === norm || existing.endsWith(` ${lastToken}`)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (const r of periodRulers) {
+    if (!r.innerCircle || r.innerCircle.length === 0) continue;
+    for (const member of r.innerCircle) {
+      const norm = normalizeEraFigureKey(member.name);
+      if (!norm || hasMatchingSeenName(norm, politicsSeenNames)) continue;
+      politicsSeenNames.add(norm);
+
+      const linkedRuler = rulerByNormName.get(norm) ?? null;
+      const resolvedKey =
+        !linkedRuler && personDossiers && personDossiers.size > 0
+          ? resolvePersonKey(member.name, personDossiers)
+          : null;
+      const dossier = resolvedKey && personDossiers ? personDossiers.get(resolvedKey) : null;
+
+      politicsFigures.push({
+        id: `${idPrefix}-circle-${r.id}-${norm}`,
+        group: 'politics_military',
+        name: member.name,
+        period: r.reignPeriod,
+        sortYear: r.startYear,
+        roleLabel: member.role,
+        description: member.connection,
+        metaNote: `При ${r.shortRuler}`,
+        targetKind: linkedRuler ? 'ruler' : resolvedKey ? 'person' : 'none',
+        targetId: linkedRuler ? linkedRuler.id : resolvedKey ?? undefined,
+        linkCount: dossier ? dossier.events.length : undefined,
+      });
+    }
+  }
+
+  const writerFigures: EraFigureEntry[] = [...contemporaryWriters]
+    .sort((a, b) => a.activeFrom - b.activeFrom || a.startYear - b.startYear)
+    .map((w) => ({
+      id: `${idPrefix}-writer-${w.id}`,
+      group: 'writers',
+      name: w.title,
+      period: w.period,
+      sortYear: w.activeFrom,
+      roleLabel: w.type || 'Писатель и мыслитель',
+      description: w.subtitle || w.outcome || w.details.slice(0, 180),
+      metaNote: w.literaryProfile?.movement || undefined,
+      targetKind: 'event',
+      targetId: w.id,
+      linkCount: w.explicitLinks.length,
+    }));
+
+  const sciSeenIds = new Set<string>();
+  const scientistFigures: EraFigureEntry[] = [];
+  for (const ev of [...contemporaryScientists, ...contemporaryDoctorsAndArchitects]) {
+    if (sciSeenIds.has(ev.id)) continue;
+    sciSeenIds.add(ev.id);
+    const defaultRole =
+      ev.task === 'DOCTORS_BIO'
+        ? 'Врач и учёный-медик'
+        : ev.task === 'ARCHITECTS_BIO'
+          ? 'Зодчий и архитектор'
+          : 'Учёный и инженер';
+    scientistFigures.push({
+      id: `${idPrefix}-sci-${ev.id}`,
+      group: 'scientists',
+      name: ev.title,
+      period: ev.period,
+      sortYear: ev.activeFrom,
+      roleLabel: ev.type || defaultRole,
+      description: ev.subtitle || ev.outcome || ev.details.slice(0, 180),
+      metaNote: ev.region || undefined,
+      targetKind: 'event',
+      targetId: ev.id,
+      linkCount: ev.explicitLinks.length,
+    });
+  }
+  scientistFigures.sort((a, b) => a.sortYear - b.sortYear || a.name.localeCompare(b.name, 'ru'));
+
+  // Include notable window/period participants not already covered in writers/scientists/politics
+  if (extraParticipants.length > 0) {
+    const allCoveredNames = new Set<string>(politicsSeenNames);
+    const allCoveredBioIds = new Set<string>(politicsSeenBioIds);
+    for (const w of contemporaryWriters) {
+      allCoveredBioIds.add(w.id);
+      const n = normalizeEraFigureKey(w.title);
+      if (n) allCoveredNames.add(n);
+    }
+    for (const s of [...contemporaryScientists, ...contemporaryDoctorsAndArchitects]) {
+      allCoveredBioIds.add(s.id);
+      const n = normalizeEraFigureKey(s.title);
+      if (n) allCoveredNames.add(n);
+    }
+
+    for (const p of extraParticipants) {
+      if (p.bioCardId && allCoveredBioIds.has(p.bioCardId)) continue;
+      const norm = normalizeEraFigureKey(p.displayName);
+      if (!norm || hasMatchingSeenName(norm, allCoveredNames)) continue;
+      allCoveredNames.add(norm);
+
+      const dossier = personDossiers?.get(p.personKey) ?? null;
+      const bioSubtitle = dossier?.bioCard?.subtitle?.trim();
+      const totalSuffix =
+        p.totalEventCount > p.reignEventCount ? ` (всего в базе: ${p.totalEventCount})` : '';
+      const periodSpan =
+        dossier && dossier.yearRange.min !== dossier.yearRange.max
+          ? `${dossier.yearRange.min}–${dossier.yearRange.max}`
+          : `${p.firstYearInReign}`;
+
+      politicsFigures.push({
+        id: `${idPrefix}-part-${p.personKey}`,
+        group: 'politics_military',
+        name: p.displayName,
+        period: periodSpan,
+        sortYear: p.firstYearInReign,
+        roleLabel: 'Участник событий периода',
+        description:
+          bioSubtitle ||
+          `Упоминается в ${p.reignEventCount} событиях выбранного отрезка${totalSuffix}. Откройте сквозное досье, чтобы увидеть все вехи участия.`,
+        metaNote: `Событий: ${p.reignEventCount}`,
+        targetKind: 'person',
+        targetId: p.personKey,
+        linkCount: p.totalEventCount,
+      });
+    }
+  }
+
+  politicsFigures.sort((a, b) => a.sortYear - b.sortYear || a.name.localeCompare(b.name, 'ru'));
+
+  const figuresByGroup: Record<EraFigureGroupId, EraFigureEntry[]> = {
+    rulers: rulerFigures,
+    politics_military: politicsFigures,
+    writers: writerFigures,
+    scientists: scientistFigures,
+  };
+
+  const figures: EraFigureEntry[] = [
+    ...rulerFigures,
+    ...politicsFigures,
+    ...writerFigures,
+    ...scientistFigures,
+  ];
+
+  return { figures, figuresByGroup };
+}
+
 export interface MacroEraSummaryData {
   era: ResolvedMacroEra;
   eraRulers: RulerPeriod[];
@@ -995,200 +1283,24 @@ export function getMacroEraSummaryData(
   const carryOverOutEvents = eraEvents.filter((ev) => ev.endYear > era.endYear);
 
   // Unified pool for the 5 historical spheres (eraEvents + science discoveries, deduplicated)
-  const sphereEventSeen = new Set<string>();
-  const eraSphereEvents: EnrichedEvent[] = [];
-  for (const ev of eraEvents) {
-    if (!sphereEventSeen.has(ev.id)) {
-      sphereEventSeen.add(ev.id);
-      eraSphereEvents.push(ev);
-    }
-  }
-  for (const disc of discoveriesInPeriod) {
-    if (!sphereEventSeen.has(disc.id)) {
-      sphereEventSeen.add(disc.id);
-      eraSphereEvents.push(disc);
-    }
-  }
-
-  const eventsBySphere = new Map<EraEventSphereId, EnrichedEvent[]>();
-  for (const sphereId of ERA_SPHERE_ORDER) {
-    eventsBySphere.set(sphereId, []);
-  }
-  for (const ev of eraSphereEvents) {
-    const sphereId = classifyEventToEraSphere(ev, branchById, branches);
-    eventsBySphere.get(sphereId)!.push(ev);
-  }
-
-  const sphereSummaries: EraEventSphereSummary[] = ERA_SPHERE_ORDER.map((sphereId) => {
-    const meta = ERA_SPHERE_META[sphereId];
-    const items = [...(eventsBySphere.get(sphereId) || [])].sort(
-      (a, b) => a.startYear - b.startYear || a.endYear - b.endYear,
-    );
-    const topEvents = [...items]
-      .sort((a, b) => {
-        if (b.explicitLinks.length !== a.explicitLinks.length) {
-          return b.explicitLinks.length - a.explicitLinks.length;
-        }
-        return a.startYear - b.startYear;
-      })
-      .slice(0, 4);
-    const linkCount = items.reduce((sum, ev) => sum + ev.explicitLinks.length, 0);
-    return {
-      id: sphereId,
-      label: meta.label,
-      shortLabel: meta.shortLabel,
-      description: meta.description,
-      events: items,
-      topEvents,
-      linkCount,
-    };
-  });
+  const { sphereEvents: eraSphereEvents, sphereSummaries } = buildSphereEventsAndSummaries(
+    eraEvents,
+    discoveriesInPeriod,
+    branchById,
+    branches,
+  );
 
   // Build 4 role-explained figure groups: rulers, politics_military, writers, scientists
-  const rulerByNormName = new Map<string, RulerPeriod>();
-  for (const r of rulers) {
-    rulerByNormName.set(normalizeEraFigureKey(r.ruler), r);
-    rulerByNormName.set(normalizeEraFigureKey(r.shortRuler), r);
-  }
-
-  const eraRulerNormNames = new Set<string>();
-  const rulerFigures: EraFigureEntry[] = eraRulers.map((r) => {
-    eraRulerNormNames.add(normalizeEraFigureKey(r.ruler));
-    eraRulerNormNames.add(normalizeEraFigureKey(r.shortRuler));
-    const roleParts = [r.dynastyOrTitle, r.center].filter(Boolean);
-    return {
-      id: `era-fig-ruler-${r.id}`,
-      group: 'rulers',
-      name: r.ruler,
-      period: r.reignPeriod,
-      sortYear: r.startYear,
-      roleLabel: roleParts.length > 0 ? roleParts.join(' · ') : 'Правитель эпохи',
-      description: r.reignThesis || r.biography || r.reignTitle,
-      metaNote: `${Math.max(1, r.endYear - r.startYear)} л.`,
-      targetKind: 'ruler',
-      targetId: r.id,
-    };
+  const { figures: eraFigures, figuresByGroup: eraFiguresByGroup } = buildGroupedFigures({
+    idPrefix: 'era-fig',
+    allRulers: rulers,
+    periodRulers: eraRulers,
+    contemporaryStatesmen,
+    contemporaryWriters,
+    contemporaryScientists,
+    contemporaryDoctorsAndArchitects,
+    personDossiers,
   });
-
-  const politicsSeenNames = new Set<string>(eraRulerNormNames);
-  const politicsFigures: EraFigureEntry[] = [];
-
-  for (const st of contemporaryStatesmen) {
-    const norm = normalizeEraFigureKey(st.title);
-    if (norm) politicsSeenNames.add(norm);
-    politicsFigures.push({
-      id: `era-fig-statesman-${st.id}`,
-      group: 'politics_military',
-      name: st.title,
-      period: st.period,
-      sortYear: st.activeFrom,
-      roleLabel: st.type || 'Государственный деятель',
-      description: st.subtitle || st.outcome || st.details.slice(0, 180),
-      metaNote: st.region || undefined,
-      targetKind: 'event',
-      targetId: st.id,
-      linkCount: st.explicitLinks.length,
-    });
-  }
-
-  for (const r of eraRulers) {
-    if (!r.innerCircle || r.innerCircle.length === 0) continue;
-    for (const member of r.innerCircle) {
-      const norm = normalizeEraFigureKey(member.name);
-      if (!norm || politicsSeenNames.has(norm)) continue;
-      // Avoid duplicating someone already listed by surname in STATESMEN_BIO
-      const tokens = norm.split(' ').filter((t) => t.length >= 4);
-      const lastToken = tokens[tokens.length - 1];
-      if (
-        lastToken &&
-        Array.from(politicsSeenNames).some(
-          (existing) => existing === norm || existing.endsWith(` ${lastToken}`),
-        )
-      ) {
-        continue;
-      }
-      politicsSeenNames.add(norm);
-
-      const linkedRuler = rulerByNormName.get(norm) ?? null;
-      const resolvedKey =
-        !linkedRuler && personDossiers && personDossiers.size > 0
-          ? resolvePersonKey(member.name, personDossiers)
-          : null;
-      const dossier = resolvedKey && personDossiers ? personDossiers.get(resolvedKey) : null;
-
-      politicsFigures.push({
-        id: `era-fig-circle-${r.id}-${norm}`,
-        group: 'politics_military',
-        name: member.name,
-        period: r.reignPeriod,
-        sortYear: r.startYear,
-        roleLabel: member.role,
-        description: member.connection,
-        metaNote: `При ${r.shortRuler}`,
-        targetKind: linkedRuler ? 'ruler' : resolvedKey ? 'person' : 'none',
-        targetId: linkedRuler ? linkedRuler.id : resolvedKey ?? undefined,
-        linkCount: dossier ? dossier.events.length : undefined,
-      });
-    }
-  }
-  politicsFigures.sort((a, b) => a.sortYear - b.sortYear || a.name.localeCompare(b.name, 'ru'));
-
-  const writerFigures: EraFigureEntry[] = [...contemporaryWriters]
-    .sort((a, b) => a.activeFrom - b.activeFrom || a.startYear - b.startYear)
-    .map((w) => ({
-      id: `era-fig-writer-${w.id}`,
-      group: 'writers',
-      name: w.title,
-      period: w.period,
-      sortYear: w.activeFrom,
-      roleLabel: w.type || 'Писатель и мыслитель',
-      description: w.subtitle || w.outcome || w.details.slice(0, 180),
-      metaNote: w.literaryProfile?.movement || undefined,
-      targetKind: 'event',
-      targetId: w.id,
-      linkCount: w.explicitLinks.length,
-    }));
-
-  const sciSeenIds = new Set<string>();
-  const scientistFigures: EraFigureEntry[] = [];
-  for (const ev of [...contemporaryScientists, ...contemporaryDoctorsAndArchitects]) {
-    if (sciSeenIds.has(ev.id)) continue;
-    sciSeenIds.add(ev.id);
-    const defaultRole =
-      ev.task === 'DOCTORS_BIO'
-        ? 'Врач и учёный-медик'
-        : ev.task === 'ARCHITECTS_BIO'
-          ? 'Зодчий и архитектор'
-          : 'Учёный и инженер';
-    scientistFigures.push({
-      id: `era-fig-sci-${ev.id}`,
-      group: 'scientists',
-      name: ev.title,
-      period: ev.period,
-      sortYear: ev.activeFrom,
-      roleLabel: ev.type || defaultRole,
-      description: ev.subtitle || ev.outcome || ev.details.slice(0, 180),
-      metaNote: ev.region || undefined,
-      targetKind: 'event',
-      targetId: ev.id,
-      linkCount: ev.explicitLinks.length,
-    });
-  }
-  scientistFigures.sort((a, b) => a.sortYear - b.sortYear || a.name.localeCompare(b.name, 'ru'));
-
-  const eraFiguresByGroup: Record<EraFigureGroupId, EraFigureEntry[]> = {
-    rulers: rulerFigures,
-    politics_military: politicsFigures,
-    writers: writerFigures,
-    scientists: scientistFigures,
-  };
-
-  const eraFigures: EraFigureEntry[] = [
-    ...rulerFigures,
-    ...politicsFigures,
-    ...writerFigures,
-    ...scientistFigures,
-  ];
 
   const branchCountMap = new Map<string, number>();
   let totalSyncLinks = 0;
@@ -1741,10 +1853,16 @@ export interface CustomWindowSummaryData {
   overlappingEras: ResolvedMacroEra[];
   overlappingRulers: RulerPeriod[];
   windowEvents: EnrichedEvent[];
+  windowSphereEvents: EnrichedEvent[];
+  sphereSummaries: EraEventSphereSummary[];
+  windowFigures: EraFigureEntry[];
+  windowFiguresByGroup: Record<EraFigureGroupId, EraFigureEntry[]>;
   contemporaryWriters: EnrichedEvent[];
   contemporaryScientists: EnrichedEvent[];
   worksWrittenInPeriod: EnrichedEvent[];
+  literaryWorksInPeriod: EnrichedEvent[];
   discoveriesInPeriod: EnrichedEvent[];
+  cultureEventsInPeriod: EnrichedEvent[];
   worksAboutPeriod: EnrichedEvent[];
   startedInWindow: EnrichedEvent[];
   carryOverInEvents: EnrichedEvent[];
@@ -1801,6 +1919,8 @@ export function getCustomWindowSummaryData(
     return cached.result;
   }
 
+  const branchById = new Map<string, BranchDefinition>(branches.map((b) => [b.id, b]));
+
   const overlappingAll = enrichedEvents.filter((ev) =>
     intersectsTimeWindow(
       getEventEffectiveStartYear(ev, branches),
@@ -1813,8 +1933,23 @@ export function getCustomWindowSummaryData(
   const windowEvents = overlappingAll.filter((ev) => isHistoricalEventNode(ev, branches));
   const contemporaryWriters = overlappingAll.filter((ev) => isWriterBioNode(ev, branches));
   const contemporaryScientists = overlappingAll.filter((ev) => isScientistBioNode(ev, branches));
+  const contemporaryStatesmen = overlappingAll.filter((ev) => ev.task === 'STATESMEN_BIO');
+  const contemporaryDoctorsAndArchitects = overlappingAll.filter(
+    (ev) => ev.task === 'DOCTORS_BIO' || ev.task === 'ARCHITECTS_BIO',
+  );
   const worksWrittenInPeriod = overlappingAll.filter((ev) => isLiteraryWorkNode(ev, branches));
+  const literaryWorksInPeriod = worksWrittenInPeriod.filter(
+    (ev) => ev.task !== 'ARCHITECTURE_WORKS',
+  );
   const discoveriesInPeriod = overlappingAll.filter((ev) => isScienceDiscoveryNode(ev, branches));
+  const cultureEventsInPeriod = overlappingAll
+    .filter(
+      (ev) =>
+        ev.task === 'ARTS_CULTURE' ||
+        ev.task === 'ARCHITECTURE_WORKS' ||
+        ev.task === 'THOUGHT_RELIGION',
+    )
+    .sort((a, b) => a.startYear - b.startYear || b.explicitLinks.length - a.explicitLinks.length);
 
   const overlappingRulers = rulers.filter((r) =>
     intersectsTimeWindow(r.startYear, r.endYear, yearFrom, yearTo),
@@ -1904,7 +2039,14 @@ export function getCustomWindowSummaryData(
         }
       : null;
 
-  const topConnectedEvents = [...windowEvents]
+  const { sphereEvents: windowSphereEvents, sphereSummaries } = buildSphereEventsAndSummaries(
+    windowEvents,
+    discoveriesInPeriod,
+    branchById,
+    branches,
+  );
+
+  const topConnectedEvents = [...windowSphereEvents]
     .filter((ev) => ev.explicitLinks.length > 0)
     .sort((a, b) => {
       if (b.explicitLinks.length !== a.explicitLinks.length) {
@@ -1926,6 +2068,18 @@ export function getCustomWindowSummaryData(
     dossierMap,
   );
 
+  const { figures: windowFigures, figuresByGroup: windowFiguresByGroup } = buildGroupedFigures({
+    idPrefix: 'win-fig',
+    allRulers: rulers,
+    periodRulers: overlappingRulers,
+    contemporaryStatesmen,
+    contemporaryWriters,
+    contemporaryScientists,
+    contemporaryDoctorsAndArchitects,
+    personDossiers: dossierMap,
+    extraParticipants: windowParticipants,
+  });
+
   const result: CustomWindowSummaryData = {
     yearFrom,
     yearTo,
@@ -1933,10 +2087,16 @@ export function getCustomWindowSummaryData(
     overlappingEras,
     overlappingRulers,
     windowEvents,
+    windowSphereEvents,
+    sphereSummaries,
+    windowFigures,
+    windowFiguresByGroup,
     contemporaryWriters,
     contemporaryScientists,
     worksWrittenInPeriod,
+    literaryWorksInPeriod,
     discoveriesInPeriod,
+    cultureEventsInPeriod,
     worksAboutPeriod,
     startedInWindow,
     carryOverInEvents,
@@ -2252,6 +2412,25 @@ function buildComparisonSide(
     })
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, 'ru'));
 
+  const branchById = new Map(branches.map((b) => [b.id, b]));
+  const sideDiscoveries = overlappingAll.filter((ev) => isScienceDiscoveryNode(ev, branches));
+  const { sphereSummaries: sideSphereSummaries } = buildSphereEventsAndSummaries(
+    historicalEvents,
+    sideDiscoveries,
+    branchById,
+    branches,
+  );
+  const sphereCounts: Record<EraEventSphereId, number> = {
+    wars: 0,
+    reforms: 0,
+    diplomacy: 0,
+    world: 0,
+    science: 0,
+  };
+  for (const sp of sideSphereSummaries) {
+    sphereCounts[sp.id] = sp.events.length;
+  }
+
   return {
     target,
     kindLabel,
@@ -2276,6 +2455,7 @@ function buildComparisonSide(
     crossBranchLinksCount,
     worksAboutPeriodCount,
     branchBreakdown,
+    sphereCounts,
     crossBranchPairs,
     topConnectedEvents,
     syncTags,

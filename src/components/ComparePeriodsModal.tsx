@@ -1,26 +1,38 @@
 import {
-  ArrowLeft,
   ArrowLeftRight,
   ArrowRight,
+  ChevronDown,
+  ChevronRight,
   Crown,
+  FlaskConical,
   GitBranch,
   GitCompareArrows,
+  Globe,
+  Handshake,
+  Landmark,
   Layers,
   Link2,
   ScrollText,
   Sparkles,
+  Swords,
   Tag,
   Users,
-  X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
-import { computePeriodComparison, resolveMacroEras } from '../engine/timelineEngine';
+import { DossierModalHeader } from './DossierModalHeader';
+import {
+  ERA_SPHERE_META,
+  ERA_SPHERE_ORDER,
+  computePeriodComparison,
+  resolveMacroEras,
+} from '../engine/timelineEngine';
 import type {
   BranchDefinition,
   ComparisonSideSummary,
   ComparisonTarget,
   EnrichedEvent,
+  EraEventSphereId,
   MacroEra,
   ModalHistoryItem,
   PersonDossier,
@@ -28,6 +40,7 @@ import type {
 } from '../types/timeline';
 
 type ComparisonTargetKind = ComparisonTarget['kind'];
+type CompareTabId = 'summary' | 'spheres' | 'connections';
 
 interface ComparePeriodsModalProps {
   comparePair: { left: ComparisonTarget; right: ComparisonTarget } | null;
@@ -49,6 +62,46 @@ interface ComparePeriodsModalProps {
   onOpenPersonModal?: (personKey: string) => void;
   onSelectYearRange: (from: number, to: number) => void;
 }
+
+function getBarWidthClass(pct: number): string {
+  if (pct <= 0) return 'w-0';
+  if (pct < 8) return 'w-[6%]';
+  if (pct < 15) return 'w-1/12';
+  if (pct < 22) return 'w-1/6';
+  if (pct < 30) return 'w-1/4';
+  if (pct < 38) return 'w-1/3';
+  if (pct < 46) return 'w-5/12';
+  if (pct < 55) return 'w-1/2';
+  if (pct < 63) return 'w-7/12';
+  if (pct < 72) return 'w-2/3';
+  if (pct < 80) return 'w-3/4';
+  if (pct < 90) return 'w-5/6';
+  if (pct < 96) return 'w-11/12';
+  return 'w-full';
+}
+
+function renderSphereIcon(sphereId: EraEventSphereId, className = 'w-3.5 h-3.5 shrink-0') {
+  switch (sphereId) {
+    case 'wars':
+      return <Swords className={className} />;
+    case 'reforms':
+      return <Landmark className={className} />;
+    case 'diplomacy':
+      return <Handshake className={className} />;
+    case 'world':
+      return <Globe className={className} />;
+    case 'science':
+      return <FlaskConical className={className} />;
+  }
+}
+
+const SPHERE_ACCENT: Record<EraEventSphereId, string> = {
+  wars: 'text-rose-300',
+  reforms: 'text-amber-300',
+  diplomacy: 'text-sky-300',
+  world: 'text-indigo-300',
+  science: 'text-emerald-300',
+};
 
 interface TargetSelectorProps {
   sideLabel: 'A' | 'B';
@@ -274,7 +327,40 @@ export function ComparePeriodsModal({
   onOpenPersonModal,
   onSelectYearRange,
 }: ComparePeriodsModalProps) {
+  const [activeTab, setActiveTab] = useState<CompareTabId>('summary');
+  const [showBranchDetails, setShowBranchDetails] = useState(false);
+  const [showAllPairs, setShowAllPairs] = useState(false);
+  const [showAllTags, setShowAllTags] = useState(false);
+  const [showAllParticipants, setShowAllParticipants] = useState(false);
+
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const tabBarRef = useRef<HTMLDivElement>(null);
   const dialogRef = useModalFocusTrap<HTMLDivElement>(onClose);
+
+  const pairSignature = comparePair
+    ? `${JSON.stringify(comparePair.left)}__${JSON.stringify(comparePair.right)}`
+    : '';
+
+  useEffect(() => {
+    setShowAllPairs(false);
+    setShowAllTags(false);
+    setShowAllParticipants(false);
+  }, [pairSignature]);
+
+  const scrollToTabsIfNeeded = () => {
+    const body = bodyRef.current;
+    const tabsEl = tabBarRef.current;
+    if (!body || !tabsEl) return;
+    const targetTop = Math.max(0, tabsEl.offsetTop - 8);
+    if (body.scrollTop > targetTop) {
+      body.scrollTo({ top: targetTop });
+    }
+  };
+
+  const handleTabChange = (nextTab: CompareTabId) => {
+    setActiveTab(nextTab);
+    scrollToTabsIfNeeded();
+  };
 
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
 
@@ -322,7 +408,7 @@ export function ComparePeriodsModal({
       });
     }
     items.push({
-      label: 'Северная война (1700–1721) ↔ Крымская война (1853–1856)',
+      label: 'Северная война ↔ Крымская война',
       left: { kind: 'window', from: 1700, to: 1721, label: 'Северная война' },
       right: { kind: 'window', from: 1853, to: 1856, label: 'Крымская война' },
     });
@@ -339,15 +425,31 @@ export function ComparePeriodsModal({
   const { left, right, sharedBranchPairs, sharedSyncTags, sharedParticipants } = report;
   const lastHistoryItem = modalHistory.length > 0 ? modalHistory[modalHistory.length - 1] : null;
 
+  const sphereComparisonRows = ERA_SPHERE_ORDER.map((sphereId) => {
+    const leftCount = left.sphereCounts[sphereId] ?? 0;
+    const rightCount = right.sphereCounts[sphereId] ?? 0;
+    return {
+      id: sphereId,
+      label: ERA_SPHERE_META[sphereId].label,
+      shortLabel: ERA_SPHERE_META[sphereId].shortLabel,
+      leftCount,
+      rightCount,
+      delta: formatDelta(leftCount, rightCount),
+    };
+  });
+  const maxSphereCount = Math.max(
+    1,
+    ...sphereComparisonRows.map((r) => Math.max(r.leftCount, r.rightCount)),
+  );
+
   const branchUnionMap = new Map<
     string,
-    { branchId: string; label: string; color: string; leftCount: number; rightCount: number }
+    { branchId: string; label: string; leftCount: number; rightCount: number }
   >();
   left.branchBreakdown.forEach((b) => {
     branchUnionMap.set(b.branch.id, {
       branchId: b.branch.id,
       label: b.branch.label,
-      color: b.branch.color,
       leftCount: b.count,
       rightCount: 0,
     });
@@ -360,7 +462,6 @@ export function ComparePeriodsModal({
       branchUnionMap.set(b.branch.id, {
         branchId: b.branch.id,
         label: b.branch.label,
-        color: b.branch.color,
         leftCount: 0,
         rightCount: b.count,
       });
@@ -410,7 +511,7 @@ export function ComparePeriodsModal({
       numericDelta: formatDelta(left.totalUniqueLinks, right.totalUniqueLinks),
     },
     {
-      label: 'Причинно-следственных (triggers / enables)',
+      label: 'Причинно-следственных связей',
       leftVal: left.causalLinksCount,
       rightVal: right.causalLinksCount,
       numericDelta: formatDelta(left.causalLinksCount, right.causalLinksCount),
@@ -423,7 +524,32 @@ export function ComparePeriodsModal({
     {
       label: 'Пиковый узел плотности',
       leftVal: left.peakInterval ? `${left.peakInterval.label} (${left.peakInterval.count})` : '—',
-      rightVal: right.peakInterval ? `${right.peakInterval.label} (${right.peakInterval.count})` : '—',
+      rightVal: right.peakInterval
+        ? `${right.peakInterval.label} (${right.peakInterval.count})`
+        : '—',
+    },
+  ];
+
+  const connectionsCount =
+    sharedBranchPairs.length + sharedSyncTags.length + sharedParticipants.length;
+
+  const tabs: Array<{ id: CompareTabId; label: string; count?: number; icon: React.ReactNode }> = [
+    {
+      id: 'summary',
+      label: 'Сводка',
+      icon: <Layers className="w-3.5 h-3.5 shrink-0" />,
+    },
+    {
+      id: 'spheres',
+      label: 'Сферы и ветки',
+      count: branchComparisonRows.length,
+      icon: <GitBranch className="w-3.5 h-3.5 shrink-0" />,
+    },
+    {
+      id: 'connections',
+      label: 'Связи и деятели',
+      count: connectionsCount,
+      icon: <Link2 className="w-3.5 h-3.5 shrink-0" />,
     },
   ];
 
@@ -433,30 +559,34 @@ export function ComparePeriodsModal({
     borderAccent: string,
     textAccent: string,
   ) => (
-    <div className={`rounded-xl bg-slate-900/65 border ${borderAccent} p-4 flex flex-col justify-between gap-3`}>
+    <div
+      className={`rounded-xl bg-slate-900/65 border ${borderAccent} p-4 flex flex-col justify-between gap-2.5`}
+    >
       <div>
-        <div className="flex items-center justify-between gap-2 text-[11px] font-mono">
+        <div className="flex items-center justify-between gap-2 text-[11px] font-mono tabular-nums">
           <span className={`font-bold ${textAccent}`}>
             Сторона {sideLabel} · {side.kindLabel} · {side.yearFrom}–{side.yearTo} гг.
           </span>
-          <span className="text-slate-400 tabular-nums">{side.durationYears} л.</span>
+          <span className="text-slate-400">{side.durationYears} л.</span>
         </div>
-        <h4 className="font-serif text-lg sm:text-xl font-bold text-white mt-1 leading-snug">
+        <h4 className="font-serif text-lg sm:text-xl font-bold text-white mt-1 leading-snug text-balance">
           {side.title}
         </h4>
         {side.subtitle && (
-          <p className="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed">{side.subtitle}</p>
+          <p className="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed">
+            {side.subtitle}
+          </p>
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono pt-2 border-t border-slate-800/80">
+      <div className="flex flex-wrap items-center gap-3 text-xs font-mono pt-2 border-t border-slate-800/80">
         <button
           type="button"
           onClick={() => {
             onSelectYearRange(side.yearFrom, side.yearTo);
             onClose();
           }}
-          className="px-2.5 py-1 rounded bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
+          className="text-slate-300 hover:text-white underline decoration-slate-600 underline-offset-4 transition-colors cursor-pointer whitespace-nowrap"
         >
           Открыть на шкале →
         </button>
@@ -464,7 +594,7 @@ export function ComparePeriodsModal({
           <button
             type="button"
             onClick={() => onOpenRulerModal(side.target.kind === 'ruler' ? side.target.rulerId : '')}
-            className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/35 text-amber-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+            className="text-amber-300 hover:text-amber-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
           >
             <Crown className="w-3 h-3" />
             <span>Досье правления</span>
@@ -474,7 +604,7 @@ export function ComparePeriodsModal({
           <button
             type="button"
             onClick={() => onOpenEraModal(side.target.kind === 'era' ? side.target.eraId : '')}
-            className="px-2.5 py-1 rounded bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/35 text-amber-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+            className="text-amber-300 hover:text-amber-200 inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
           >
             <ScrollText className="w-3 h-3" />
             <span>Досье эпохи</span>
@@ -483,6 +613,12 @@ export function ComparePeriodsModal({
       </div>
     </div>
   );
+
+  const visiblePairs = showAllPairs ? sharedBranchPairs : sharedBranchPairs.slice(0, 8);
+  const visibleTags = showAllTags ? sharedSyncTags : sharedSyncTags.slice(0, 8);
+  const visibleParticipants = showAllParticipants
+    ? sharedParticipants
+    : sharedParticipants.slice(0, 8);
 
   return (
     <div
@@ -497,27 +633,24 @@ export function ComparePeriodsModal({
       }}
     >
       <div className="w-full max-w-6xl max-h-[92vh] rounded-2xl bg-[#0b1325] border border-sky-500/40 shadow-2xl flex flex-col overflow-hidden">
-        {/* Верхняя панель модального окна */}
-        <div className="px-5 py-4 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5 text-xs font-mono text-sky-300 flex-wrap min-w-0">
-            {lastHistoryItem && onNavigateBack && (
-              <button
-                type="button"
-                onClick={onNavigateBack}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-semibold transition-colors cursor-pointer"
-                title={`Вернуться назад: ${lastHistoryItem.label}`}
+        {/* Единая шапка досье */}
+        <DossierModalHeader
+          lastHistoryItem={lastHistoryItem}
+          onNavigateBack={onNavigateBack}
+          onClose={onClose}
+          closeAriaLabel="Закрыть сравнение периодов"
+          context={
+            <>
+              <GitCompareArrows className="w-4 h-4 shrink-0 text-sky-400" />
+              <span
+                id="compare-modal-title"
+                className="font-serif text-sm sm:text-base font-bold text-white truncate"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span className="truncate max-w-[200px]">Назад: {lastHistoryItem.label}</span>
-              </button>
-            )}
-            <GitCompareArrows className="w-4 h-4 shrink-0 text-sky-400" />
-            <span id="compare-modal-title" className="font-bold text-white text-sm font-serif">
-              Сравнительный анализ периодов и правлений
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
+                Сравнительный анализ периодов и правлений
+              </span>
+            </>
+          }
+          actions={
             <button
               type="button"
               onClick={() =>
@@ -526,37 +659,29 @@ export function ComparePeriodsModal({
                   right: comparePair.left,
                 })
               }
-              className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+              className="h-8 px-3 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
               title="Поменять местами период A и период B"
             >
-              <ArrowLeftRight className="w-3.5 h-3.5 text-sky-400" />
+              <ArrowLeftRight className="w-3.5 h-3.5 text-sky-400 shrink-0" />
               <span>A ⇄ B</span>
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Закрыть сравнение периодов"
-              className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+          }
+        />
 
-        {/* Тело модального окна */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1">
-          {/* Готовые исторические пары для быстрого запуска */}
+        {/* Прокручиваемое тело */}
+        <div ref={bodyRef} className="px-5 sm:px-6 pt-5 pb-6 overflow-y-auto space-y-5 flex-1">
+          {/* Готовые сопоставления */}
           <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono">
             <span className="text-slate-400 shrink-0 inline-flex items-center gap-1">
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              Готовые сопоставления:
+              <span>Готовые пары:</span>
             </span>
             {quickPresets.map((preset) => (
               <button
                 key={preset.label}
                 type="button"
                 onClick={() => onUpdatePair({ left: preset.left, right: preset.right })}
-                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-sky-500/50 text-slate-200 transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-sky-500/50 text-slate-200 transition-colors cursor-pointer whitespace-nowrap"
               >
                 {preset.label}
               </button>
@@ -589,254 +714,429 @@ export function ComparePeriodsModal({
             />
           </div>
 
-          {/* Заголовочные карточки A и B */}
+          {/* Заголовочные карточки сторон A и B */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {renderSideHeaderCard(left, 'A', 'border-amber-500/35', 'text-amber-300')}
             {renderSideHeaderCard(right, 'B', 'border-sky-500/35', 'text-sky-300')}
           </div>
 
-          {/* Таблица сопоставления ключевых показателей */}
-          <section className="space-y-2.5">
-            <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-sky-400" />
-              <span>Количественный профиль и связность процессов</span>
-            </h5>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/45 overflow-hidden">
-              <div className="grid grid-cols-12 px-4 py-2 bg-slate-900/90 border-b border-slate-800 text-[11px] font-mono text-slate-400 uppercase tracking-wider">
-                <div className="col-span-5 sm:col-span-6">Показатель</div>
-                <div className="col-span-3 sm:col-span-2 text-right text-amber-300">Период A</div>
-                <div className="col-span-2 text-right text-sky-300">Период B</div>
-                <div className="col-span-2 text-right">Δ (B − A)</div>
-              </div>
-              <div className="divide-y divide-slate-800/70">
-                {metricRows.map((row) => (
-                  <div
-                    key={row.label}
-                    className="grid grid-cols-12 px-4 py-2.5 items-center text-xs hover:bg-slate-900/60"
-                  >
-                    <div className="col-span-5 sm:col-span-6 text-slate-200 pr-2">{row.label}</div>
-                    <div className="col-span-3 sm:col-span-2 text-right font-mono font-bold text-amber-200 tabular-nums">
-                      {row.leftVal}
-                    </div>
-                    <div className="col-span-2 text-right font-mono font-bold text-sky-200 tabular-nums">
-                      {row.rightVal}
-                    </div>
-                    <div
-                      className={`col-span-2 text-right font-mono font-semibold tabular-nums ${
-                        row.numericDelta ? row.numericDelta.toneClass : 'text-slate-600'
+          {/* Липкая полоса 3 вкладок */}
+          <div
+            ref={tabBarRef}
+            role="tablist"
+            aria-label="Разделы сравнения периодов"
+            className="sticky top-0 z-10 -mx-5 sm:-mx-6 px-5 sm:px-6 bg-[#0b1325]/95 backdrop-blur-sm border-b border-slate-800/90 flex items-center gap-1 overflow-x-auto"
+          >
+            {tabs.map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => handleTabChange(tab.id)}
+                  className={`px-3.5 py-2.5 text-xs font-mono inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/70 ${
+                    isActive
+                      ? 'border-amber-400 text-amber-200 font-semibold'
+                      : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  {tab.icon}
+                  <span>{tab.label}</span>
+                  {typeof tab.count === 'number' && (
+                    <span
+                      className={`tabular-nums text-[11px] ${
+                        isActive ? 'text-amber-300/90' : 'text-slate-500'
                       }`}
                     >
-                      {row.numericDelta ? row.numericDelta.text : '—'}
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ВКЛАДКА 1: СВОДКА */}
+          {activeTab === 'summary' && (
+            <div className="space-y-6">
+              {/* Таблица количественных показателей */}
+              <section className="space-y-2.5">
+                <h5 className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-300 inline-flex items-center gap-1.5">
+                  <Layers className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Количественный профиль и связность процессов</span>
+                </h5>
+
+                <div className="rounded-xl border border-slate-800 bg-slate-900/45 overflow-hidden">
+                  <div className="grid grid-cols-12 px-4 py-2 bg-slate-900/90 border-b border-slate-800 text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+                    <div className="col-span-5 sm:col-span-6">Показатель</div>
+                    <div className="col-span-3 sm:col-span-2 text-right text-amber-300">
+                      Период A
                     </div>
+                    <div className="col-span-2 text-right text-sky-300">Период B</div>
+                    <div className="col-span-2 text-right">Δ (B − A)</div>
                   </div>
+                  <div className="divide-y divide-slate-800/70">
+                    {metricRows.map((row) => (
+                      <div
+                        key={row.label}
+                        className="grid grid-cols-12 px-4 py-2.5 items-center text-xs hover:bg-slate-900/60"
+                      >
+                        <div className="col-span-5 sm:col-span-6 text-slate-200 pr-2">
+                          {row.label}
+                        </div>
+                        <div className="col-span-3 sm:col-span-2 text-right font-mono font-bold text-amber-200 tabular-nums">
+                          {row.leftVal}
+                        </div>
+                        <div className="col-span-2 text-right font-mono font-bold text-sky-200 tabular-nums">
+                          {row.rightVal}
+                        </div>
+                        <div
+                          className={`col-span-2 text-right font-mono font-semibold tabular-nums ${
+                            row.numericDelta ? row.numericDelta.toneClass : 'text-slate-600'
+                          }`}
+                        >
+                          {row.numericDelta ? row.numericDelta.text : '—'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {/* Ключевые узловые события каждой стороны */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                {[
+                  { side: left, label: 'A', titleClass: 'text-amber-300' },
+                  { side: right, label: 'B', titleClass: 'text-sky-300' },
+                ].map(({ side, label, titleClass }) => (
+                  <section key={label} className="space-y-2">
+                    <h5
+                      className={`text-xs font-mono font-semibold uppercase tracking-wider ${titleClass}`}
+                    >
+                      Ключевые события · Сторона {label} ({side.yearFrom}–{side.yearTo} гг.)
+                    </h5>
+                    {side.topConnectedEvents.length === 0 ? (
+                      <p className="text-xs text-slate-400">Связанных событий в периоде нет.</p>
+                    ) : (
+                      <div className="divide-y divide-slate-800/80 border-y border-slate-800/80">
+                        {side.topConnectedEvents.map((ev) => (
+                          <button
+                            key={ev.id}
+                            type="button"
+                            onClick={() => onSelectCard(ev.id)}
+                            className="group w-full text-left py-2.5 px-2 -mx-2 rounded-lg hover:bg-slate-800/45 flex items-center justify-between gap-2 transition-colors cursor-pointer"
+                          >
+                            <div className="min-w-0 text-xs sm:text-sm font-semibold text-white group-hover:text-amber-200 truncate">
+                              <span className="font-mono text-xs text-slate-400 mr-2 tabular-nums">
+                                {ev.period}
+                              </span>
+                              <span>{ev.title}</span>
+                            </div>
+                            <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-300 shrink-0 tabular-nums">
+                              <span>{ev.explicitLinks.length} св.</span>
+                              <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-amber-300" />
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 ))}
               </div>
             </div>
-          </section>
+          )}
 
-          {/* Повторяющиеся межсферные контуры, сюжеты и персоны */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <section className="rounded-xl border border-emerald-500/25 bg-emerald-950/10 p-4 space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
-                  <Link2 className="w-3.5 h-3.5" />
-                  <span>Повторяющиеся контуры связей</span>
-                </h5>
-                <span className="text-[11px] font-mono text-emerald-300 tabular-nums">
-                  {sharedBranchPairs.length}
-                </span>
-              </div>
-
-              {sharedBranchPairs.length === 0 ? (
-                <p className="text-xs text-slate-400">
-                  Совпадающих пар веток с явными связями в обоих периодах не обнаружено.
-                </p>
-              ) : (
-                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                  {sharedBranchPairs.slice(0, 10).map((pair) => (
-                    <div
-                      key={pair.pairKey}
-                      className="rounded-lg bg-slate-950/75 border border-slate-800/90 px-3 py-2 flex items-center justify-between gap-2 text-xs"
-                    >
-                      <span className="text-slate-200 truncate">
-                        {pair.branchALabel} ↔ {pair.branchBLabel}
-                      </span>
-                      <span className="font-mono text-[11px] shrink-0 tabular-nums">
-                        <span className="text-amber-300 font-bold">{pair.countLeft}</span>
-                        <span className="text-slate-500 mx-1">vs</span>
-                        <span className="text-sky-300 font-bold">{pair.countRight}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Сквозные сюжетные теги</span>
-                </h5>
-                <span className="text-[11px] font-mono text-slate-400 tabular-nums">
-                  {sharedSyncTags.length}
-                </span>
-              </div>
-
-              {sharedSyncTags.length === 0 ? (
-                <p className="text-xs text-slate-400">
-                  Общих тематических тегов (syncTags) между этими периодами нет.
-                </p>
-              ) : (
-                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                  {sharedSyncTags.slice(0, 12).map((t) => (
-                    <div
-                      key={t.tag}
-                      className="rounded-lg bg-slate-950/75 border border-slate-800/90 px-3 py-2 flex items-center justify-between gap-2 text-xs"
-                    >
-                      <span className="font-mono text-slate-200 truncate" title={t.tag}>
-                        {t.label}
-                      </span>
-                      <span className="font-mono text-[11px] shrink-0 tabular-nums">
-                        <span className="text-amber-300">{t.countLeft}</span>
-                        <span className="text-slate-500 mx-1">/</span>
-                        <span className="text-sky-300">{t.countRight}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-xl border border-slate-800 bg-slate-900/45 p-4 space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                  <Users className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Сквозные деятели и авторы</span>
-                </h5>
-                <span className="text-[11px] font-mono text-slate-400 tabular-nums">
-                  {sharedParticipants.length}
-                </span>
-              </div>
-
-              {sharedParticipants.length === 0 ? (
-                <p className="text-xs text-slate-400">
-                  Персон, присутствующих одновременно в обоих периодах (или их наследии), не найдено.
-                </p>
-              ) : (
-                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                  {sharedParticipants.slice(0, 12).map((p) => (
-                    <button
-                      key={p.personKey}
-                      type="button"
-                      onClick={() => onOpenPersonModal?.(p.personKey)}
-                      disabled={!onOpenPersonModal}
-                      className="w-full text-left rounded-lg bg-slate-950/75 hover:bg-slate-900 border border-slate-800/90 px-3 py-2 flex items-center justify-between gap-2 text-xs transition-colors cursor-pointer disabled:cursor-default"
-                    >
-                      <span className="text-slate-100 truncate">{p.displayName}</span>
-                      <span className="font-mono text-[11px] shrink-0 tabular-nums">
-                        <span className="text-amber-300">{p.countLeft}</span>
-                        <span className="text-slate-500 mx-1">/</span>
-                        <span className="text-sky-300">{p.countRight}</span>
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-
-          {/* Распределение событий по историческим веткам */}
-          <section className="space-y-2.5">
-            <h5 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-              <GitBranch className="w-3.5 h-3.5 text-amber-400" />
-              <span>Профиль сфер и веток (Период A vs Период B)</span>
-            </h5>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {branchComparisonRows.map((row) => {
-                const leftPct = Math.round((row.leftCount / maxBranchCount) * 100);
-                const rightPct = Math.round((row.rightCount / maxBranchCount) * 100);
-                return (
-                  <div
-                    key={row.branchId}
-                    className="rounded-lg bg-slate-900/55 border border-slate-800 px-3.5 py-2.5 space-y-1.5"
-                  >
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="font-semibold text-slate-200 truncate flex items-center gap-1.5">
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: row.color }}
-                        />
-                        {row.label}
-                      </span>
-                      <span className="font-mono text-[11px] shrink-0 tabular-nums">
-                        <span className="text-amber-300 font-bold">{row.leftCount}</span>
-                        <span className="text-slate-600 mx-1">·</span>
-                        <span className="text-sky-300 font-bold">{row.rightCount}</span>
-                      </span>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="h-1.5 rounded-full bg-slate-950 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-amber-400/85"
-                          style={{ width: `${leftPct}%` }}
-                        />
-                      </div>
-                      <div className="h-1.5 rounded-full bg-slate-950 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-sky-400/85"
-                          style={{ width: `${rightPct}%` }}
-                        />
-                      </div>
-                    </div>
+          {/* ВКЛАДКА 2: СФЕРЫ И ВЕТКИ */}
+          {activeTab === 'spheres' && (
+            <div className="space-y-6">
+              {/* 5 укрупнённых сфер A vs B */}
+              <section className="space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h5 className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-300 inline-flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Сравнение по 5 сферам (Период A vs Период B)</span>
+                  </h5>
+                  <div className="flex items-center gap-3 text-[11px] font-mono">
+                    <span className="text-amber-300">A: {left.title}</span>
+                    <span className="text-slate-600">·</span>
+                    <span className="text-sky-300">B: {right.title}</span>
                   </div>
-                );
-              })}
-            </div>
-          </section>
+                </div>
 
-          {/* Ключевые узловые события каждой стороны */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {[
-              { side: left, label: 'A', titleClass: 'text-amber-300' },
-              { side: right, label: 'B', titleClass: 'text-sky-300' },
-            ].map(({ side, label, titleClass }) => (
-              <section key={label} className="space-y-2">
-                <h5 className={`text-xs font-mono font-bold uppercase tracking-wider ${titleClass}`}>
-                  Ключевые узловые события · Сторона {label} ({side.yearFrom}–{side.yearTo} гг.)
-                </h5>
-                {side.topConnectedEvents.length === 0 ? (
-                  <p className="text-xs text-slate-400">Связанных событий в периоде нет.</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {side.topConnectedEvents.map((ev) => (
-                      <button
-                        key={ev.id}
-                        type="button"
-                        onClick={() => onSelectCard(ev.id)}
-                        className="w-full text-left rounded-lg bg-slate-900/65 hover:bg-slate-900 border border-slate-800 hover:border-slate-600 px-3 py-2 flex items-center justify-between gap-2 transition-colors cursor-pointer group"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-white group-hover:text-amber-200 truncate">
-                            <span className="font-mono text-slate-400 mr-1.5 tabular-nums">
-                              {ev.period}
+                <div className="divide-y divide-slate-800/80 border-y border-slate-800/80">
+                  {sphereComparisonRows.map((row) => {
+                    const leftPct = Math.round((row.leftCount / maxSphereCount) * 100);
+                    const rightPct = Math.round((row.rightCount / maxSphereCount) * 100);
+                    return (
+                      <div key={row.id} className="py-3 space-y-2">
+                        <div className="flex items-center justify-between gap-2 text-xs">
+                          <span
+                            className={`font-mono font-semibold inline-flex items-center gap-1.5 ${SPHERE_ACCENT[row.id]}`}
+                          >
+                            {renderSphereIcon(row.id)}
+                            <span>{row.label}</span>
+                          </span>
+                          <span className="font-mono text-xs shrink-0 tabular-nums flex items-center gap-2">
+                            <span className="text-amber-300 font-bold">A: {row.leftCount}</span>
+                            <span className="text-slate-600">·</span>
+                            <span className="text-sky-300 font-bold">B: {row.rightCount}</span>
+                            <span className="text-slate-600">·</span>
+                            <span className={`font-semibold ${row.delta.toneClass}`}>
+                              Δ {row.delta.text}
                             </span>
-                            {ev.title}
+                          </span>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full bg-amber-400/85 ${getBarWidthClass(leftPct)}`}
+                            />
+                          </div>
+                          <div className="h-1.5 rounded-full bg-slate-900 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full bg-sky-400/85 ${getBarWidthClass(rightPct)}`}
+                            />
                           </div>
                         </div>
-                        <span className="inline-flex items-center gap-1 text-[11px] font-mono text-emerald-300 shrink-0 tabular-nums">
-                          {ev.explicitLinks.length} св.
-                          <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-amber-300" />
-                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* Сворачиваемая детализация по конкретным веткам */}
+              {branchComparisonRows.length > 0 && (
+                <div className="rounded-xl bg-slate-900/55 border border-slate-800/90 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setShowBranchDetails((prev) => !prev)}
+                    aria-expanded={showBranchDetails}
+                    className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-slate-800/45 transition-colors cursor-pointer"
+                  >
+                    <span className="text-xs font-mono uppercase tracking-wider font-semibold text-slate-300 inline-flex items-center gap-2">
+                      <GitBranch className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                      <span>Детализация по историческим веткам ({branchComparisonRows.length})</span>
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 text-[11px] font-mono text-slate-400 whitespace-nowrap shrink-0">
+                      <span>{showBranchDetails ? 'Свернуть' : 'Раскрыть'}</span>
+                      {showBranchDetails ? (
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      ) : (
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      )}
+                    </span>
+                  </button>
+
+                  {showBranchDetails && (
+                    <div className="px-4 pb-4 pt-2 border-t border-slate-800/70 grid grid-cols-1 md:grid-cols-2 gap-x-6 divide-y md:divide-y-0 divide-slate-800/70">
+                      {branchComparisonRows.map((row) => {
+                        const leftPct = Math.round((row.leftCount / maxBranchCount) * 100);
+                        const rightPct = Math.round((row.rightCount / maxBranchCount) * 100);
+                        return (
+                          <div
+                            key={row.branchId}
+                            className="py-2.5 space-y-1.5 md:border-b md:border-slate-800/60"
+                          >
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <span className="font-medium text-slate-200 truncate">
+                                {row.label}
+                              </span>
+                              <span className="font-mono text-[11px] shrink-0 tabular-nums">
+                                <span className="text-amber-300 font-bold">{row.leftCount}</span>
+                                <span className="text-slate-600 mx-1">·</span>
+                                <span className="text-sky-300 font-bold">{row.rightCount}</span>
+                              </span>
+                            </div>
+                            <div className="space-y-1">
+                              <div className="h-1 rounded-full bg-slate-950 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full bg-amber-400/80 ${getBarWidthClass(leftPct)}`}
+                                />
+                              </div>
+                              <div className="h-1 rounded-full bg-slate-950 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full bg-sky-400/80 ${getBarWidthClass(rightPct)}`}
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ВКЛАДКА 3: СВЯЗИ И ДЕЯТЕЛИ */}
+          {activeTab === 'connections' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+              {/* Повторяющиеся контуры связей */}
+              <section className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h5 className="text-xs font-mono font-semibold uppercase tracking-wider text-emerald-300 inline-flex items-center gap-1.5">
+                    <Link2 className="w-3.5 h-3.5" />
+                    <span>Контуры связей</span>
+                  </h5>
+                  <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                    {sharedBranchPairs.length}
+                  </span>
+                </div>
+
+                {sharedBranchPairs.length === 0 ? (
+                  <p className="text-xs text-slate-400">
+                    Совпадающих пар веток с явными связями в обоих периодах не обнаружено.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="divide-y divide-slate-800/80 border-y border-slate-800/80">
+                      {visiblePairs.map((pair) => (
+                        <div
+                          key={pair.pairKey}
+                          className="py-2 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="text-slate-200 truncate">
+                            {pair.branchALabel} ↔ {pair.branchBLabel}
+                          </span>
+                          <span className="font-mono text-[11px] shrink-0 tabular-nums">
+                            <span className="text-amber-300 font-bold">{pair.countLeft}</span>
+                            <span className="text-slate-600 mx-1">/</span>
+                            <span className="text-sky-300 font-bold">{pair.countRight}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {sharedBranchPairs.length > 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllPairs((prev) => !prev)}
+                        className="text-xs font-mono text-amber-300 hover:text-amber-200 cursor-pointer"
+                      >
+                        {showAllPairs ? 'Свернуть' : `Показать все (${sharedBranchPairs.length})`}
                       </button>
-                    ))}
+                    )}
                   </div>
                 )}
               </section>
-            ))}
-          </div>
+
+              {/* Сквозные сюжетные теги */}
+              <section className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h5 className="text-xs font-mono font-semibold uppercase tracking-wider text-amber-300 inline-flex items-center gap-1.5">
+                    <Tag className="w-3.5 h-3.5" />
+                    <span>Сквозные сюжеты</span>
+                  </h5>
+                  <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                    {sharedSyncTags.length}
+                  </span>
+                </div>
+
+                {sharedSyncTags.length === 0 ? (
+                  <p className="text-xs text-slate-400">
+                    Общих тематических сюжетов между этими периодами нет.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="divide-y divide-slate-800/80 border-y border-slate-800/80">
+                      {visibleTags.map((t) => (
+                        <div
+                          key={t.tag}
+                          className="py-2 flex items-center justify-between gap-2 text-xs"
+                        >
+                          <span className="text-slate-200 truncate" title={t.tag}>
+                            {t.label}
+                          </span>
+                          <span className="font-mono text-[11px] shrink-0 tabular-nums">
+                            <span className="text-amber-300 font-bold">{t.countLeft}</span>
+                            <span className="text-slate-600 mx-1">/</span>
+                            <span className="text-sky-300 font-bold">{t.countRight}</span>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {sharedSyncTags.length > 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllTags((prev) => !prev)}
+                        className="text-xs font-mono text-amber-300 hover:text-amber-200 cursor-pointer"
+                      >
+                        {showAllTags ? 'Свернуть' : `Показать все (${sharedSyncTags.length})`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </section>
+
+              {/* Сквозные деятели и авторы */}
+              <section className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <h5 className="text-xs font-mono font-semibold uppercase tracking-wider text-sky-300 inline-flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5" />
+                    <span>Сквозные деятели</span>
+                  </h5>
+                  <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                    {sharedParticipants.length}
+                  </span>
+                </div>
+
+                {sharedParticipants.length === 0 ? (
+                  <p className="text-xs text-slate-400">
+                    Персон, присутствующих в обоих периодах, не найдено.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="divide-y divide-slate-800/80 border-y border-slate-800/80">
+                      {visibleParticipants.map((p) =>
+                        onOpenPersonModal ? (
+                          <button
+                            key={p.personKey}
+                            type="button"
+                            onClick={() => onOpenPersonModal(p.personKey)}
+                            className="group w-full text-left py-2 px-1 -mx-1 rounded hover:bg-slate-800/45 flex items-center justify-between gap-2 text-xs transition-colors cursor-pointer"
+                          >
+                            <span className="text-slate-100 group-hover:text-amber-200 truncate">
+                              {p.displayName}
+                            </span>
+                            <span className="font-mono text-[11px] shrink-0 tabular-nums">
+                              <span className="text-amber-300 font-bold">{p.countLeft}</span>
+                              <span className="text-slate-600 mx-1">/</span>
+                              <span className="text-sky-300 font-bold">{p.countRight}</span>
+                            </span>
+                          </button>
+                        ) : (
+                          <div
+                            key={p.personKey}
+                            className="py-2 flex items-center justify-between gap-2 text-xs"
+                          >
+                            <span className="text-slate-200 truncate">{p.displayName}</span>
+                            <span className="font-mono text-[11px] shrink-0 tabular-nums">
+                              <span className="text-amber-300 font-bold">{p.countLeft}</span>
+                              <span className="text-slate-600 mx-1">/</span>
+                              <span className="text-sky-300 font-bold">{p.countRight}</span>
+                            </span>
+                          </div>
+                        ),
+                      )}
+                    </div>
+                    {sharedParticipants.length > 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllParticipants((prev) => !prev)}
+                        className="text-xs font-mono text-amber-300 hover:text-amber-200 cursor-pointer"
+                      >
+                        {showAllParticipants
+                          ? 'Свернуть'
+                          : `Показать все (${sharedParticipants.length})`}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </section>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -342,8 +342,9 @@ export const TopControlBar = memo(function TopControlBar({
       ref={barRef}
       className="sticky top-0 z-50 bg-[#050811]/95 backdrop-blur-md border-b border-slate-800/90 shadow-lg"
     >
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 h-12 flex flex-nowrap items-center justify-between gap-1.5 sm:gap-2">
-        <div className="flex flex-nowrap items-center gap-1 sm:gap-1.5 shrink-0">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-6 xl:px-8 py-1.5 xl:py-0 xl:min-h-12 flex flex-col xl:flex-row xl:items-center xl:justify-between gap-1.5 xl:gap-2">
+        {/* Строка 1 (на узких/планшетах) / Левая зона (на широких экранах): навигация и фильтры */}
+        <div className="flex flex-wrap xl:flex-nowrap items-center gap-1 sm:gap-1.5 min-w-0">
           <BranchSelectorPopover
             branchControls={branchControls}
             activeBranches={activeBranches}
@@ -384,7 +385,7 @@ export const TopControlBar = memo(function TopControlBar({
             onOpenRulerModal={onOpenRulerModal}
           />
 
-          {/* Выпадающее меню «Срез» для всех размеров экрана */}
+          {/* Выпадающее меню «Срез» фиксированной ширины без выезжающей текстовой плашки */}
           <div ref={presetPopoverRef} className="relative shrink-0">
             <button
               type="button"
@@ -402,11 +403,6 @@ export const TopControlBar = memo(function TopControlBar({
             >
               <Compass className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
               <span>Срез</span>
-              {activePreset && (
-                <span className="hidden lg:inline px-1.5 py-0.5 rounded bg-amber-500/90 text-slate-950 font-bold text-[10px]">
-                  {activePreset.shortLabel}
-                </span>
-              )}
               <ChevronDown
                 className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
                   isPresetMenuOpen ? 'rotate-180' : ''
@@ -418,7 +414,7 @@ export const TopControlBar = memo(function TopControlBar({
               <div
                 role="menu"
                 aria-label="Сценарии веток"
-                className="fixed lg:absolute left-3 right-3 lg:left-0 lg:right-auto top-[54px] lg:top-full lg:mt-2 max-w-md lg:max-w-none lg:w-80 mx-auto lg:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-1.5 space-y-1 animate-modal"
+                className="fixed xl:absolute left-3 right-3 xl:left-0 xl:right-auto top-[calc(var(--top-bar-height,49px)+6px)] xl:top-full xl:mt-2 max-w-md xl:max-w-none xl:w-80 mx-auto xl:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-1.5 space-y-1 animate-modal"
               >
                 <div className="px-2.5 py-1 text-[10px] font-mono text-slate-400 border-b border-slate-800/80">
                   Быстрый выбор тематических линий
@@ -452,76 +448,56 @@ export const TopControlBar = memo(function TopControlBar({
             )}
           </div>
 
-          {/* Выпадающее меню фильтра по макрорегионам */}
+          {/* Выпадающее меню фильтра по макрорегионам фиксированной ширины */}
           {onSelectMacroRegion && (
-            <div ref={regionPopoverRef} className="relative shrink-0 inline-flex items-center">
-              <div
-                className={`inline-flex items-center rounded-lg border text-[11px] font-mono font-semibold transition-colors whitespace-nowrap ${
+            <div ref={regionPopoverRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsRegionMenuOpen((prev) => !prev)}
+                aria-expanded={isRegionMenuOpen}
+                aria-haspopup="menu"
+                className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
                   isRegionMenuOpen
                     ? 'bg-slate-800/95 border-amber-400/60 text-white'
                     : selectedMacroRegion !== 'all'
-                      ? 'bg-amber-500/15 border-amber-500/45 text-amber-200'
+                      ? 'bg-amber-500/12 border-amber-500/40 text-amber-200 hover:bg-amber-500/20'
                       : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
                 }`}
+                title={
+                  selectedMacroRegion !== 'all'
+                    ? `Активный макрорегион: ${activeRegionOption.label} (${macroRegionCounts[selectedMacroRegion] ?? 0} соб.)`
+                    : 'Фильтр событий по макрорегиону'
+                }
               >
-                <button
-                  type="button"
-                  onClick={() => setIsRegionMenuOpen((prev) => !prev)}
-                  aria-expanded={isRegionMenuOpen}
-                  aria-haspopup="menu"
-                  className="px-2 sm:px-2.5 py-1.5 inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer"
-                  title={
-                    selectedMacroRegion !== 'all'
-                      ? `Активный фильтр по макрорегиону: ${activeRegionOption.label}`
-                      : 'Фильтр событий по макрорегиону'
-                  }
-                >
-                  <MapPin
-                    className={`w-3.5 h-3.5 shrink-0 ${
-                      selectedMacroRegion !== 'all' ? 'text-amber-400' : 'text-amber-400/85'
-                    }`}
-                  />
-                  <span>
-                    {selectedMacroRegion !== 'all' ? activeRegionOption.shortLabel : 'Регион'}
-                  </span>
-                  {selectedMacroRegion !== 'all' && (
-                    <span className="hidden md:inline px-1.5 py-0.5 rounded bg-amber-500/90 text-slate-950 font-bold text-[10px] tabular-nums">
-                      {macroRegionCounts[selectedMacroRegion] ?? 0}
-                    </span>
-                  )}
-                  <ChevronDown
-                    className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
-                      isRegionMenuOpen ? 'rotate-180' : ''
-                    }`}
-                  />
-                </button>
-                {selectedMacroRegion !== 'all' && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSelectMacroRegion('all');
-                      setIsRegionMenuOpen(false);
-                    }}
-                    aria-label="Сбросить фильтр по макрорегиону"
-                    title="Сбросить фильтр по макрорегиону (Все регионы)"
-                    className="pr-1.5 pl-1 py-1.5 border-l border-amber-500/30 text-amber-300/80 hover:text-white transition-colors cursor-pointer"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
+                <MapPin className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
+                <span>Регион</span>
+                <ChevronDown
+                  className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
+                    isRegionMenuOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
 
               {isRegionMenuOpen && (
                 <div
                   role="menu"
                   aria-label="Фильтр по макрорегионам"
-                  className="fixed lg:absolute left-3 right-3 lg:left-0 lg:right-auto top-[54px] lg:top-full lg:mt-2 max-w-md lg:max-w-none lg:w-80 mx-auto lg:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-1.5 space-y-1 max-h-[75vh] overflow-y-auto animate-modal"
+                  className="fixed xl:absolute left-3 right-3 xl:left-0 xl:right-auto top-[calc(var(--top-bar-height,49px)+6px)] xl:top-full xl:mt-2 max-w-md xl:max-w-none xl:w-80 mx-auto xl:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-1.5 space-y-1 max-h-[75vh] overflow-y-auto animate-modal"
                 >
-                  <div className="px-2.5 py-1 flex items-center justify-between text-[10px] font-mono text-slate-400 border-b border-slate-800/80">
-                    <span>Фасетный фильтр по макрорегионам</span>
-                    <span className="text-slate-500 tabular-nums">
-                      {yearFrom}–{yearTo} гг.
-                    </span>
+                  <div className="px-2.5 py-1 flex items-center justify-between gap-2 text-[10px] font-mono text-slate-400 border-b border-slate-800/80">
+                    <span>Макрорегион · {yearFrom}–{yearTo} гг.</span>
+                    {selectedMacroRegion !== 'all' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSelectMacroRegion('all');
+                          setIsRegionMenuOpen(false);
+                        }}
+                        className="text-amber-300 hover:text-white underline underline-offset-2 cursor-pointer"
+                      >
+                        Сбросить
+                      </button>
+                    )}
                   </div>
                   {MACRO_REGION_OPTIONS.map((opt) => {
                     const active = selectedMacroRegion === opt.id;
@@ -574,367 +550,363 @@ export const TopControlBar = memo(function TopControlBar({
           )}
         </div>
 
-        <div className="flex flex-nowrap items-center gap-1 sm:gap-1.5 ml-auto shrink-0">
-          {/* Компактный блок шага масштаба назад и зума +/- в тихом ghost-стиле */}
-          <div
-            className="hidden sm:inline-flex items-center gap-0.5 text-[11px] font-mono shrink-0"
-            role="group"
-            aria-label="Управление масштабом окна времени"
-          >
-            <button
-              type="button"
-              onClick={onStepBackZoom}
-              disabled={zoomHistoryCount === 0}
-              aria-label="Шаг назад по масштабу"
-              title={
-                lastZoomStep
-                  ? `Вернуться к предыдущему масштабу: ${lastZoomStep.from}–${lastZoomStep.to} гг. (шагов в истории: ${zoomHistoryCount})`
-                  : 'История масштабирования пуста'
-              }
-              className={`px-1.5 py-1 rounded-md inline-flex items-center gap-1 transition-colors whitespace-nowrap ${
-                zoomHistoryCount > 0
-                  ? 'text-amber-300 hover:bg-slate-800/70 hover:text-amber-200 cursor-pointer'
-                  : 'text-slate-600 cursor-not-allowed'
-              }`}
+        {/* Строка 2 (на узких/планшетах) / Правая зона (на широких экранах): масштаб, интервал, Вид и Анализ */}
+        <div className="flex items-center justify-between xl:justify-end gap-1.5 min-w-0 border-t border-slate-800/70 pt-1.5 xl:border-t-0 xl:pt-0 xl:ml-auto xl:shrink-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
+            {/* Компактный блок шага масштаба назад и зума +/- фиксированной ширины */}
+            <div
+              className="hidden min-[400px]:inline-flex items-center gap-0.5 text-[11px] font-mono shrink-0"
+              role="group"
+              aria-label="Управление масштабом окна времени"
             >
-              <Undo2 className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden xl:inline">Назад</span>
-              {zoomHistoryCount > 0 && (
-                <span className="text-amber-300 text-[10px] font-bold tabular-nums">
-                  {zoomHistoryCount}
-                </span>
-              )}
-            </button>
-
-            <span className="w-px h-3.5 bg-slate-800/90 mx-0.5" aria-hidden="true" />
-
-            <button
-              type="button"
-              onClick={onZoomOut}
-              disabled={!canZoomOut}
-              aria-label="Отдалить окно времени в 2 раза"
-              title={
-                canZoomOut
-                  ? `Отдалить масштаб ×2 вокруг центра окна (${Math.round((yearFrom + yearTo) / 2)} г.)`
-                  : 'Уже открыт весь период (862–2000)'
-              }
-              className={`px-1.5 py-1 rounded-md inline-flex items-center gap-0.5 transition-colors whitespace-nowrap ${
-                canZoomOut
-                  ? 'text-slate-300 hover:bg-slate-800/70 hover:text-white cursor-pointer'
-                  : 'text-slate-600 cursor-not-allowed'
-              }`}
-            >
-              <Minus className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden lg:inline text-[10px] font-semibold">×2</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onZoomIn}
-              disabled={!canZoomIn}
-              aria-label="Приблизить окно времени в 2 раза"
-              title={
-                canZoomIn
-                  ? `Приблизить масштаб ×2 вокруг центра окна (${Math.round((yearFrom + yearTo) / 2)} г.)`
-                  : 'Достигнут максимальный масштаб (2–3 года)'
-              }
-              className={`px-1.5 py-1 rounded-md inline-flex items-center gap-0.5 transition-colors whitespace-nowrap ${
-                canZoomIn
-                  ? 'text-slate-300 hover:bg-slate-800/70 hover:text-amber-200 cursor-pointer'
-                  : 'text-slate-600 cursor-not-allowed'
-              }`}
-            >
-              <Plus className="w-3.5 h-3.5 shrink-0" />
-              <span className="hidden lg:inline text-[10px] font-semibold">×2</span>
-            </button>
-          </div>
-
-          {/* Единая хлебная крошка активного временного фильтра (открытие досье окна + сброс × в один клик) */}
-          <div
-            className={`hidden sm:inline-flex items-center rounded-lg border text-xs transition-colors shrink-0 ${
-              timeBreadcrumb.isFiltered
-                ? 'bg-amber-500/12 border-amber-500/35 text-amber-100'
-                : 'bg-slate-900/65 border-slate-800/80 text-slate-300'
-            }`}
-          >
-            <button
-              type="button"
-              onClick={() => onOpenWindowModal?.(yearFrom, yearTo)}
-              disabled={!onOpenWindowModal}
-              title={timeBreadcrumb.detailTitle}
-              className={`px-2 py-1 inline-flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-                onOpenWindowModal
-                  ? 'hover:text-white cursor-pointer'
-                  : 'cursor-default'
-              }`}
-            >
-              <CalendarRange
-                className={`w-3.5 h-3.5 shrink-0 ${
-                  timeBreadcrumb.isFiltered ? 'text-amber-300' : 'text-slate-400'
-                }`}
-              />
-              <span className="hidden md:inline font-sans font-semibold max-w-[116px] lg:max-w-[140px] xl:max-w-[168px] truncate">
-                {timeBreadcrumb.label}
-              </span>
-              <span aria-hidden="true" className="hidden md:inline text-slate-500">
-                ·
-              </span>
-              <span
-                className={`font-mono font-semibold tabular-nums ${
-                  timeBreadcrumb.isFiltered ? 'text-amber-300' : 'text-slate-300'
-                }`}
-              >
-                {timeBreadcrumb.rangeText}
-              </span>
-            </button>
-
-            {timeBreadcrumb.isFiltered && (
               <button
                 type="button"
-                onClick={handleResetTimeBreadcrumb}
-                aria-label="Сбросить временной фильтр ко всем векам"
-                title={`Сбросить фильтр и вернуть все века (${minYear}–${maxYear})`}
-                className="pr-1.5 pl-1 py-1 border-l border-amber-500/25 text-amber-300/85 hover:text-white hover:bg-amber-500/20 rounded-r-lg transition-colors cursor-pointer shrink-0"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          <span className="hidden sm:block w-px h-4 bg-slate-800/90 shrink-0" aria-hidden="true" />
-
-          <div className="hidden 2xl:flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-1.5 py-1 text-[11px] font-mono shrink-0">
-            <button
-              type="button"
-              onClick={() => onShiftWindow(-1)}
-              disabled={!canShiftLeft}
-              aria-label="Сдвинуть окно времени влево"
-              title={
-                canShiftLeft
-                  ? `Сдвинуть окно назад на ${Math.max(1, Math.round(span / 2))} л.`
-                  : 'Достигнута нижняя граница хронологии'
-              }
-              className={`p-0.5 rounded transition-colors ${
-                canShiftLeft
-                  ? 'text-slate-300 hover:bg-slate-800 hover:text-amber-300 cursor-pointer'
-                  : 'text-slate-700 cursor-not-allowed'
-              }`}
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-            <span className="text-slate-400">Окно:</span>
-            <input
-              type="number"
-              min={minYear}
-              max={maxYear}
-              value={yearFrom}
-              aria-label="Год начала"
-              onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
-              className="w-13 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
-            />
-            <span className="text-slate-500">—</span>
-            <input
-              type="number"
-              min={minYear}
-              max={maxYear}
-              value={yearTo}
-              aria-label="Год окончания"
-              onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
-              className="w-13 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
-            />
-            <button
-              type="button"
-              onClick={() => onShiftWindow(1)}
-              disabled={!canShiftRight}
-              aria-label="Сдвинуть окно времени вправо"
-              title={
-                canShiftRight
-                  ? `Сдвинуть окно вперёд на ${Math.max(1, Math.round(span / 2))} л.`
-                  : 'Достигнута верхняя граница хронологии'
-              }
-              className={`p-0.5 rounded transition-colors ${
-                canShiftRight
-                  ? 'text-slate-300 hover:bg-slate-800 hover:text-amber-300 cursor-pointer'
-                  : 'text-slate-700 cursor-not-allowed'
-              }`}
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          {/* Единое меню «Вид» (плотность карточек и вехи завершения) */}
-          <div ref={viewPopoverRef} className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsViewMenuOpen((prev) => !prev)}
-              aria-expanded={isViewMenuOpen}
-              aria-haspopup="menu"
-              className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
-                isViewMenuOpen
-                  ? 'bg-slate-800/95 border-amber-400/60 text-white'
-                  : hasCustomViewSettings
-                    ? 'bg-amber-500/12 border-amber-500/40 text-amber-200 hover:bg-amber-500/20'
-                    : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
-              }`}
-              title="Настройки отображения ленты (плотность карточек и вехи завершения)"
-            >
-              <Eye className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
-              <span>Вид</span>
-              {viewModeSummary && (
-                <span className="hidden lg:inline px-1.5 py-0.5 rounded bg-amber-500/90 text-slate-950 font-bold text-[10px]">
-                  {viewModeSummary}
-                </span>
-              )}
-              <ChevronDown
-                className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
-                  isViewMenuOpen ? 'rotate-180' : ''
+                onClick={onStepBackZoom}
+                disabled={zoomHistoryCount === 0}
+                aria-label="Шаг назад по масштабу"
+                title={
+                  lastZoomStep
+                    ? `Вернуться к предыдущему масштабу: ${lastZoomStep.from}–${lastZoomStep.to} гг. (шагов в истории: ${zoomHistoryCount})`
+                    : 'История масштабирования пуста'
+                }
+                className={`p-1.5 rounded-md inline-flex items-center justify-center transition-colors ${
+                  zoomHistoryCount > 0
+                    ? 'text-amber-300 hover:bg-slate-800/70 hover:text-amber-200 cursor-pointer'
+                    : 'text-slate-600 cursor-not-allowed'
                 }`}
-              />
-            </button>
-
-            {isViewMenuOpen && (
-              <div
-                role="menu"
-                aria-label="Настройки вида"
-                className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[54px] sm:top-full sm:mt-2 max-w-sm sm:max-w-none sm:w-80 mx-auto sm:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-2.5 space-y-2.5 animate-modal"
               >
-                <div>
-                  <div className="px-1.5 pb-1.5 text-[10px] font-mono text-slate-400">
-                    Плотность карточек в ленте
-                  </div>
-                  <div
-                    className="grid grid-cols-2 gap-1 rounded-xl bg-slate-950 border border-slate-800 p-1 text-[11px] font-mono"
-                    role="group"
-                    aria-label="Плотность карточек"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onChangeCardDensity('detailed')}
-                      className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-                        cardDensity === 'detailed'
-                          ? 'bg-amber-500 text-slate-950 font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-slate-900'
-                      }`}
-                    >
-                      <Rows3 className="w-3.5 h-3.5 shrink-0" />
-                      <span>Подробно</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onChangeCardDensity('compact')}
-                      className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-                        cardDensity === 'compact'
-                          ? 'bg-amber-500 text-slate-950 font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-slate-900'
-                      }`}
-                    >
-                      <Rows4 className="w-3.5 h-3.5 shrink-0" />
-                      <span>Компактно</span>
-                    </button>
-                  </div>
-                </div>
+                <Undo2 className="w-3.5 h-3.5 shrink-0" />
+              </button>
 
-                <div className="border-t border-slate-800/80 pt-2">
-                  <div className="px-1.5 pb-1.5 text-[10px] font-mono text-slate-400">
-                    Масштаб оси времени
-                  </div>
-                  <div
-                    className="grid grid-cols-2 gap-1 rounded-xl bg-slate-950 border border-slate-800 p-1 text-[11px] font-mono"
-                    role="group"
-                    aria-label="Режим шкалы времени"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => onChangeTimeScaleMode('compact')}
-                      className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-                        timeScaleMode === 'compact'
-                          ? 'bg-amber-500 text-slate-950 font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-slate-900'
-                      }`}
-                      title="Плотная событийная лента без пустых вертикальных промежутков"
-                    >
-                      <Rows4 className="w-3.5 h-3.5 shrink-0" />
-                      <span>Событийная</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onChangeTimeScaleMode('proportional')}
-                      className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-                        timeScaleMode === 'proportional'
-                          ? 'bg-amber-500 text-slate-950 font-bold'
-                          : 'text-slate-300 hover:text-white hover:bg-slate-900'
-                      }`}
-                      title="Пропорциональная шкала: визуальные интервалы между строками отражают дистанцию в годах"
-                    >
-                      <Ruler className="w-3.5 h-3.5 shrink-0" />
-                      <span>По годам</span>
-                    </button>
-                  </div>
-                </div>
+              <span className="w-px h-3.5 bg-slate-800/90 mx-0.5" aria-hidden="true" />
 
-                <div className="border-t border-slate-800/80 pt-2">
-                  <button
-                    type="button"
-                    role="menuitemcheckbox"
-                    aria-checked={showEndNodes}
-                    onClick={onToggleShowEndNodes}
-                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl border text-left transition-colors cursor-pointer ${
-                      showEndNodes
-                        ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-200 hover:bg-emerald-500/15'
-                        : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-900'
-                    }`}
-                  >
-                    <div className="min-w-0 flex items-start gap-2">
-                      <Flag className="w-3.5 h-3.5 mt-0.5 shrink-0 text-emerald-400" />
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-white">Вехи завершения</div>
-                        <div className="text-[11px] text-slate-400 leading-snug">
-                          Отметки окончания правлений и процессов
+              <button
+                type="button"
+                onClick={onZoomOut}
+                disabled={!canZoomOut}
+                aria-label="Отдалить окно времени в 2 раза"
+                title={
+                  canZoomOut
+                    ? `Отдалить масштаб ×2 вокруг центра окна (${Math.round((yearFrom + yearTo) / 2)} г.)`
+                    : 'Уже открыт весь период (862–2000)'
+                }
+                className={`p-1.5 rounded-md inline-flex items-center justify-center transition-colors ${
+                  canZoomOut
+                    ? 'text-slate-300 hover:bg-slate-800/70 hover:text-white cursor-pointer'
+                    : 'text-slate-600 cursor-not-allowed'
+                }`}
+              >
+                <Minus className="w-3.5 h-3.5 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={onZoomIn}
+                disabled={!canZoomIn}
+                aria-label="Приблизить окно времени в 2 раза"
+                title={
+                  canZoomIn
+                    ? `Приблизить масштаб ×2 вокруг центра окна (${Math.round((yearFrom + yearTo) / 2)} г.)`
+                    : 'Достигнут максимальный масштаб (2–3 года)'
+                }
+                className={`p-1.5 rounded-md inline-flex items-center justify-center transition-colors ${
+                  canZoomIn
+                    ? 'text-slate-300 hover:bg-slate-800/70 hover:text-amber-200 cursor-pointer'
+                    : 'text-slate-600 cursor-not-allowed'
+                }`}
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0" />
+              </button>
+            </div>
+
+            {/* Единая хлебная крошка активного временного фильтра (открытие досье окна + сброс × в один клик) */}
+            <div
+              className={`inline-flex items-center rounded-lg border text-xs transition-colors min-w-0 ${
+                timeBreadcrumb.isFiltered
+                  ? 'bg-amber-500/12 border-amber-500/35 text-amber-100'
+                  : 'bg-slate-900/65 border-slate-800/80 text-slate-300'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => onOpenWindowModal?.(yearFrom, yearTo)}
+                disabled={!onOpenWindowModal}
+                title={timeBreadcrumb.detailTitle}
+                className={`px-2 py-1 inline-flex items-center gap-1.5 min-w-0 whitespace-nowrap transition-colors ${
+                  onOpenWindowModal
+                    ? 'hover:text-white cursor-pointer'
+                    : 'cursor-default'
+                }`}
+              >
+                <CalendarRange
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    timeBreadcrumb.isFiltered ? 'text-amber-300' : 'text-slate-400'
+                  }`}
+                />
+                <span className="hidden sm:inline font-sans font-semibold max-w-[116px] md:max-w-[148px] xl:max-w-[132px] truncate">
+                  {timeBreadcrumb.label}
+                </span>
+                <span aria-hidden="true" className="hidden sm:inline text-slate-500 shrink-0">
+                  ·
+                </span>
+                <span
+                  className={`font-mono font-semibold tabular-nums shrink-0 ${
+                    timeBreadcrumb.isFiltered ? 'text-amber-300' : 'text-slate-300'
+                  }`}
+                >
+                  {timeBreadcrumb.rangeText}
+                </span>
+              </button>
+
+              {timeBreadcrumb.isFiltered && (
+                <button
+                  type="button"
+                  onClick={handleResetTimeBreadcrumb}
+                  aria-label="Сбросить временной фильтр ко всем векам"
+                  title={`Сбросить фильтр и вернуть все века (${minYear}–${maxYear})`}
+                  className="pr-1.5 pl-1 py-1 border-l border-amber-500/25 text-amber-300/85 hover:text-white hover:bg-amber-500/20 rounded-r-lg transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="hidden 2xl:flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-1.5 py-1 text-[11px] font-mono shrink-0">
+              <button
+                type="button"
+                onClick={() => onShiftWindow(-1)}
+                disabled={!canShiftLeft}
+                aria-label="Сдвинуть окно времени влево"
+                title={
+                  canShiftLeft
+                    ? `Сдвинуть окно назад на ${Math.max(1, Math.round(span / 2))} л.`
+                    : 'Достигнута нижняя граница хронологии'
+                }
+                className={`p-0.5 rounded transition-colors ${
+                  canShiftLeft
+                    ? 'text-slate-300 hover:bg-slate-800 hover:text-amber-300 cursor-pointer'
+                    : 'text-slate-700 cursor-not-allowed'
+                }`}
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-slate-400">Окно:</span>
+              <input
+                type="number"
+                min={minYear}
+                max={maxYear}
+                value={yearFrom}
+                aria-label="Год начала"
+                onChange={(e) => onYearRangeChange(Number(e.target.value), yearTo)}
+                className="w-13 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
+              />
+              <span className="text-slate-500">—</span>
+              <input
+                type="number"
+                min={minYear}
+                max={maxYear}
+                value={yearTo}
+                aria-label="Год окончания"
+                onChange={(e) => onYearRangeChange(yearFrom, Number(e.target.value))}
+                className="w-13 bg-slate-950 border border-slate-800 rounded px-1 py-0.5 text-amber-300 font-bold text-center tabular-nums focus:outline-none focus:border-amber-500"
+              />
+              <button
+                type="button"
+                onClick={() => onShiftWindow(1)}
+                disabled={!canShiftRight}
+                aria-label="Сдвинуть окно времени вправо"
+                title={
+                  canShiftRight
+                    ? `Сдвинуть окно вперёд на ${Math.max(1, Math.round(span / 2))} л.`
+                    : 'Достигнута верхняя граница хронологии'
+                }
+                className={`p-0.5 rounded transition-colors ${
+                  canShiftRight
+                    ? 'text-slate-300 hover:bg-slate-800 hover:text-amber-300 cursor-pointer'
+                    : 'text-slate-700 cursor-not-allowed'
+                }`}
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Правая группа действий (Вид и Анализ) — фиксированная ширина, всегда в пределах экрана */}
+          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+            <span className="hidden xl:block w-px h-4 bg-slate-800/90 shrink-0" aria-hidden="true" />
+
+            {/* Единое меню «Вид» без текстовых плашек статуса — только мягкая подсветка при активных настройках */}
+            <div ref={viewPopoverRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setIsViewMenuOpen((prev) => !prev)}
+                aria-expanded={isViewMenuOpen}
+                aria-haspopup="menu"
+                className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                  isViewMenuOpen
+                    ? 'bg-slate-800/95 border-amber-400/60 text-white'
+                    : hasCustomViewSettings
+                      ? 'bg-amber-500/12 border-amber-500/40 text-amber-200 hover:bg-amber-500/20'
+                      : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                }`}
+                title={
+                  viewModeSummary
+                    ? `Настройки отображения ленты (${viewModeSummary})`
+                    : 'Настройки отображения ленты (плотность карточек, масштаб оси и вехи завершения)'
+                }
+              >
+                <Eye className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
+                <span>Вид</span>
+                <ChevronDown
+                  className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
+                    isViewMenuOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+
+              {isViewMenuOpen && (
+                <div
+                  role="menu"
+                  aria-label="Настройки вида"
+                  className="fixed xl:absolute left-3 right-3 xl:left-auto xl:right-0 top-[calc(var(--top-bar-height,49px)+6px)] xl:top-full xl:mt-2 max-w-sm xl:max-w-none xl:w-80 mx-auto xl:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-2.5 space-y-2.5 animate-modal"
+                >
+                  <div>
+                    <div className="px-1.5 pb-1.5 text-[10px] font-mono text-slate-400">
+                      Плотность карточек в ленте
+                    </div>
+                    <div
+                      className="grid grid-cols-2 gap-1 rounded-xl bg-slate-950 border border-slate-800 p-1 text-[11px] font-mono"
+                      role="group"
+                      aria-label="Плотность карточек"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onChangeCardDensity('detailed')}
+                        className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                          cardDensity === 'detailed'
+                            ? 'bg-amber-500 text-slate-950 font-bold'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                        }`}
+                      >
+                        <Rows3 className="w-3.5 h-3.5 shrink-0" />
+                        <span>Подробно</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onChangeCardDensity('compact')}
+                        className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                          cardDensity === 'compact'
+                            ? 'bg-amber-500 text-slate-950 font-bold'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                        }`}
+                      >
+                        <Rows4 className="w-3.5 h-3.5 shrink-0" />
+                        <span>Компактно</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-800/80 pt-2">
+                    <div className="px-1.5 pb-1.5 text-[10px] font-mono text-slate-400">
+                      Масштаб оси времени
+                    </div>
+                    <div
+                      className="grid grid-cols-2 gap-1 rounded-xl bg-slate-950 border border-slate-800 p-1 text-[11px] font-mono"
+                      role="group"
+                      aria-label="Режим шкалы времени"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onChangeTimeScaleMode('compact')}
+                        className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                          timeScaleMode === 'compact'
+                            ? 'bg-amber-500 text-slate-950 font-bold'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                        }`}
+                        title="Плотная событийная лента без пустых вертикальных промежутков"
+                      >
+                        <Rows4 className="w-3.5 h-3.5 shrink-0" />
+                        <span>Событийная</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onChangeTimeScaleMode('proportional')}
+                        className={`px-2 py-1.5 rounded-lg inline-flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                          timeScaleMode === 'proportional'
+                            ? 'bg-amber-500 text-slate-950 font-bold'
+                            : 'text-slate-300 hover:text-white hover:bg-slate-900'
+                        }`}
+                        title="Пропорциональная шкала: визуальные интервалы между строками отражают дистанцию в годах"
+                      >
+                        <Ruler className="w-3.5 h-3.5 shrink-0" />
+                        <span>По годам</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="border-t border-slate-800/80 pt-2">
+                    <button
+                      type="button"
+                      role="menuitemcheckbox"
+                      aria-checked={showEndNodes}
+                      onClick={onToggleShowEndNodes}
+                      className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-xl border text-left transition-colors cursor-pointer ${
+                        showEndNodes
+                          ? 'bg-emerald-500/10 border-emerald-500/35 text-emerald-200 hover:bg-emerald-500/15'
+                          : 'bg-slate-950/70 border-slate-800 text-slate-300 hover:bg-slate-900'
+                      }`}
+                    >
+                      <div className="min-w-0 flex items-start gap-2">
+                        <Flag className="w-3.5 h-3.5 mt-0.5 shrink-0 text-emerald-400" />
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-white">Вехи завершения</div>
+                          <div className="text-[11px] text-slate-400 leading-snug">
+                            Отметки окончания правлений и процессов
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <span
-                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 ${
-                        showEndNodes
-                          ? 'bg-emerald-500 text-slate-950'
-                          : 'bg-slate-800 text-slate-400'
-                      }`}
-                    >
-                      {showEndNodes ? 'ВКЛ' : 'ВЫКЛ'}
-                    </span>
-                  </button>
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold shrink-0 ${
+                          showEndNodes
+                            ? 'bg-emerald-500 text-slate-950'
+                            : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {showEndNodes ? 'ВКЛ' : 'ВЫКЛ'}
+                      </span>
+                    </button>
+                  </div>
                 </div>
+              )}
+            </div>
 
-              </div>
-            )}
+            <button
+              type="button"
+              onClick={onToggleFilters}
+              aria-expanded={!isFiltersCollapsed}
+              aria-label={
+                isFiltersCollapsed
+                  ? 'Развернуть инструменты расширенного анализа'
+                  : 'Свернуть инструменты расширенного анализа'
+              }
+              className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                !isFiltersCollapsed
+                  ? 'bg-slate-800/95 border-amber-400/60 text-white'
+                  : activeAdvancedCount > 0
+                    ? 'bg-emerald-500/15 border-emerald-400/55 text-emerald-200 hover:bg-emerald-500/25'
+                    : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
+              }`}
+              title="Развернуть или свернуть панель «Расширенный анализ» (связи, сюжеты, макрорегионы, пара веток, сравнение периодов и досье окна)"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
+              <span className="hidden min-[360px]:inline">Анализ</span>
+              {activeAdvancedCount > 0 && (
+                <span className="text-emerald-300 text-[10px] font-bold tabular-nums">
+                  {activeAdvancedCount}
+                </span>
+              )}
+            </button>
           </div>
-
-          <button
-            type="button"
-            onClick={onToggleFilters}
-            aria-expanded={!isFiltersCollapsed}
-            aria-label={
-              isFiltersCollapsed
-                ? 'Развернуть инструменты расширенного анализа'
-                : 'Свернуть инструменты расширенного анализа'
-            }
-            className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-              !isFiltersCollapsed
-                ? 'bg-slate-800/95 border-amber-400/60 text-white'
-                : activeAdvancedCount > 0
-                  ? 'bg-emerald-500/15 border-emerald-400/55 text-emerald-200 hover:bg-emerald-500/25'
-                  : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
-            }`}
-            title="Развернуть или свернуть панель «Расширенный анализ» (связи, сюжеты, макрорегионы, пара веток, сравнение периодов и досье окна)"
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
-            <span className="hidden sm:inline">{isFiltersCollapsed ? '+ Анализ' : '− Анализ'}</span>
-            {activeAdvancedCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded bg-emerald-500 text-slate-950 text-[10px] font-bold tabular-nums">
-                {activeAdvancedCount}
-              </span>
-            )}
-          </button>
         </div>
       </div>
     </div>
