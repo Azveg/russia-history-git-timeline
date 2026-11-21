@@ -74,20 +74,23 @@ if (geminiMd) {
   }
 }
 
-// 3. Standardized dossier modals must not introduce inline style= attributes (ADR-002)
+// 3. Standardized dossier modals & new timeline panels must not introduce inline style= attributes (ADR-002, ADR-007)
 const zeroInlineStyleModals = [
   'src/components/EraSummaryModal.tsx',
   'src/components/WindowSummaryModal.tsx',
   'src/components/CardDetailModal.tsx',
   'src/components/ComparePeriodsModal.tsx',
   'src/components/PersonDossierModal.tsx',
+  'src/components/timeline/TimelineEraJumpBar.tsx',
+  'src/components/timeline/TimelineChronicleView.tsx',
+  'src/components/timeline/TimelineLiveReader.tsx',
 ];
 
 for (const modalPath of zeroInlineStyleModals) {
   const content = readText(modalPath);
   if (content && /\bstyle\s*=\s*\{/.test(content)) {
     errors.push(
-      `Inline style={...} detected in ${modalPath}. Use Tailwind CSS classes only (ADR-002).`,
+      `Inline style={...} detected in ${modalPath}. Use Tailwind CSS classes only (ADR-002, ADR-007).`,
     );
   }
 }

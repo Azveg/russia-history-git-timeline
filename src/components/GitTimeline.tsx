@@ -1,18 +1,17 @@
 import {
-  ArrowDown,
-  ArrowUp,
+  BookOpen,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Crosshair,
   Crown,
   GitBranch,
-  GitCommitHorizontal,
   GitMerge,
   HelpCircle,
-  Link2,
+  List,
   Lock,
   LockOpen,
   MapPin,
-  Pin,
   X,
   Zap,
 } from 'lucide-react';
@@ -52,10 +51,21 @@ import type {
   SyncManifest,
   TimeScaleMode,
 } from '../types/timeline';
+import { TimelineChronicleView } from './timeline/TimelineChronicleView';
+import { TimelineEraJumpBar } from './timeline/TimelineEraJumpBar';
+import { TimelineLiveReader, type ReaderLinkItem } from './timeline/TimelineLiveReader';
 import {
   TimelineStreamRow,
   computeNodeVisualStatusMeta,
 } from './timeline/TimelineStreamRow';
+import {
+  buildEraJumpEntries,
+  buildTimelineChronicleData,
+  stepEventId,
+  type ChronicleSphereFilter,
+  type EraJumpEntry,
+  type TimelineDisplayMode,
+} from './timeline/timelineChronicleModel';
 import { precomputeTimelineLayout } from './timeline/timelineLayoutPrecompute';
 
 interface GitTimelineProps {
@@ -100,6 +110,7 @@ interface GitTimelineProps {
   onOpenPeriodModal: (rulerId: string) => void;
   onOpenEraModal: (eraId: string) => void;
   onOpenWindowModal?: (from: number, to: number) => void;
+  onOpenPersonModal?: (personKeyOrRaw: string) => void;
   onSelectYearRange: (from: number, to: number) => void;
 }
 
@@ -192,6 +203,7 @@ export const GitTimeline = memo(function GitTimeline({
   onOpenPeriodModal,
   onOpenEraModal,
   onOpenWindowModal,
+  onOpenPersonModal,
   onSelectYearRange,
 }: GitTimelineProps) {
   const isDesktopGraph = useIsSmUp();
@@ -203,6 +215,12 @@ export const GitTimeline = memo(function GitTimeline({
   const hoverActivateTimerRef = useRef<number | null>(null);
   const localJumpTimerRef = useRef<number | null>(null);
   const pendingScrollDomIdRef = useRef<string | null>(null);
+
+  const [displayMode, setDisplayMode] = useState<TimelineDisplayMode>('graph');
+  const [chronicleSphere, setChronicleSphere] = useState<ChronicleSphereFilter>('all');
+  const [collapsedChronicleEras, setCollapsedChronicleEras] = useState<Record<string, boolean>>({});
+  const [selectedReaderEventId, setSelectedReaderEventId] = useState<string | null>(null);
+  const [isMobileReaderOpen, setIsMobileReaderOpen] = useState(false);
 
   const [localHoveredEventId, setLocalHoveredEventId] = useState<string | null>(null);
   const [activeStickyRulerId, setActiveStickyRulerId] = useState<string | null>(null);
@@ -226,6 +244,7 @@ export const GitTimeline = memo(function GitTimeline({
     onSelectMacroRegion,
     cardDensity,
     streamLength: stream.length,
+    selectedReaderEventId,
   });
   propsRef.current = {
     onHoverEvent,
@@ -238,6 +257,7 @@ export const GitTimeline = memo(function GitTimeline({
     onSelectMacroRegion,
     cardDensity,
     streamLength: stream.length,
+    selectedReaderEventId,
   };
 
   const cancelScheduledTooltip = useCallback(() => {
@@ -337,7 +357,19 @@ export const GitTimeline = memo(function GitTimeline({
     (eventId: string) => {
       cancelScheduledHoverClear();
       closeCardTooltip();
-      propsRef.current.onOpenCardModal(eventId);
+      const isNarrowViewport = typeof window !== 'undefined' && window.innerWidth < 1024;
+      if (isNarrowViewport) {
+        setSelectedReaderEventId(eventId);
+        setPinnedHoverEventId(eventId);
+        setIsMobileReaderOpen(true);
+        return;
+      }
+      if (propsRef.current.selectedReaderEventId === eventId) {
+        propsRef.current.onOpenCardModal(eventId);
+        return;
+      }
+      setSelectedReaderEventId(eventId);
+      setPinnedHoverEventId(eventId);
     },
     [cancelScheduledHoverClear, closeCardTooltip],
   );
@@ -901,45 +933,262 @@ export const GitTimeline = memo(function GitTimeline({
     [buildLinkGeometryForEvent, hoveredEvent],
   );
 
-  const inspectorSourceEvent = hoveredEvent ?? focusedEvent ?? null;
-  const inspectorLinkGeometry = useMemo(
-    () => buildLinkGeometryForEvent(inspectorSourceEvent, false),
-    [buildLinkGeometryForEvent, inspectorSourceEvent],
-  );
-
   const linkedEventsInWindowCount = useMemo(
     () => matchingEvents.filter((ev) => ev.explicitLinks.length > 0).length,
     [matchingEvents],
   );
 
-  const topLinkedEventsInWindow = useMemo(() => {
-    const branchMap = new Map(branches.map((b) => [b.id, b]));
-    return matchingEvents
-      .filter((ev) => ev.explicitLinks.length > 0)
-      .slice()
-      .sort((a, b) => {
-        const aInStream = rowIndexByEventId.has(a.id) ? 0 : 1;
-        const bInStream = rowIndexByEventId.has(b.id) ? 0 : 1;
-        if (aInStream !== bInStream) return aInStream - bInStream;
-        if (b.explicitLinks.length !== a.explicitLinks.length) {
-          return b.explicitLinks.length - a.explicitLinks.length;
-        }
-        return a.startYear - b.startYear;
-      })
-      .slice(0, 5)
-      .map((ev) => {
-        const br = branchMap.get(ev.task);
-        return {
-          ev,
-          branchLabel: br?.label || ev.task,
-          branchColor: br?.color || '#34d399',
-          inStream: rowIndexByEventId.has(ev.id),
-        };
-      });
-  }, [matchingEvents, branches, rowIndexByEventId]);
-
   const effectiveSliceEndYear = yearTo ?? windowRange?.to ?? yearFrom;
   const connectorBusX = timeSpineX + 9;
+
+  const chronicleData = useMemo(
+    () =>
+      buildTimelineChronicleData({
+        matchingEvents,
+        matchingRulers,
+        resolvedEras,
+        branches,
+        sphereFilter: chronicleSphere,
+      }),
+    [matchingEvents, matchingRulers, resolvedEras, branches, chronicleSphere],
+  );
+
+  const eraJumpEntries = useMemo(
+    () =>
+      buildEraJumpEntries({
+        resolvedEras,
+        stream,
+        matchingEvents,
+        yearFrom,
+        yearTo: effectiveSliceEndYear,
+      }),
+    [resolvedEras, matchingEvents, stream, yearFrom, effectiveSliceEndYear],
+  );
+
+  const graphOrderedEventIds = useMemo(() => {
+    const ids: string[] = [];
+    const seen = new Set<string>();
+    for (const row of stream) {
+      if (row.rowType === 'EVENT_COMMIT' && !seen.has(row.eventObj.id)) {
+        seen.add(row.eventObj.id);
+        ids.push(row.eventObj.id);
+      }
+    }
+    for (const ev of matchingEvents) {
+      if (!seen.has(ev.id)) {
+        seen.add(ev.id);
+        ids.push(ev.id);
+      }
+    }
+    return ids;
+  }, [stream, matchingEvents]);
+
+  const orderedReaderIds =
+    displayMode === 'chronicle' ? chronicleData.orderedEventIds : graphOrderedEventIds;
+
+  useEffect(() => {
+    if (focusedEvent) {
+      setSelectedReaderEventId(focusedEvent.id);
+    }
+  }, [focusedEvent]);
+
+  useEffect(() => {
+    if (highlightedJumpId && matchingEventById.has(highlightedJumpId)) {
+      setSelectedReaderEventId(highlightedJumpId);
+    }
+  }, [highlightedJumpId, matchingEventById]);
+
+  const activeReaderEvent = useMemo(() => {
+    if (selectedReaderEventId) {
+      const found = matchingEventById.get(selectedReaderEventId);
+      if (found) return found;
+    }
+    if (focusedEvent) return focusedEvent;
+    if (orderedReaderIds.length > 0) {
+      return matchingEventById.get(orderedReaderIds[0]) ?? null;
+    }
+    return matchingEvents[0] ?? null;
+  }, [selectedReaderEventId, matchingEventById, focusedEvent, orderedReaderIds, matchingEvents]);
+
+  const activeReaderIndex = activeReaderEvent
+    ? orderedReaderIds.indexOf(activeReaderEvent.id)
+    : -1;
+  const hasReaderPrev = activeReaderIndex > 0;
+  const hasReaderNext =
+    activeReaderIndex >= 0 && activeReaderIndex < orderedReaderIds.length - 1;
+  const activeReaderSphere = activeReaderEvent
+    ? (chronicleData.sphereByEventId.get(activeReaderEvent.id) ?? null)
+    : null;
+  const branchByIdMap = useMemo(
+    () => new Map(branches.map((b) => [b.id, b])),
+    [branches],
+  );
+  const activeReaderBranch = activeReaderEvent
+    ? branchByIdMap.get(activeReaderEvent.task)
+    : undefined;
+
+  const readerLinkGeometry = useMemo(
+    () => buildLinkGeometryForEvent(activeReaderEvent, false),
+    [buildLinkGeometryForEvent, activeReaderEvent],
+  );
+
+  const readerLinkItems = useMemo<ReaderLinkItem[]>(() => {
+    if (!readerLinkGeometry) return [];
+    return [
+      ...readerLinkGeometry.upItems.map((i) => ({
+        targetEvent: i.targetEvent,
+        branchLabel: i.branchLabel,
+        rowDelta: i.rowDelta,
+        yearDelta: i.yearDelta,
+        isHiddenBranch: i.isHiddenBranch,
+        direction: 'up' as const,
+      })),
+      ...readerLinkGeometry.downItems.map((i) => ({
+        targetEvent: i.targetEvent,
+        branchLabel: i.branchLabel,
+        rowDelta: i.rowDelta,
+        yearDelta: i.yearDelta,
+        isHiddenBranch: i.isHiddenBranch,
+        direction: 'down' as const,
+      })),
+      ...readerLinkGeometry.offStreamItems.map((i) => ({
+        targetEvent: i.targetEvent,
+        branchLabel: i.branchLabel,
+        rowDelta: i.rowDelta,
+        yearDelta: i.yearDelta,
+        isHiddenBranch: i.isHiddenBranch,
+        direction: 'off' as const,
+      })),
+    ];
+  }, [readerLinkGeometry]);
+
+  const activeJumpEraId = useMemo(() => {
+    if (displayMode === 'chronicle' && activeReaderEvent) {
+      return (
+        findMacroEraForYear(activeReaderEvent.startYear, resolvedEras)?.id ??
+        activeStickyEra?.id ??
+        null
+      );
+    }
+    return activeStickyEra?.id ?? null;
+  }, [displayMode, activeReaderEvent, resolvedEras, activeStickyEra]);
+
+  const handleSelectReaderEvent = useCallback(
+    (eventId: string) => {
+      setSelectedReaderEventId(eventId);
+      setPinnedHoverEventId(eventId);
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        setIsMobileReaderOpen(true);
+      }
+    },
+    [],
+  );
+
+  const handleStepReader = useCallback(
+    (direction: -1 | 1) => {
+      const nextId = stepEventId(orderedReaderIds, activeReaderEvent?.id ?? null, direction);
+      if (!nextId) return;
+      setSelectedReaderEventId(nextId);
+      setPinnedHoverEventId(nextId);
+
+      if (displayMode === 'chronicle') {
+        const chapter = chronicleData.chapters.find((ch) =>
+          ch.events.some((ev) => ev.id === nextId),
+        );
+        if (chapter) {
+          setCollapsedChronicleEras((prev) =>
+            prev[chapter.era.id] ? { ...prev, [chapter.era.id]: false } : prev,
+          );
+        }
+        window.requestAnimationFrame(() => {
+          document
+            .getElementById(`chronicle-ev-${nextId}`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+      } else {
+        triggerScrollToDomRow(`row-${nextId}`, nextId);
+      }
+    },
+    [orderedReaderIds, activeReaderEvent, displayMode, chronicleData.chapters, triggerScrollToDomRow],
+  );
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) {
+        return;
+      }
+      if ((e.altKey && e.key === 'ArrowLeft') || (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === 'k')) {
+        e.preventDefault();
+        handleStepReader(-1);
+      } else if ((e.altKey && e.key === 'ArrowRight') || (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === 'j')) {
+        e.preventDefault();
+        handleStepReader(1);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleStepReader]);
+
+  const handleToggleChronicleEra = useCallback((eraId: string) => {
+    setCollapsedChronicleEras((prev) => ({ ...prev, [eraId]: !prev[eraId] }));
+  }, []);
+
+  const handleToggleAllChronicleEras = useCallback(
+    (collapseAll: boolean) => {
+      const next: Record<string, boolean> = {};
+      for (const ch of chronicleData.chapters) {
+        next[ch.era.id] = collapseAll;
+      }
+      setCollapsedChronicleEras(next);
+    },
+    [chronicleData.chapters],
+  );
+
+  const handleJumpToEra = useCallback(
+    (entry: EraJumpEntry) => {
+      const firstEraEvent = matchingEvents.find(
+        (ev) => ev.startYear >= entry.era.startYear && ev.startYear <= entry.era.endYear,
+      );
+      if (firstEraEvent) {
+        setSelectedReaderEventId(firstEraEvent.id);
+      }
+
+      if (displayMode === 'chronicle') {
+        setCollapsedChronicleEras((prev) =>
+          prev[entry.era.id] ? { ...prev, [entry.era.id]: false } : prev,
+        );
+        window.requestAnimationFrame(() => {
+          document
+            .getElementById(`chronicle-era-${entry.era.id}`)
+            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+        return;
+      }
+
+      if (entry.firstDomId) {
+        const el = document.getElementById(entry.firstDomId);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else if (entry.firstStreamIdx !== null) {
+          pendingScrollDomIdRef.current = entry.firstDomId;
+          setVisibleRowCount((prev) =>
+            Math.max(prev, Math.min(stream.length, entry.firstStreamIdx! + 32)),
+          );
+        }
+      }
+    },
+    [displayMode, matchingEvents, stream.length],
+  );
 
   const effectiveVisibleCount = Math.min(stream.length, Math.max(INITIAL_VISIBLE_ROWS, visibleRowCount));
   const renderedStream = useMemo(
@@ -949,87 +1198,132 @@ export const GitTimeline = memo(function GitTimeline({
   const remainingRowsCount = Math.max(0, stream.length - renderedStream.length);
 
   return (
-    <div className="min-w-0 w-full xl:grid xl:grid-cols-[minmax(0,1fr)_316px] xl:gap-5 xl:items-start">
+    <div className="min-w-0 w-full lg:grid lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_396px] lg:gap-4 xl:gap-5 lg:items-start pb-16 lg:pb-0">
       <div className="min-w-0">
         <div className="sticky top-[var(--top-bar-height,49px)] z-30 bg-[#050811]/95 backdrop-blur-md border border-slate-800/90 rounded-t-2xl shadow-md">
-          <div className="px-3 sm:px-5 py-2 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar min-w-0">
-              {visibleLanes.map((lane, laneIdx) => {
-                const isTimeAxis = lane.id === 'TIME_AXIS';
-                const subCount =
-                  lane.id === 'MAIN_RULERS'
-                    ? rulerLayout.laneCount
-                    : (subLaneLayout.branchLayouts.get(lane.id)?.subLaneCount ?? 1);
-                const isCollapsedParentLane =
-                  hasChildBranches(lane.id, branches) && Boolean(collapsedParents[lane.id]);
+          <div className="px-3 sm:px-5 py-2 flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-3 overflow-x-auto no-scrollbar min-w-0">
+              <div
+                className="inline-flex items-center rounded-lg bg-slate-950 border border-slate-800 p-0.5 text-xs font-sans shrink-0"
+                role="tablist"
+                aria-label="Режим отображения оси времени"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={displayMode === 'graph'}
+                  onClick={() => setDisplayMode('graph')}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    displayMode === 'graph'
+                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <GitBranch className="w-3.5 h-3.5 shrink-0" />
+                  <span>Граф веток</span>
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={displayMode === 'chronicle'}
+                  onClick={() => setDisplayMode('chronicle')}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                    displayMode === 'chronicle'
+                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                >
+                  <List className="w-3.5 h-3.5 shrink-0" />
+                  <span>Хроника по сферам</span>
+                </button>
+              </div>
 
-                if (isCollapsedParentLane) {
-                  const activeChildCount = getDirectChildBranches(lane.id, branches).filter((child) =>
-                    isBranchOrDescendantActive(child, branches, activeBranches),
-                  ).length;
+              {displayMode === 'graph' ? (
+                <>
+                  {visibleLanes.map((lane, laneIdx) => {
+                    const isTimeAxis = lane.id === 'TIME_AXIS';
+                    const subCount =
+                      lane.id === 'MAIN_RULERS'
+                        ? rulerLayout.laneCount
+                        : (subLaneLayout.branchLayouts.get(lane.id)?.subLaneCount ?? 1);
+                    const isCollapsedParentLane =
+                      hasChildBranches(lane.id, branches) && Boolean(collapsedParents[lane.id]);
 
-                  return (
-                    <button
-                      key={lane.id}
-                      type="button"
-                      onClick={() => onToggleCollapseParent(lane.id)}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-xs font-sans text-amber-100 shrink-0 cursor-pointer transition-colors"
-                      title={`${lane.label}: свёрнуто веток (${activeChildCount}). Нажмите, чтобы развернуть в отдельные линии.`}
-                    >
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
-                      <span className="font-semibold">{lane.label}</span>
-                      {subCount > 1 && (
-                        <span className="font-mono text-amber-300 font-bold tabular-nums">×{subCount}</span>
-                      )}
-                      <GitBranch className="w-3 h-3 text-amber-300 ml-0.5 shrink-0" />
-                      <span className="text-amber-300 font-semibold">Развернуть ({activeChildCount})</span>
-                    </button>
-                  );
-                }
+                    if (isCollapsedParentLane) {
+                      const activeChildCount = getDirectChildBranches(lane.id, branches).filter((child) =>
+                        isBranchOrDescendantActive(child, branches, activeBranches),
+                      ).length;
 
-                return (
-                  <div
-                    key={lane.id}
-                    className={`inline-flex items-center gap-1.5 text-xs font-sans shrink-0 whitespace-nowrap ${
-                      isTimeAxis ? 'text-white font-semibold' : 'text-slate-300'
-                    }`}
-                    title={
-                      subCount > 1
-                        ? `${lane.label}: до ${subCount} параллельных линий в окне`
-                        : lane.label
+                      return (
+                        <button
+                          key={lane.id}
+                          type="button"
+                          onClick={() => onToggleCollapseParent(lane.id)}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border bg-amber-500/15 hover:bg-amber-500/25 border-amber-400/50 text-xs font-sans text-amber-100 shrink-0 cursor-pointer transition-colors"
+                          title={`${lane.label}: свёрнуто веток (${activeChildCount}). Нажмите, чтобы развернуть в отдельные линии.`}
+                        >
+                          <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
+                          <span className="font-semibold">{lane.label}</span>
+                          {subCount > 1 && (
+                            <span className="font-mono text-amber-300 font-bold tabular-nums">×{subCount}</span>
+                          )}
+                          <GitBranch className="w-3 h-3 text-amber-300 ml-0.5 shrink-0" />
+                          <span className="text-amber-300 font-semibold">Развернуть ({activeChildCount})</span>
+                        </button>
+                      );
                     }
-                  >
-                    {laneIdx > 0 && (
-                      <span aria-hidden="true" className="text-slate-600 mr-0.5">
-                        ·
-                      </span>
-                    )}
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
-                    <span>{lane.label}</span>
-                    {subCount > 1 && (
-                      <span className="font-mono text-amber-300 font-bold tabular-nums">×{subCount}</span>
-                    )}
-                  </div>
-                );
-              })}
 
-              {expandedCollapsibleParents.map((parent) => {
-                const activeChildCount = getDirectChildBranches(parent.id, branches).filter((child) =>
-                  isBranchOrDescendantActive(child, branches, activeBranches),
-                ).length;
-                return (
-                  <button
-                    key={`collapse-${parent.id}`}
-                    type="button"
-                    onClick={() => onToggleCollapseParent(parent.id)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 hover:border-amber-400/50 text-xs font-sans text-slate-300 hover:text-amber-200 shrink-0 cursor-pointer transition-colors whitespace-nowrap"
-                    title={`Свернуть ${activeChildCount} веток группы «${parent.label}» в одну линию`}
-                  >
-                    <GitMerge className="w-3 h-3 text-amber-400 shrink-0" />
-                    <span>Свернуть «{parent.label}» ({activeChildCount} → 1)</span>
-                  </button>
-                );
-              })}
+                    return (
+                      <div
+                        key={lane.id}
+                        className={`inline-flex items-center gap-1.5 text-xs font-sans shrink-0 whitespace-nowrap ${
+                          isTimeAxis ? 'text-white font-semibold' : 'text-slate-300'
+                        }`}
+                        title={
+                          subCount > 1
+                            ? `${lane.label}: до ${subCount} параллельных линий в окне`
+                            : lane.label
+                        }
+                      >
+                        {laneIdx > 0 && (
+                          <span aria-hidden="true" className="text-slate-600 mr-0.5">
+                            ·
+                          </span>
+                        )}
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: lane.color }} />
+                        <span>{lane.label}</span>
+                        {subCount > 1 && (
+                          <span className="font-mono text-amber-300 font-bold tabular-nums">×{subCount}</span>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {expandedCollapsibleParents.map((parent) => {
+                    const activeChildCount = getDirectChildBranches(parent.id, branches).filter((child) =>
+                      isBranchOrDescendantActive(child, branches, activeBranches),
+                    ).length;
+                    return (
+                      <button
+                        key={`collapse-${parent.id}`}
+                        type="button"
+                        onClick={() => onToggleCollapseParent(parent.id)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-700/80 bg-slate-900/90 hover:bg-slate-800 hover:border-amber-400/50 text-xs font-sans text-slate-300 hover:text-amber-200 shrink-0 cursor-pointer transition-colors whitespace-nowrap"
+                        title={`Свернуть ${activeChildCount} веток группы «${parent.label}» в одну линию`}
+                      >
+                        <GitMerge className="w-3 h-3 text-amber-400 shrink-0" />
+                        <span>Свернуть «{parent.label}» ({activeChildCount} → 1)</span>
+                      </button>
+                    );
+                  })}
+                </>
+              ) : (
+                <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-slate-400 tabular-nums whitespace-nowrap">
+                  <span>Глав эпох: <strong className="text-slate-200">{chronicleData.chapters.length}</strong></span>
+                  <span aria-hidden="true" className="text-slate-600">·</span>
+                  <span>Событий: <strong className="text-amber-300">{chronicleData.orderedEventIds.length}</strong></span>
+                </div>
+              )}
             </div>
 
             <div
@@ -1053,54 +1347,54 @@ export const GitTimeline = memo(function GitTimeline({
                   )}
                 </span>
               )}
-              <span className="hidden md:inline text-slate-300">
-                Масштаб оси: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
-              </span>
-              {timeScaleMode === 'proportional' && (
+              {displayMode === 'graph' && (
                 <>
-                  <span aria-hidden="true" className="hidden lg:inline text-slate-400">
-                    ·
+                  <span className="hidden xl:inline text-slate-300">
+                    Масштаб: <strong className="text-sky-300 font-semibold">{RESOLUTION_LABELS[axisResolution]}</strong>
                   </span>
-                  <span
-                    className="hidden lg:inline text-amber-300 font-semibold"
-                    title="Включена пропорциональная шкала времени: вертикальные промежутки отражают дистанцию в годах между событиями"
+                  {timeScaleMode === 'proportional' && (
+                    <>
+                      <span aria-hidden="true" className="hidden xl:inline text-slate-400">
+                        ·
+                      </span>
+                      <span
+                        className="hidden xl:inline text-amber-300 font-semibold"
+                        title="Включена пропорциональная шкала времени: вертикальные промежутки отражают дистанцию в годах между событиями"
+                      >
+                        по годам
+                      </span>
+                    </>
+                  )}
+                  {axisResolution !== 'year' && yearFrom <= 1918 && (yearTo === undefined || yearTo >= 1582) && (
+                    <>
+                      <span aria-hidden="true" className="hidden xl:inline text-slate-400">
+                        ·
+                      </span>
+                      <span
+                        className="hidden xl:inline text-amber-300/90 tabular-nums"
+                        title="В 1582–1918 годах события старого (юлианского) стиля сдвинуты на единую григорианскую шкалу (+10…+13 дн.) для точного сопоставления с Европой"
+                      >
+                        единая шкала: н. ст.
+                      </span>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setIsGraphHelpOpen((prev) => !prev)}
+                    className={`px-2 py-1 rounded-lg border text-xs font-sans inline-flex items-center gap-1 transition-colors cursor-pointer ${
+                      isGraphHelpOpen
+                        ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-bold'
+                        : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-slate-500 hover:text-white'
+                    }`}
+                    title="Памятка: как читать линии, события и связи хронографа"
                   >
-                    шкала: по годам
-                  </span>
+                    <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+                    <span className="hidden sm:inline">Схема</span>
+                  </button>
                 </>
               )}
-              {axisResolution !== 'year' && yearFrom <= 1918 && (yearTo === undefined || yearTo >= 1582) && (
-                <>
-                  <span aria-hidden="true" className="hidden lg:inline text-slate-400">
-                    ·
-                  </span>
-                  <span
-                    className="hidden lg:inline text-amber-300/90 tabular-nums"
-                    title="В 1582–1918 годах события старого (юлианского) стиля сдвинуты на единую григорианскую шкалу (+10…+13 дн.) для точного сопоставления с Европой"
-                  >
-                    единая шкала: н. ст.
-                  </span>
-                </>
-              )}
-              <span aria-hidden="true" className="hidden md:inline text-slate-400">
-                ·
-              </span>
-              <span className="hidden sm:inline text-amber-300/90 font-semibold">Клик — паспорт события</span>
-              <button
-                type="button"
-                onClick={() => setIsGraphHelpOpen((prev) => !prev)}
-                className={`px-2.5 py-1 rounded-lg border text-xs font-sans inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                  isGraphHelpOpen
-                    ? 'bg-amber-500/20 border-amber-400/60 text-amber-200 font-bold'
-                    : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-slate-500 hover:text-white'
-                }`}
-                title="Памятка: как читать линии, события и связи хронографа"
-              >
-                <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
-                <span>Как читать схему</span>
-              </button>
 
-              {isGraphHelpOpen && (
+              {isGraphHelpOpen && displayMode === 'graph' && (
                 <div className="fixed sm:absolute left-3 right-3 sm:left-auto sm:right-0 top-[106px] sm:top-full sm:mt-2 max-w-md sm:max-w-none sm:w-96 mx-auto sm:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl p-3.5 z-50 text-left space-y-2.5">
                   <div className="flex items-center justify-between gap-2 border-b border-slate-800 pb-2">
                     <span className="text-xs font-bold text-white">Обозначения на хронографе</span>
@@ -1144,7 +1438,13 @@ export const GitTimeline = memo(function GitTimeline({
             </div>
           </div>
 
-          {activeStickyRuler && (
+          <TimelineEraJumpBar
+            entries={eraJumpEntries}
+            activeEraId={activeJumpEraId}
+            onJumpToEra={handleJumpToEra}
+          />
+
+          {displayMode === 'graph' && activeStickyRuler && (
             <div className="px-3 sm:px-5 py-1.5 border-t border-slate-800/80 bg-slate-950/90 flex items-center justify-between gap-2 text-[11px] font-mono">
               <div className="flex items-center gap-2 min-w-0 truncate">
                 {activeStickyEra && (
@@ -1426,7 +1726,25 @@ export const GitTimeline = memo(function GitTimeline({
             </div>
           )}
 
-          {renderedStream.map((item, idx) => {
+          {displayMode === 'chronicle' ? (
+            <TimelineChronicleView
+              chronicle={chronicleData}
+              branches={branches}
+              sphereFilter={chronicleSphere}
+              onChangeSphereFilter={setChronicleSphere}
+              collapsedEras={collapsedChronicleEras}
+              onToggleEraCollapsed={handleToggleChronicleEra}
+              onToggleAllEras={handleToggleAllChronicleEras}
+              selectedEventId={activeReaderEvent?.id ?? null}
+              focusedEventId={focusedEvent?.id ?? null}
+              onSelectEvent={handleSelectReaderEvent}
+              onOpenCardModal={onOpenCardModal}
+              onOpenEraModal={onOpenEraModal}
+              onOpenPeriodModal={onOpenPeriodModal}
+            />
+          ) : (
+            <>
+              {renderedStream.map((item, idx) => {
             const prevItem = idx > 0 ? stream[idx - 1] : null;
             const deltaYears =
               timeScaleMode === 'proportional' && prevItem
@@ -1606,55 +1924,81 @@ export const GitTimeline = memo(function GitTimeline({
             );
           })}
 
-          {remainingRowsCount > 0 && (
-            <div
-              ref={loadMoreSentinelRef}
-              className="px-4 py-4 bg-slate-950/75 flex flex-wrap items-center justify-center gap-3 text-xs font-sans text-slate-300"
-            >
-              <button
-                type="button"
-                onClick={() =>
-                  startTransition(() => {
-                    setVisibleRowCount((prev) => Math.min(stream.length, prev + LOAD_MORE_ROWS_STEP));
-                  })
-                }
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-amber-400/60 text-amber-200 font-semibold transition-colors cursor-pointer tabular-nums"
-              >
-                <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
-                <span>
-                  Показать следующие{' '}
-                  <span className="font-mono">{Math.min(LOAD_MORE_ROWS_STEP, remainingRowsCount)}</span>{' '}
-                  строк (осталось <span className="font-mono">{remainingRowsCount}</span>)
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  startTransition(() => {
-                    setVisibleRowCount(stream.length);
-                  })
-                }
-                className="px-3 py-2 rounded-lg bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-              >
-                Раскрыть всю ленту
-              </button>
-            </div>
+              {remainingRowsCount > 0 && (
+                <div
+                  ref={loadMoreSentinelRef}
+                  className="px-4 py-4 bg-slate-950/75 flex flex-wrap items-center justify-center gap-3 text-xs font-sans text-slate-300"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      startTransition(() => {
+                        setVisibleRowCount((prev) => Math.min(stream.length, prev + LOAD_MORE_ROWS_STEP));
+                      })
+                    }
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 hover:border-amber-400/60 text-amber-200 font-semibold transition-colors cursor-pointer tabular-nums"
+                  >
+                    <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
+                    <span>
+                      Показать следующие{' '}
+                      <span className="font-mono">{Math.min(LOAD_MORE_ROWS_STEP, remainingRowsCount)}</span>{' '}
+                      строк (осталось <span className="font-mono">{remainingRowsCount}</span>)
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      startTransition(() => {
+                        setVisibleRowCount(stream.length);
+                      })
+                    }
+                    className="px-3 py-2 rounded-lg bg-slate-950 hover:bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+                  >
+                    Раскрыть всю ленту
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
 
-      {/* Липкий правый инспектор среза и быстрых связей на широких экранах (xl) */}
+      {/* Липкая правая колонка: живая читалка события + компактный срез хронографа (lg+) */}
       <aside
-        aria-label="Инспектор среза и быстрых связей"
+        aria-label="Живая читалка события и срез хронографа"
         onMouseEnter={() => cancelScheduledHoverClear()}
         onMouseLeave={() => {
           if (hoveredEvent && pinnedHoverEventId !== hoveredEvent.id) {
             scheduleClearHoverEvent();
           }
         }}
-        className="hidden xl:flex xl:flex-col xl:gap-3.5 xl:sticky xl:top-[calc(var(--top-bar-height,49px)+0.875rem)] xl:max-h-[calc(100vh-var(--top-bar-height,49px)-1.75rem)] xl:overflow-y-auto no-scrollbar"
+        className="hidden lg:flex lg:flex-col lg:gap-3.5 lg:sticky lg:top-[calc(var(--top-bar-height,49px)+0.875rem)] lg:max-h-[calc(100vh-var(--top-bar-height,49px)-1.75rem)] lg:overflow-y-auto no-scrollbar"
       >
-        <section className="rounded-2xl border border-slate-800/90 bg-[#080e1c]/90 backdrop-blur-md p-3.5 space-y-3 shadow-lg">
+        <TimelineLiveReader
+          event={activeReaderEvent}
+          sphereId={activeReaderSphere}
+          branch={activeReaderBranch}
+          branches={branches}
+          rulers={rulers}
+          currentIndex={activeReaderIndex}
+          totalCount={orderedReaderIds.length}
+          hasPrev={hasReaderPrev}
+          hasNext={hasReaderNext}
+          isFocused={Boolean(activeReaderEvent && focusedEvent?.id === activeReaderEvent.id)}
+          linkItems={readerLinkItems}
+          onStep={handleStepReader}
+          onSelectEvent={handleSelectReaderEvent}
+          onJumpToEvent={(targetId) => {
+            setSelectedReaderEventId(targetId);
+            onJumpToEvent(targetId);
+          }}
+          onOpenCardModal={onOpenCardModal}
+          onOpenPeriodModal={onOpenPeriodModal}
+          onOpenPersonModal={onOpenPersonModal}
+          onToggleFocusEvent={onToggleFocusEvent}
+        />
+
+        <section className="rounded-2xl border border-slate-800/90 bg-[#080e1c]/90 backdrop-blur-md p-3.5 space-y-2.5 shadow-lg">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs font-sans font-semibold text-slate-400">
               Срез хронографа
@@ -1755,281 +2099,6 @@ export const GitTimeline = memo(function GitTimeline({
             </div>
           )}
         </section>
-
-        {inspectorSourceEvent ? (
-          <section className="rounded-2xl border border-emerald-500/40 bg-[#0b1325]/95 backdrop-blur-md shadow-xl overflow-hidden flex flex-col">
-            <div className="px-3.5 py-2.5 bg-slate-900/90 border-b border-slate-800 flex items-start justify-between gap-2 font-sans">
-              <div className="min-w-0">
-                <div className="text-xs text-emerald-300 font-bold flex items-center gap-1.5 tabular-nums">
-                  <Link2 className="w-3.5 h-3.5 shrink-0" />
-                  <span>
-                    {pinnedHoverEventId === inspectorSourceEvent.id
-                      ? 'Закреплённые связи'
-                      : focusedEvent?.id === inspectorSourceEvent.id && !hoveredEvent
-                        ? 'Связи в фокусе'
-                        : 'Быстрый обзор связей'}
-                    {inspectorLinkGeometry ? (
-                      <> (<span className="font-mono">{inspectorLinkGeometry.totalCount}</span>)</>
-                    ) : null}
-                  </span>
-                </div>
-                <div className="text-xs font-bold text-white leading-snug mt-1">
-                  <span className="font-mono tabular-nums text-slate-200">{inspectorSourceEvent.period}</span> —{' '}
-                  {inspectorSourceEvent.title}
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() =>
-                    setPinnedHoverEventId((prev) =>
-                      prev === inspectorSourceEvent.id ? null : inspectorSourceEvent.id,
-                    )
-                  }
-                  className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
-                    pinnedHoverEventId === inspectorSourceEvent.id
-                      ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
-                      : 'bg-slate-950/80 border-slate-700 text-slate-300 hover:text-white'
-                  }`}
-                  title="Закрепить инспектор связей при перемещении мыши"
-                >
-                  <Pin className="w-3.5 h-3.5" />
-                </button>
-                {(hoveredEvent || pinnedHoverEventId) && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPinnedHoverEventId(null);
-                      setLocalHoveredEventId(null);
-                      cancelScheduledHoverClear();
-                      onHoverEvent(null);
-                    }}
-                    aria-label="Снять фиксацию события"
-                    className="p-1.5 rounded-lg bg-slate-950/80 border border-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {inspectorLinkGeometry ? (
-              <div className="p-2.5 space-y-2.5 text-xs font-sans">
-                {inspectorLinkGeometry.upItems.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="text-xs text-slate-400 px-1 flex items-center gap-1">
-                      <ArrowUp className="w-3 h-3 text-emerald-400" />
-                      <span>
-                        Выше на ленте (<span className="font-mono tabular-nums">{inspectorLinkGeometry.upItems.length}</span>)
-                      </span>
-                    </div>
-                    {inspectorLinkGeometry.upItems.map((lnk) => (
-                      <button
-                        key={lnk.targetEvent.id}
-                        type="button"
-                        onClick={() => onJumpToEvent(lnk.targetEvent.id)}
-                        className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full shrink-0"
-                              style={{ backgroundColor: lnk.branchColor }}
-                            />
-                            <span className="truncate">
-                              <span className="font-mono tabular-nums">↑ {lnk.targetEvent.period}</span> · {lnk.branchLabel}
-                            </span>
-                          </span>
-                          <span className="font-mono text-xs text-emerald-300 shrink-0 tabular-nums">
-                            {lnk.rowDelta !== null ? `${lnk.rowDelta} стр.` : ''}
-                            {lnk.yearDelta !== 0 ? `${lnk.rowDelta !== null ? ' · ' : ''}${lnk.yearDelta} л.` : ''}
-                          </span>
-                        </div>
-                        <div className="text-xs font-semibold text-white truncate mt-0.5">
-                          {lnk.targetEvent.title}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {inspectorLinkGeometry.downItems.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="text-xs text-slate-400 px-1 flex items-center gap-1">
-                      <ArrowDown className="w-3 h-3 text-emerald-400" />
-                      <span>
-                        Ниже на ленте (<span className="font-mono tabular-nums">{inspectorLinkGeometry.downItems.length}</span>)
-                      </span>
-                    </div>
-                    {inspectorLinkGeometry.downItems.map((lnk) => (
-                      <button
-                        key={lnk.targetEvent.id}
-                        type="button"
-                        onClick={() => onJumpToEvent(lnk.targetEvent.id)}
-                        className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full shrink-0"
-                              style={{ backgroundColor: lnk.branchColor }}
-                            />
-                            <span className="truncate">
-                              <span className="font-mono tabular-nums">↓ {lnk.targetEvent.period}</span> · {lnk.branchLabel}
-                            </span>
-                          </span>
-                          <span className="font-mono text-xs text-emerald-300 shrink-0 tabular-nums">
-                            {lnk.rowDelta !== null ? `${lnk.rowDelta} стр.` : ''}
-                            {lnk.yearDelta !== 0 ? `${lnk.rowDelta !== null ? ' · ' : ''}+${Math.abs(lnk.yearDelta)} л.` : ''}
-                          </span>
-                        </div>
-                        <div className="text-xs font-semibold text-white truncate mt-0.5">
-                          {lnk.targetEvent.title}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {inspectorLinkGeometry.offStreamItems.length > 0 && (
-                  <div className="space-y-1">
-                    <div className="text-xs text-amber-300/90 px-1">
-                      Вне окна или в скрытых ветках (<span className="font-mono tabular-nums">{inspectorLinkGeometry.offStreamItems.length}</span>)
-                    </div>
-                    {inspectorLinkGeometry.offStreamItems.map((lnk) => (
-                      <button
-                        key={lnk.targetEvent.id}
-                        type="button"
-                        onClick={() => onJumpToEvent(lnk.targetEvent.id)}
-                        className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-amber-950/35 border border-slate-800 hover:border-amber-500/50 transition-colors cursor-pointer"
-                      >
-                        <div className="flex items-center justify-between gap-2 text-xs">
-                          <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full shrink-0"
-                              style={{ backgroundColor: lnk.branchColor }}
-                            />
-                            <span className="truncate">
-                              <span className="font-mono tabular-nums">{lnk.targetEvent.period}</span> · {lnk.branchLabel}
-                            </span>
-                          </span>
-                          <span className="text-xs font-semibold text-amber-300 shrink-0">
-                            {lnk.isHiddenBranch ? 'Раскрыть →' : 'Перейти →'}
-                          </span>
-                        </div>
-                        <div className="text-xs font-semibold text-white truncate mt-0.5">
-                          {lnk.targetEvent.title}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="p-3.5 text-xs font-sans text-slate-400 space-y-2">
-                <p className="leading-relaxed">
-                  Прямых перекрёстных связей у этого события в текущем манифесте не отмечено.
-                </p>
-              </div>
-            )}
-
-            <div className="px-3.5 py-2 border-t border-slate-800/80 bg-slate-950/60 flex items-center justify-between gap-2 text-xs font-sans">
-              <button
-                type="button"
-                onClick={() => onToggleFocusEvent(inspectorSourceEvent.id)}
-                className={`px-2.5 py-1 rounded-lg border inline-flex items-center gap-1 transition-colors cursor-pointer ${
-                  focusedEvent?.id === inspectorSourceEvent.id
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
-                    : 'bg-slate-900 border-slate-700/80 text-slate-300 hover:border-emerald-500/50 hover:text-emerald-300'
-                }`}
-              >
-                <Crosshair className="w-3 h-3" />
-                <span>{focusedEvent?.id === inspectorSourceEvent.id ? 'В фокусе' : 'Фокус'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => onOpenCardModal(inspectorSourceEvent.id)}
-                className="text-amber-300 hover:text-amber-200 font-semibold inline-flex items-center gap-1 cursor-pointer"
-              >
-                <GitCommitHorizontal className="w-3.5 h-3.5" />
-                <span>Паспорт →</span>
-              </button>
-            </div>
-          </section>
-        ) : (
-          <section className="rounded-2xl border border-slate-800/90 bg-[#080e1c]/90 backdrop-blur-md p-3.5 space-y-2.5 shadow-lg font-sans">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-200 flex items-center gap-1.5">
-                <Link2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                <span>Поворотные узлы среза</span>
-              </span>
-              <span className="text-xs text-slate-400">по связям</span>
-            </div>
-
-            {topLinkedEventsInWindow.length > 0 ? (
-              <div className="space-y-1.5">
-                {topLinkedEventsInWindow.map(({ ev, branchLabel, branchColor }) => (
-                  <div
-                    key={ev.id}
-                    className="rounded-xl bg-slate-900/75 hover:bg-slate-900 border border-slate-800/80 hover:border-emerald-500/40 p-2.5 transition-colors space-y-1.5"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPinnedHoverEventId(ev.id);
-                        onJumpToEvent(ev.id);
-                      }}
-                      className="w-full text-left cursor-pointer group"
-                    >
-                      <div className="flex items-center justify-between gap-2 text-xs">
-                        <span className="inline-flex items-center gap-1.5 text-slate-300 min-w-0">
-                          <span
-                            className="w-2 h-2 rounded-full shrink-0"
-                            style={{ backgroundColor: branchColor }}
-                          />
-                          <span className="font-mono font-bold text-slate-200 tabular-nums shrink-0">
-                            {ev.period}
-                          </span>
-                          <span className="truncate text-slate-400">{branchLabel}</span>
-                        </span>
-                        <span className="font-mono text-xs font-semibold text-emerald-300 shrink-0 tabular-nums inline-flex items-center gap-1">
-                          <Link2 className="w-3 h-3" />
-                          {ev.explicitLinks.length}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-xs font-semibold text-white group-hover:text-amber-200 leading-snug line-clamp-2">
-                        {ev.title}
-                      </div>
-                    </button>
-
-                    <div className="flex items-center justify-between gap-2 pt-0.5 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => onToggleFocusEvent(ev.id)}
-                        className="text-slate-300 hover:text-emerald-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
-                      >
-                        <Crosshair className="w-3 h-3" />
-                        <span>В фокус</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onOpenCardModal(ev.id)}
-                        className="text-amber-300 hover:text-amber-200 font-semibold cursor-pointer"
-                      >
-                        Паспорт →
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Наведите на любую карточку хронографа, чтобы увидеть её прямые связи и перейти к связанным событиям.
-              </p>
-            )}
-          </section>
-        )}
       </aside>
 
       {hoveredCardTooltip && (
@@ -2166,8 +2235,8 @@ export const GitTimeline = memo(function GitTimeline({
                 </span>
                 <span className="text-amber-300 shrink-0 tabular-nums">
                   {hoveredCardTooltip.ev.explicitLinks.length > 0
-                    ? `Связей: ${hoveredCardTooltip.ev.explicitLinks.length} · Клик — паспорт`
-                    : 'Клик — паспорт события'}
+                    ? `Связей: ${hoveredCardTooltip.ev.explicitLinks.length} · Клик — в читалку`
+                    : 'Клик — в читалку · повторно — паспорт'}
                 </span>
               </div>
             </>
@@ -2198,184 +2267,119 @@ export const GitTimeline = memo(function GitTimeline({
 
               <div className="pt-1 flex items-center justify-between gap-2 text-xs font-sans text-slate-400">
                 <span>Скрытый контекст карточки</span>
-                <span className="text-amber-300 font-semibold shrink-0">Клик — паспорт события</span>
+                <span className="text-amber-300 font-semibold shrink-0">Клик — в читалку</span>
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* Плавающая панель быстрого перехода по дальним вертикальным связям (на < xl, на xl её заменяет липкий инспектор справа) */}
-      {activeLinkGeometry && (
-        <aside
-          aria-label="Навигация по связанным событиям"
-          onMouseEnter={() => cancelScheduledHoverClear()}
-          onMouseLeave={() => {
-            if (pinnedHoverEventId !== activeLinkGeometry.sourceEvent.id) {
-              scheduleClearHoverEvent();
-            }
-          }}
-          className="xl:hidden fixed bottom-4 sm:bottom-5 left-3 right-3 sm:left-auto sm:right-5 z-40 max-w-md sm:max-w-none sm:w-[376px] mx-auto sm:mx-0 max-h-[58vh] flex flex-col rounded-2xl border border-emerald-500/45 bg-[#0b1325]/98 backdrop-blur-md shadow-2xl overflow-hidden"
-        >
-          <div className="px-3.5 py-2.5 bg-slate-900/95 border-b border-slate-800 flex items-center justify-between gap-2 font-sans">
-            <div className="min-w-0">
-              <div className="text-xs text-emerald-300 font-bold flex items-center gap-1.5 tabular-nums">
-                <Link2 className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  Переход по связям (<span className="font-mono">{activeLinkGeometry.totalCount}</span>)
-                </span>
-              </div>
-              <div className="text-xs font-bold text-white truncate mt-0.5">
-                <span className="font-mono tabular-nums">{activeLinkGeometry.sourceEvent.period}</span> —{' '}
-                {activeLinkGeometry.sourceEvent.title}
-              </div>
-            </div>
-
+      {/* Компактная нижняя панель и выдвижная читалка для планшетов и смартфонов (< lg) */}
+      {activeReaderEvent && (
+        <>
+          <div className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-slate-800 bg-[#050811]/95 backdrop-blur-md px-3 py-2 flex items-center justify-between gap-2 shadow-2xl">
             <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
-                onClick={() =>
-                  setPinnedHoverEventId((prev) =>
-                    prev === activeLinkGeometry.sourceEvent.id
-                      ? null
-                      : activeLinkGeometry.sourceEvent.id,
-                  )
-                }
-                className={`p-1.5 rounded-lg border text-xs transition-colors cursor-pointer ${
-                  pinnedHoverEventId === activeLinkGeometry.sourceEvent.id
-                    ? 'bg-emerald-500 text-slate-950 border-emerald-400 font-bold'
-                    : 'bg-slate-950/80 border-slate-700 text-slate-300 hover:text-white'
+                disabled={!hasReaderPrev}
+                onClick={() => handleStepReader(-1)}
+                aria-label="Предыдущее событие"
+                className={`p-1.5 rounded-lg border transition-colors ${
+                  hasReaderPrev
+                    ? 'bg-slate-900 border-slate-700 text-slate-200 hover:text-white cursor-pointer'
+                    : 'bg-slate-950 border-slate-800/60 text-slate-600 cursor-not-allowed'
                 }`}
-                title="Закрепить панель перехода при перемещении мыши"
               >
-                <Pin className="w-3.5 h-3.5" />
+                <ChevronLeft className="w-4 h-4" />
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setPinnedHoverEventId(null);
-                  setLocalHoveredEventId(null);
-                  cancelScheduledHoverClear();
-                  onHoverEvent(null);
-                }}
-                aria-label="Скрыть панель перехода"
-                className="p-1.5 rounded-lg bg-slate-950/80 border border-slate-700 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                disabled={!hasReaderNext}
+                onClick={() => handleStepReader(1)}
+                aria-label="Следующее событие"
+                className={`p-1.5 rounded-lg border transition-colors ${
+                  hasReaderNext
+                    ? 'bg-slate-900 border-slate-700 text-slate-200 hover:text-white cursor-pointer'
+                    : 'bg-slate-950 border-slate-800/60 text-slate-600 cursor-not-allowed'
+                }`}
               >
-                <X className="w-3.5 h-3.5" />
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={() => setIsMobileReaderOpen(true)}
+              className="flex-1 min-w-0 text-left px-2 py-0.5 rounded-lg hover:bg-slate-900/70 transition-colors cursor-pointer"
+            >
+              <div className="text-[11px] font-mono text-amber-300 tabular-nums truncate">
+                {activeReaderEvent.period}
+                {activeReaderIndex >= 0 ? ` · ${activeReaderIndex + 1} / ${orderedReaderIds.length}` : ''}
+              </div>
+              <div className="text-xs font-semibold text-white truncate">
+                {activeReaderEvent.title}
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsMobileReaderOpen(true)}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-200 text-xs font-sans font-semibold shrink-0 cursor-pointer"
+            >
+              <BookOpen className="w-3.5 h-3.5 shrink-0" />
+              <span>Читать</span>
+            </button>
           </div>
 
-          <div className="p-2.5 overflow-y-auto space-y-2.5 text-xs font-sans">
-            {activeLinkGeometry.upItems.length > 0 && (
-              <div className="space-y-1">
-                <div className="text-xs text-slate-400 px-1 flex items-center gap-1">
-                  <ArrowUp className="w-3 h-3 text-emerald-400" />
-                  <span>
-                    Выше на ленте (<span className="font-mono tabular-nums">{activeLinkGeometry.upItems.length}</span>)
-                  </span>
-                </div>
-                {activeLinkGeometry.upItems.map((lnk) => (
-                  <button
-                    key={lnk.targetEvent.id}
-                    type="button"
-                    onClick={() => onJumpToEvent(lnk.targetEvent.id)}
-                    className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
-                        <span
-                          className="w-1.5 h-1.5 rounded-full shrink-0"
-                          style={{ backgroundColor: lnk.branchColor }}
-                        />
-                        <span className="truncate">
-                          <span className="font-mono tabular-nums">↑ {lnk.targetEvent.period}</span> · {lnk.branchLabel}
-                        </span>
-                      </span>
-                      <span className="font-mono text-xs text-emerald-300 shrink-0 tabular-nums">
-                        {lnk.rowDelta} стр.{lnk.yearDelta !== 0 ? ` · ${lnk.yearDelta} л.` : ''}
-                      </span>
-                    </div>
-                    <div className="text-xs font-semibold text-white truncate mt-0.5">
-                      {lnk.targetEvent.title}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {activeLinkGeometry.downItems.length > 0 && (
-              <div className="space-y-1">
-                <div className="text-xs text-slate-400 px-1 flex items-center gap-1">
-                  <ArrowDown className="w-3 h-3 text-emerald-400" />
-                  <span>
-                    Ниже на ленте (<span className="font-mono tabular-nums">{activeLinkGeometry.downItems.length}</span>)
-                  </span>
-                </div>
-                {activeLinkGeometry.downItems.map((lnk) => (
-                  <button
-                    key={lnk.targetEvent.id}
-                    type="button"
-                    onClick={() => onJumpToEvent(lnk.targetEvent.id)}
-                    className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-emerald-950/45 border border-slate-800 hover:border-emerald-500/50 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
-                        <span
-                          className="w-1.5 h-1.5 rounded-full shrink-0"
-                          style={{ backgroundColor: lnk.branchColor }}
-                        />
-                        <span className="truncate">
-                          <span className="font-mono tabular-nums">↓ {lnk.targetEvent.period}</span> · {lnk.branchLabel}
-                        </span>
-                      </span>
-                      <span className="font-mono text-xs text-emerald-300 shrink-0 tabular-nums">
-                        {lnk.rowDelta} стр.{lnk.yearDelta !== 0 ? ` · +${Math.abs(lnk.yearDelta)} л.` : ''}
-                      </span>
-                    </div>
-                    <div className="text-xs font-semibold text-white truncate mt-0.5">
-                      {lnk.targetEvent.title}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {activeLinkGeometry.offStreamItems.length > 0 && (
-              <div className="space-y-1">
-                <div className="text-xs text-amber-300/90 px-1">
-                  Вне окна или в скрытых ветках (<span className="font-mono tabular-nums">{activeLinkGeometry.offStreamItems.length}</span>)
-                </div>
-                {activeLinkGeometry.offStreamItems.map((lnk) => (
-                  <button
-                    key={lnk.targetEvent.id}
-                    type="button"
-                    onClick={() => onJumpToEvent(lnk.targetEvent.id)}
-                    className="w-full text-left px-2.5 py-2 rounded-lg bg-slate-950/75 hover:bg-amber-950/35 border border-slate-800 hover:border-amber-500/50 transition-colors cursor-pointer"
-                  >
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <span className="inline-flex items-center gap-1.5 font-semibold text-slate-300 min-w-0">
-                        <span
-                          className="w-1.5 h-1.5 rounded-full shrink-0"
-                          style={{ backgroundColor: lnk.branchColor }}
-                        />
-                        <span className="truncate">
-                          <span className="font-mono tabular-nums">{lnk.targetEvent.period}</span> · {lnk.branchLabel}
-                        </span>
-                      </span>
-                      <span className="text-xs font-semibold text-amber-300 shrink-0">
-                        {lnk.isHiddenBranch ? 'Раскрыть →' : 'Перейти →'}
-                      </span>
-                    </div>
-                    <div className="text-xs font-semibold text-white truncate mt-0.5">
-                      {lnk.targetEvent.title}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </aside>
+          {isMobileReaderOpen && (
+            <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-slate-950/70 backdrop-blur-sm">
+              <div
+                className="flex-1"
+                onClick={() => setIsMobileReaderOpen(false)}
+                aria-hidden="true"
+              />
+              <TimelineLiveReader
+                variant="sheet"
+                event={activeReaderEvent}
+                sphereId={activeReaderSphere}
+                branch={activeReaderBranch}
+                branches={branches}
+                rulers={rulers}
+                currentIndex={activeReaderIndex}
+                totalCount={orderedReaderIds.length}
+                hasPrev={hasReaderPrev}
+                hasNext={hasReaderNext}
+                isFocused={Boolean(activeReaderEvent && focusedEvent?.id === activeReaderEvent.id)}
+                linkItems={readerLinkItems}
+                onStep={handleStepReader}
+                onSelectEvent={handleSelectReaderEvent}
+                onJumpToEvent={(targetId) => {
+                  setSelectedReaderEventId(targetId);
+                  setIsMobileReaderOpen(false);
+                  onJumpToEvent(targetId);
+                }}
+                onOpenCardModal={(eventId) => {
+                  setIsMobileReaderOpen(false);
+                  onOpenCardModal(eventId);
+                }}
+                onOpenPeriodModal={(rulerId) => {
+                  setIsMobileReaderOpen(false);
+                  onOpenPeriodModal(rulerId);
+                }}
+                onOpenPersonModal={
+                  onOpenPersonModal
+                    ? (person) => {
+                        setIsMobileReaderOpen(false);
+                        onOpenPersonModal(person);
+                      }
+                    : undefined
+                }
+                onToggleFocusEvent={onToggleFocusEvent}
+                onCloseMobileSheet={() => setIsMobileReaderOpen(false)}
+              />
+            </div>
+          )}
+        </>
       )}
     </div>
   );

@@ -2193,6 +2193,7 @@ export default function App() {
             onOpenPeriodModal={handleOpenPeriodModal}
             onOpenEraModal={handleOpenEraModal}
             onOpenWindowModal={handleOpenWindowModal}
+            onOpenPersonModal={handleOpenPersonModal}
             onSelectYearRange={stableYearRangeChange}
           />
         )}
