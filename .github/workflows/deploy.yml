@@ -37,6 +37,9 @@ jobs:
       - name: Security audit (production dependencies)
         run: npm audit --omit=dev --audit-level=high
 
+      - name: Verify multi-agent governance & UI invariants
+        run: npm run verify:invariants
+
       - name: Validate historical JSON modules & branch manifests (strict)
         run: npm run validate:branches:strict
 
