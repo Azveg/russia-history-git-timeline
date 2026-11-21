@@ -1,4 +1,4 @@
-import { Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, GitBranch, GitMerge, Lock, Minus, Search, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ChevronsDownUp, ChevronsUpDown, Eye, EyeOff, GitBranch, GitMerge, Lock, Minus, Search, X } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   getDescendantBranchIds,
@@ -187,7 +187,11 @@ export function BranchSelectorPopover({
             type="button"
             onClick={() => onToggleBranch(b.id)}
             className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
-            title={b.description}
+            title={
+              isIndeterminate
+                ? `${b.description} (частично включена — клик отключит все подветки)`
+                : b.description
+            }
           >
             <span
               className={`w-4 h-4 rounded flex items-center justify-center border transition-colors shrink-0 ${
@@ -338,24 +342,37 @@ export function BranchSelectorPopover({
                 )}
               </div>
 
-              {hasFilteredBranches && (
+              <div className="flex items-center gap-1 shrink-0">
                 <button
                   type="button"
+                  disabled={!hasFilteredBranches}
                   onClick={() => onApplyPreset('all')}
-                  className="px-2.5 py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 text-[11px] font-mono font-semibold whitespace-nowrap cursor-pointer"
+                  aria-label="Включить все ветки"
+                  title="Включить все ветки"
+                  className="p-1.5 rounded-lg bg-slate-900 hover:bg-amber-500/20 disabled:opacity-35 disabled:pointer-events-none border border-slate-800 hover:border-amber-500/45 text-amber-300 transition-colors cursor-pointer"
                 >
-                  Вкл все
+                  <Eye className="w-3.5 h-3.5" />
                 </button>
-              )}
-
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                aria-label="Закрыть меню веток"
-                className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+                <button
+                  type="button"
+                  disabled={activeCount === 0}
+                  onClick={() => onApplyPreset('none')}
+                  aria-label="Выключить все ветки"
+                  title="Выключить все ветки (оставить ось времени и названия эпох)"
+                  className="p-1.5 rounded-lg bg-slate-900 hover:bg-rose-500/15 disabled:opacity-35 disabled:pointer-events-none border border-slate-800 hover:border-rose-400/45 text-slate-300 hover:text-rose-200 transition-colors cursor-pointer"
+                >
+                  <EyeOff className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  aria-label="Закрыть меню веток"
+                  title="Закрыть меню веток"
+                  className="p-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -449,13 +466,26 @@ export function BranchSelectorPopover({
                         </span>
                       </button>
 
-                      <div className="flex items-center gap-2 shrink-0">
+                      <div className="flex items-center gap-1 shrink-0">
                         <button
                           type="button"
-                          onClick={() => onToggleCategory(branchIds, !allGroupActive)}
-                          className="text-[10px] font-mono text-amber-300 hover:text-amber-200 hover:underline cursor-pointer whitespace-nowrap"
+                          disabled={allGroupActive}
+                          onClick={() => onToggleCategory(branchIds, true)}
+                          aria-label={`Включить все ветки группы «${group.label}»`}
+                          title={`Включить все ветки группы «${group.label}»`}
+                          className="p-1 rounded-md bg-slate-900/90 hover:bg-amber-500/20 disabled:opacity-30 disabled:pointer-events-none border border-slate-800 hover:border-amber-500/45 text-amber-300 transition-colors cursor-pointer"
                         >
-                          {allGroupActive ? 'Скрыть группу' : 'Вкл группу'}
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={groupActiveCount === 0}
+                          onClick={() => onToggleCategory(branchIds, false)}
+                          aria-label={`Скрыть все ветки группы «${group.label}»`}
+                          title={`Скрыть все ветки группы «${group.label}»`}
+                          className="p-1 rounded-md bg-slate-900/90 hover:bg-rose-500/15 disabled:opacity-30 disabled:pointer-events-none border border-slate-800 hover:border-rose-400/45 text-slate-300 hover:text-rose-200 transition-colors cursor-pointer"
+                        >
+                          <EyeOff className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>

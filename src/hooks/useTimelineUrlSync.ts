@@ -130,7 +130,7 @@ export function useTimelineUrlSync({
           const enabledIds = leafBranches
             .filter((b) => activeBranches[b.id])
             .map((b) => b.id);
-          params.set('branches', enabledIds.join(','));
+          params.set('branches', enabledIds.length > 0 ? enabledIds.join(',') : 'none');
         }
       }
 
@@ -176,6 +176,8 @@ export function useTimelineUrlSync({
         const urlBranchesRaw = params.get('branches');
         if (!urlBranchesRaw) {
           setActiveBranches(computeBranchPresetMap(branches, 'overview'));
+        } else if (urlBranchesRaw.trim().toLowerCase() === 'none') {
+          setActiveBranches(computeBranchPresetMap(branches, 'none'));
         } else {
           const requestedIds = new Set(
             urlBranchesRaw

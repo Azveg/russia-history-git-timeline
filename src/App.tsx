@@ -97,9 +97,10 @@ type ActiveModalState =
   | { type: 'WINDOW'; from: number; to: number }
   | { type: 'COMPARE'; pair: { left: ComparisonTarget; right: ComparisonTarget } };
 
-function parseRequestedBranchIds(initialParams: URLSearchParams): Set<string> | null {
+function parseRequestedBranchIds(initialParams: URLSearchParams): Set<string> | 'none' | null {
   const urlBranchesRaw = initialParams.get('branches');
   if (!urlBranchesRaw) return null;
+  if (urlBranchesRaw.trim().toLowerCase() === 'none') return 'none';
   const ids = new Set(
     urlBranchesRaw
       .split(',')
@@ -117,6 +118,9 @@ function resolveInitialActiveBranches(
   const overviewMap = computeBranchPresetMap(branches, 'overview');
   const requestedIds = parseRequestedBranchIds(initialParams);
   if (!requestedIds) return overviewMap;
+  if (requestedIds === 'none') {
+    return computeBranchPresetMap(branches, 'none');
+  }
 
   const leafBranches = branches.filter((b) => !b.isGroup);
   const hasValidMatch = leafBranches.some((b) => requestedIds.has(b.id));
@@ -148,13 +152,19 @@ function mergeMissingActiveBranches(
   }
   if (!hasMissing) return prev;
 
+  const existingEntries = Object.entries(prev).filter(([id]) => id !== 'TIME_AXIS');
+  const allExistingDisabled =
+    existingEntries.length > 0 && existingEntries.every(([, enabled]) => enabled === false);
+
   const requestedIds = parseRequestedBranchIds(initialParams);
   const overviewMap = computeBranchPresetMap(branches, 'overview');
   const next: Record<string, boolean> = { ...prev };
   for (let i = 0; i < branches.length; i += 1) {
     const b = branches[i];
     if (b.isGroup || next[b.id] !== undefined) continue;
-    if (requestedIds) {
+    if (allExistingDisabled || requestedIds === 'none') {
+      next[b.id] = b.isTimeAxis ? true : false;
+    } else if (requestedIds) {
       next[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
     } else {
       next[b.id] = overviewMap[b.id] ?? false;
@@ -1610,7 +1620,7 @@ export default function App() {
   }
 
   function handleApplyBranchPreset(presetId: BranchPresetId) {
-    if (presetId !== 'overview' && !isFullyHydrated) {
+    if (presetId !== 'overview' && presetId !== 'none' && !isFullyHydrated) {
       void ensureAllModulesLoaded({ priority: true });
     }
     preserveViewportScrollAnchor(() => {

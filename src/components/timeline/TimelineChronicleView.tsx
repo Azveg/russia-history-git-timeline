@@ -124,9 +124,15 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
       {chronicle.chapters.length === 0 ? (
         <div className="px-6 py-12 text-center space-y-2">
           <p className="text-sm text-slate-300">
-            В выбранном диапазоне и сфере событий не найдено.
+            {chronicle.totalMatchingEvents === 0
+              ? 'Сейчас все тематические ветки скрыты или в выбранном диапазоне нет событий.'
+              : 'В выбранном диапазоне и сфере событий не найдено.'}
           </p>
-          {sphereFilter !== 'all' && (
+          {chronicle.totalMatchingEvents === 0 ? (
+            <p className="text-xs text-slate-400">
+              Включите нужные ветки в меню «Ветки» сверху или переключитесь на «Граф веток», чтобы увидеть ось времени и эпохи.
+            </p>
+          ) : sphereFilter !== 'all' ? (
             <button
               type="button"
               onClick={() => onChangeSphereFilter('all')}
@@ -134,7 +140,7 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
             >
               Показать все сферы
             </button>
-          )}
+          ) : null}
         </div>
       ) : (
         <div className="divide-y divide-slate-800/90">

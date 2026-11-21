@@ -25,6 +25,7 @@ export type BranchCategoryKey = 'rulers' | 'military' | 'economy' | 'world' | 'o
 export type BranchPresetId =
   | 'overview'
   | 'all'
+  | 'none'
   | 'rulers_wars'
   | 'culture_science'
   | 'eco_world'

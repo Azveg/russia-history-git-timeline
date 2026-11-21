@@ -480,6 +480,8 @@ export function computeBranchPresetMap(
     const cat = resolveBranchCategory(b).key;
     if (presetId === 'all') {
       next[b.id] = true;
+    } else if (presetId === 'none') {
+      next[b.id] = false;
     } else if (presetId === 'overview') {
       next[b.id] =
         b.id === 'MAIN_RULERS' ||

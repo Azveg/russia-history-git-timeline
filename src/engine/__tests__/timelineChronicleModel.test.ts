@@ -9,9 +9,11 @@ import {
 } from '../../components/timeline/timelineChronicleModel';
 import {
   buildUnifiedTimelineStream,
+  computeBranchPresetMap,
   extractBranchesFromStore,
   extractRulersFromStore,
   getEnrichedEvents,
+  getVisibleLanes,
   resolveMacroEras,
 } from '../timelineEngine';
 import type { SyncManifest, TimelineDataFile } from '../../types/timeline';
@@ -170,5 +172,66 @@ describe('timelineChronicleModel — chapter grouping, sphere filtering, era jum
     expect(stepEventId(ids, 'e2', -1)).toBe('e1');
     expect(stepEventId(ids, 'e3', 1)).toBeNull();
     expect(stepEventId(ids, 'missing', 1)).toBe('e1');
+  });
+
+  it('computeBranchPresetMap("none") disables all leaf branches including MAIN_RULERS', () => {
+    const noneMap = computeBranchPresetMap(dataset.branches, 'none');
+    const leafBranches = dataset.branches.filter((b) => !b.isGroup);
+    expect(leafBranches.length).toBeGreaterThanOrEqual(27);
+    for (const b of leafBranches) {
+      expect(noneMap[b.id]).toBe(false);
+    }
+    const lanes = getVisibleLanes(dataset.branches, noneMap);
+    expect(lanes.map((l) => l.id)).toEqual(['TIME_AXIS']);
+  });
+
+  it('keeps ERA_START headings and TIME_AXIS when all branches are disabled without search filters', () => {
+    const noneMap = computeBranchPresetMap(dataset.branches, 'none');
+    const { stream, matchingEvents, matchingRulers } = buildUnifiedTimelineStream(
+      dataset.enrichedEvents,
+      dataset.rulers,
+      dataset.manifest,
+      dataset.branches,
+      {
+        activeBranches: noneMap,
+        yearFrom: 862,
+        yearTo: 2000,
+        selectedEra: 'ALL',
+        selectedReign: 'ALL',
+        searchQuery: '',
+        onlyWithSyncLinks: false,
+        focusedEventId: null,
+        focusScope: 'sync_only',
+        showEndNodes: true,
+        showOverlapMatrix: false,
+      },
+    );
+
+    expect(matchingEvents.length).toBe(0);
+    expect(matchingRulers.length).toBe(0);
+    expect(stream.length).toBe(dataset.resolvedEras.length);
+    expect(stream.every((row) => row.rowType === 'ERA_START')).toBe(true);
+
+    // Non-matching search query still yields an empty stream instead of showing bare eras
+    const searched = buildUnifiedTimelineStream(
+      dataset.enrichedEvents,
+      dataset.rulers,
+      dataset.manifest,
+      dataset.branches,
+      {
+        activeBranches: noneMap,
+        yearFrom: 862,
+        yearTo: 2000,
+        selectedEra: 'ALL',
+        selectedReign: 'ALL',
+        searchQuery: 'несуществующий_запрос_xyz',
+        onlyWithSyncLinks: false,
+        focusedEventId: null,
+        focusScope: 'sync_only',
+        showEndNodes: true,
+        showOverlapMatrix: false,
+      },
+    );
+    expect(searched.stream.length).toBe(0);
   });
 });

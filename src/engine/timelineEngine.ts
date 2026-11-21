@@ -1079,11 +1079,25 @@ export function buildUnifiedTimelineStream(
   const axisResolution = detectAxisResolution(effectiveYearFrom, effectiveYearTo);
   const stream: StreamRow[] = [];
 
+  const hasAnySelectableBranchEnabled = branches.some(
+    (b) => !b.isGroup && !b.isTimeAxis && filters.activeBranches[b.id] !== false,
+  );
+  const isBareEraSkeletonMode =
+    !hasAnySelectableBranchEnabled &&
+    !focusTarget &&
+    !q &&
+    !requireLinkMatch &&
+    !filters.selectedPersonKey &&
+    !selectedTagNorm &&
+    !pairFilter &&
+    !filters.auditUnlinkedMode;
+
   resolvedEras.forEach((era) => {
+    const matchesSelectedEra = !selectedEraObj || era.id === selectedEraObj.id;
     const hasItemsInEra =
       matchingEvents.some((e) => doesIntervalBelongToEra(e.startYear, e.endYear, e.eraId, era)) ||
       matchingRulers.some((r) => doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, era));
-    if (!hasItemsInEra) return;
+    if (!hasItemsInEra && !(isBareEraSkeletonMode && matchesSelectedEra)) return;
 
     const milestoneYear = Math.max(effectiveYearFrom, era.startYear);
     if (milestoneYear >= effectiveYearFrom && milestoneYear <= effectiveYearTo && era.endYear >= effectiveYearFrom) {
