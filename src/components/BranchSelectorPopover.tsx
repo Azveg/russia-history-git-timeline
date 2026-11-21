@@ -92,6 +92,9 @@ export function BranchSelectorPopover({
     return branchControls.filter((b) => matchedIds.has(b.id));
   }, [branchControls, searchQuery]);
 
+  const categoryLeaves = useMemo(() => new Map(
+    groupBranchesByCategory(leafControls).map((group) => [group.key, group.items]),
+  ), [leafControls]);
   const groupedCategories = useMemo(
     () => groupBranchesByCategory(filteredControls),
     [filteredControls],
@@ -423,14 +426,13 @@ export function BranchSelectorPopover({
               </div>
             ) : (
               groupedCategories.map((group) => {
-                const leafGroupItems = group.items.filter((b) => !b.isGroup);
-                const countTargetItems = leafGroupItems.length > 0 ? leafGroupItems : group.items;
+                const countTargetItems = categoryLeaves.get(group.key) ?? [];
                 const groupActiveCount = countTargetItems.filter(
                   (b) => activeBranches[b.id] !== false,
                 ).length;
                 const allGroupActive = groupActiveCount === countTargetItems.length;
                 const isCollapsed = searchQuery.trim() === '' && !expandedCategories[group.key];
-                const branchIds = group.items.map((b) => b.id);
+                const branchIds = countTargetItems.map((b) => b.id);
 
                 // Строим локальное дерево parentBranchId внутри категории
                 const groupIdSet = new Set(group.items.map((b) => b.id));

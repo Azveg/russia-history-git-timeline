@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { discoverTimelineModules } from './timelineModules.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -11,26 +12,6 @@ const CHECK_MODE = process.argv.includes('--check');
 
 function isPlainObject(v) {
   return Boolean(v && typeof v === 'object' && !Array.isArray(v));
-}
-
-function scanJsonFiles(dir, basePublicDir) {
-  const results = [];
-  if (!fs.existsSync(dir)) return results;
-
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...scanJsonFiles(fullPath, basePublicDir));
-    } else if (entry.isFile() && entry.name.endsWith('.json')) {
-      const relFromPublic = path.relative(basePublicDir, fullPath).replace(/\\/g, '/');
-      if (relFromPublic === 'data/sync.manifest.json' || relFromPublic === 'data/modules.index.json') {
-        continue;
-      }
-      results.push({ fullPath, relFromPublic });
-    }
-  }
-  return results.sort((a, b) => a.relFromPublic.localeCompare(b.relFromPublic));
 }
 
 function parseYears(node) {
@@ -75,23 +56,17 @@ function generateCatalogMarkdown() {
   let minYear = baseMinYear;
   let maxYear = baseMaxYear;
 
-  const moduleFiles = scanJsonFiles(DATA_DIR, PUBLIC_DIR);
+  const moduleFiles = discoverTimelineModules(PUBLIC_DIR, manifest?.mountedFiles);
   const branches = [];
   const branchById = new Map();
   const nodes = [];
   const rulers = [];
   let explicitLinksCount = manifestLinks.length;
 
-  for (const { fullPath, relFromPublic } of moduleFiles) {
-    let parsed;
-    try {
-      parsed = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
-    } catch {
-      continue;
-    }
+  for (const { relFromPublic, data: parsed, enabled } of moduleFiles) {
     if (!isPlainObject(parsed)) continue;
 
-    const isFileDisabled = parsed.enabled === false;
+    const isFileDisabled = !enabled;
     const declared = [];
     if (isPlainObject(parsed.branch)) declared.push(parsed.branch);
     if (Array.isArray(parsed.branches)) declared.push(...parsed.branches.filter(isPlainObject));
@@ -119,6 +94,8 @@ function generateCatalogMarkdown() {
       branchById.set(id, entry);
       branches.push(entry);
     }
+
+    if (isFileDisabled) continue;
 
     if (Array.isArray(parsed.rulers)) {
       for (const r of parsed.rulers) {

@@ -1,3 +1,4 @@
+import { parseBranchSelection, resolveBranchSelection, serializeBranchSelection, updateBranchSelection } from '../layout/branchSelection';
 import fs from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,6 +7,7 @@ import {
   buildEraJumpEntries,
   buildTimelineChronicleData,
   stepEventId,
+  resolveReaderEventId,
 } from '../../components/timeline/timelineChronicleModel';
 import {
   buildUnifiedTimelineStream,
@@ -66,7 +68,7 @@ describe('timelineChronicleModel — chapter grouping, sphere filtering, era jum
       (acc, sphereId) => acc + allData.sphereTotals[sphereId],
       0,
     );
-    expect(sphereSum).toBe(windowEvents.length);
+    expect(sphereSum + allData.unclassifiedCount).toBe(windowEvents.length);
 
     // Every chapter has non-empty events, sorted chronologically, and orderedEventIds matches concatenation
     const flattenedIds = allData.chapters.flatMap((ch) => ch.events.map((e) => e.id));
@@ -81,6 +83,40 @@ describe('timelineChronicleModel — chapter grouping, sphere filtering, era jum
         );
       }
     }
+  });
+
+  it('keeps literature and biographies in All without counting them as reforms', () => {
+    const { enrichedEvents, rulers, resolvedEras, branches } = dataset;
+    const eventIds = ['1823-pushkin-evgeny-onegin', '1909-chumakov-mikhail'];
+    const all = buildTimelineChronicleData({
+      matchingEvents: enrichedEvents, matchingRulers: rulers, resolvedEras, branches, sphereFilter: 'all',
+    });
+    for (const id of eventIds) {
+      expect(all.orderedEventIds).toContain(id);
+      expect(all.sphereByEventId.has(id)).toBe(false);
+    }
+    expect([...all.sphereByEventId.values()]).toContain('reforms');
+  });
+
+  it('retains explicit presets and manual overrides while branches arrive', () => {
+    const leaves = dataset.branches.filter((branch) => !branch.isGroup);
+    const firstBatch = leaves.slice(0, 8);
+    const all = parseBranchSelection('all');
+    expect(Object.values(resolveBranchSelection(firstBatch, all)).filter(Boolean)).toHaveLength(8);
+    expect(Object.values(resolveBranchSelection(leaves, all)).filter(Boolean)).toHaveLength(27);
+    expect(Object.values(resolveBranchSelection(leaves, parseBranchSelection('none'))).filter(Boolean)).toHaveLength(0);
+
+    const edited = updateBranchSelection(firstBatch, all, (mask) => ({ ...mask, [firstBatch[0].id]: false }));
+    const restored = parseBranchSelection(serializeBranchSelection(edited));
+    expect(Object.values(resolveBranchSelection(leaves, restored)).filter(Boolean)).toHaveLength(26);
+    expect(resolveBranchSelection(leaves, restored)[firstBatch[0].id]).toBe(false);
+    expect(resolveBranchSelection(leaves, parseBranchSelection('MAIN_RULERS')).MAIN_RULERS).toBe(true);
+  });
+
+  it('keeps the reader selection and stepping inside the visible sphere', () => {
+    expect(resolveReaderEventId(['diplomacy-first', 'diplomacy-last'], 'war')).toBe('diplomacy-first');
+    expect(resolveReaderEventId(['diplomacy-first', 'diplomacy-last'], 'war', 'diplomacy-last')).toBe('diplomacy-last');
+    expect(resolveReaderEventId([], 'war')).toBeNull();
   });
 
   it('filters chapters cleanly by each of the 5 historical spheres', () => {
@@ -185,7 +221,7 @@ describe('timelineChronicleModel — chapter grouping, sphere filtering, era jum
     expect(lanes.map((l) => l.id)).toEqual(['TIME_AXIS']);
   });
 
-  it('keeps ERA_START headings and TIME_AXIS when all branches are disabled without search filters', () => {
+  it('keeps ERA_START headings and TIME_AXIS when all branches are disabled, including with a search query', () => {
     const noneMap = computeBranchPresetMap(dataset.branches, 'none');
     const { stream, matchingEvents, matchingRulers } = buildUnifiedTimelineStream(
       dataset.enrichedEvents,
@@ -212,7 +248,7 @@ describe('timelineChronicleModel — chapter grouping, sphere filtering, era jum
     expect(stream.length).toBe(dataset.resolvedEras.length);
     expect(stream.every((row) => row.rowType === 'ERA_START')).toBe(true);
 
-    // Non-matching search query still yields an empty stream instead of showing bare eras
+    // Search preserves the axis and era headings when all branches are off.
     const searched = buildUnifiedTimelineStream(
       dataset.enrichedEvents,
       dataset.rulers,
@@ -232,6 +268,7 @@ describe('timelineChronicleModel — chapter grouping, sphere filtering, era jum
         showOverlapMatrix: false,
       },
     );
-    expect(searched.stream.length).toBe(0);
+    expect(searched.matchingEvents).toHaveLength(0);
+    expect(searched.stream.map((row) => row.rowType)).toEqual(stream.map((row) => row.rowType));
   });
 });

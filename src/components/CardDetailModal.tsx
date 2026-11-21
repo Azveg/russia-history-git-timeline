@@ -1,3 +1,4 @@
+import { useDossierTabs } from '../hooks/useDossierTabs';
 import {
   ArrowLeft,
   ArrowRight,
@@ -123,6 +124,7 @@ export function CardDetailModal({
   onOpenEraModal,
 }: CardDetailModalProps) {
   const [activeTab, setActiveTab] = useState<CardModalTabId>('details');
+  const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
   const [linksCategory, setLinksCategory] = useState<LinksCategoryFilter>('all');
   const [concurrentBranchFilter, setConcurrentBranchFilter] = useState<string>('ALL');
   const [concurrentOnlyLinked, setConcurrentOnlyLinked] = useState(false);
@@ -781,6 +783,7 @@ export function CardDetailModal({
           <div
             ref={tabBarRef}
             role="tablist"
+            onKeyDown={handleTabKeyDown}
             aria-label="Разделы карточки"
             className="sticky top-0 z-10 -mx-5 sm:-mx-6 px-5 sm:px-6 bg-[#0b1325]/95 backdrop-blur-sm border-b border-slate-800/90 flex items-center gap-1 overflow-x-auto"
           >
@@ -790,8 +793,7 @@ export function CardDetailModal({
                 <button
                   key={tab.id}
                   type="button"
-                  role="tab"
-                  aria-selected={isActive}
+                  {...tabProps(tab.id)}
                   onClick={() => handleTabChange(tab.id)}
                   className={`px-3.5 py-2.5 text-xs font-mono inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/70 ${
                     isActive
@@ -816,8 +818,11 @@ export function CardDetailModal({
           </div>
 
           {/* ВКЛАДКА 1: СУТЬ И ЭТАПЫ */}
+          {tabs.filter((tab) => tab.id !== activeTab).map(({ id }) => (
+            <div key={id} {...panelProps(id)} />
+          ))}
           {activeTab === 'details' && (
-            <div className="space-y-6">
+            <div {...panelProps('details')} className="space-y-6">
               {/* Предпосылки + Главный итог */}
               {(card.prerequisitesList.length > 0 || card.outcome) && (
                 <div
@@ -1134,7 +1139,7 @@ export function CardDetailModal({
 
           {/* ВКЛАДКА 2: СВЯЗИ */}
           {activeTab === 'links' && (
-            <div className="space-y-5">
+            <div {...panelProps('links')} className="space-y-5">
               {/* Фильтр по типу связей */}
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-950/90 border border-slate-800 p-1 text-xs font-mono">
@@ -1227,7 +1232,7 @@ export function CardDetailModal({
 
           {/* ВКЛАДКА 3: СИНХРОННЫЕ СОБЫТИЯ */}
           {activeTab === 'concurrent' && (
-            <div className="space-y-4">
+            <div {...panelProps('concurrent')} className="space-y-4">
               {card.concurrentEvents.length === 0 ? (
                 <div className="py-8 text-center text-xs font-mono text-slate-400">
                   Синхронных событий в других ветках для этого периода не найдено.

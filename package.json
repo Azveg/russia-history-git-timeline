@@ -17,6 +17,7 @@
     "sync:catalog": "node scripts/sync-branch-catalog.mjs",
     "sync:catalog:check": "node scripts/sync-branch-catalog.mjs --check",
     "handoff:rotate": "node scripts/rotate-handoff.mjs",
+    "sync:lock-integrity": "node scripts/sync-lock-integrity.mjs",
     "verify:invariants": "node scripts/verify-agent-invariants.mjs",
     "verify": "npm run verify:invariants && npm run validate:branches:strict && npm run sync:catalog:check && npm run lint && npm test && npm run build"
   },

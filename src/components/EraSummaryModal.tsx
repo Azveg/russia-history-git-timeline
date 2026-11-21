@@ -1,3 +1,4 @@
+import { useDossierTabs } from '../hooks/useDossierTabs';
 import {
   ArrowLeft,
   ArrowRight,
@@ -262,6 +263,7 @@ export function EraSummaryModal({
   onCompareWithEra,
 }: EraSummaryModalProps) {
   const [activeTab, setActiveTab] = useState<EraModalTabId>('overview');
+  const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
   const [showCitationPanel, setShowCitationPanel] = useState(false);
 
   // Tab 1: Обзор — раскрытие переходящих событий при длинных списках
@@ -892,6 +894,7 @@ export function EraSummaryModal({
           <div
             ref={tabBarRef}
             role="tablist"
+            onKeyDown={handleTabKeyDown}
             aria-label="Разделы досье периода"
             className="sticky top-0 z-10 -mx-5 sm:-mx-6 px-5 sm:px-6 bg-[#0b1325]/95 backdrop-blur-sm border-b border-slate-800/90 flex items-center gap-1 overflow-x-auto"
           >
@@ -901,8 +904,7 @@ export function EraSummaryModal({
                 <button
                   key={tab.id}
                   type="button"
-                  role="tab"
-                  aria-selected={isActive}
+                  {...tabProps(tab.id)}
                   onClick={() => handleTabChange(tab.id)}
                   className={`px-3.5 py-2.5 text-xs font-mono inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/70 ${
                     isActive
@@ -927,8 +929,11 @@ export function EraSummaryModal({
           </div>
 
           {/* ВКЛАДКА 1: ОБЗОР */}
+          {tabs.filter((tab) => tab.id !== activeTab).map(({ id }) => (
+            <div key={id} {...panelProps(id)} />
+          ))}
           {activeTab === 'overview' && (
-            <div className="space-y-6">
+            <div {...panelProps('overview')} className="space-y-6">
               {/* Компактная структура эпохи по 5 сферам */}
               <section className="space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1169,8 +1174,8 @@ export function EraSummaryModal({
                   <div className="divide-y divide-slate-800/80 border-y border-slate-800/80">
                     {topConnectedEvents.map((ev) => {
                       const sphereId = classifyEventToEraSphere(ev, branchById, branches);
-                      const sphereMeta = ERA_SPHERE_META[sphereId];
-                      const styleMeta = SPHERE_STYLE_META[sphereId];
+                      const sphereMeta = sphereId ? ERA_SPHERE_META[sphereId] : null;
+                      const styleMeta = sphereId ? SPHERE_STYLE_META[sphereId] : null;
                       const branch = branchById.get(ev.task);
                       return (
                         <button
@@ -1187,8 +1192,8 @@ export function EraSummaryModal({
                               <span aria-hidden="true" className="text-slate-600">
                                 ·
                               </span>
-                              <span className={`font-semibold ${styleMeta.accentText}`}>
-                                {sphereMeta.shortLabel}
+                              <span className={`font-semibold ${styleMeta?.accentText ?? 'text-slate-400'}`}>
+                                {sphereMeta?.shortLabel ?? 'Вне пяти сфер'}
                               </span>
                               {branch && (
                                 <>
@@ -1228,7 +1233,7 @@ export function EraSummaryModal({
 
           {/* ВКЛАДКА 2: ЛИЦА */}
           {activeTab === 'people' && (
-            <div className="space-y-4">
+            <div {...panelProps('people')} className="space-y-4">
               {/* Панель переключения групп и поиска */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                 <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-950/90 border border-slate-800 p-1 text-xs font-mono">
@@ -1378,7 +1383,7 @@ export function EraSummaryModal({
 
           {/* ВКЛАДКА 3: СОБЫТИЯ */}
           {activeTab === 'events' && (
-            <div className="space-y-4">
+            <div {...panelProps('events')} className="space-y-4">
               {/* Переключатель 5 сфер */}
               <div className="flex flex-wrap items-center gap-1 rounded-lg bg-slate-950/90 border border-slate-800 p-1 text-xs font-mono">
                 <button
@@ -1526,8 +1531,8 @@ export function EraSummaryModal({
                   <div className="divide-y divide-slate-800/80 border-y border-slate-800/80">
                     {displayedEvents.map((ev) => {
                       const sphereId = classifyEventToEraSphere(ev, branchById, branches);
-                      const sphereMeta = ERA_SPHERE_META[sphereId];
-                      const styleMeta = SPHERE_STYLE_META[sphereId];
+                      const sphereMeta = sphereId ? ERA_SPHERE_META[sphereId] : null;
+                      const styleMeta = sphereId ? SPHERE_STYLE_META[sphereId] : null;
                       const branch = branchById.get(ev.task);
                       const isCarryIn = ev.startYear < resolvedEra.startYear;
                       const isCarryOut = ev.endYear > resolvedEra.endYear;
@@ -1547,8 +1552,8 @@ export function EraSummaryModal({
                               <span aria-hidden="true" className="text-slate-600">
                                 ·
                               </span>
-                              <span className={`font-semibold ${styleMeta.accentText}`}>
-                                {sphereMeta.shortLabel}
+                              <span className={`font-semibold ${styleMeta?.accentText ?? 'text-slate-400'}`}>
+                                {sphereMeta?.shortLabel ?? 'Вне пяти сфер'}
                               </span>
                               {branch && (
                                 <>
@@ -1629,7 +1634,7 @@ export function EraSummaryModal({
 
           {/* ВКЛАДКА 4: КУЛЬТУРА И НАУКА */}
           {activeTab === 'culture' && (
-            <div className="space-y-3">
+            <div {...panelProps('culture')} className="space-y-3">
               {cultureTotalCount === 0 ? (
                 <div className="py-8 text-center text-xs font-mono text-slate-400">
                   Для этой эпохи не найдено отдельных карточек культуры, литературы или научных

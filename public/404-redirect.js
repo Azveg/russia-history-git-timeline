@@ -1,12 +1,10 @@
 (function () {
-  var loc = window.location;
-  var segments = loc.pathname.split('/').filter(Boolean);
-  // Support both custom domain root (/) and GitHub Pages project subpath (/<repo>/)
-  var isGithubPagesProject =
-    /\.github\.io$/i.test(loc.hostname) && segments.length > 0;
-  var targetPath = isGithubPagesProject ? '/' + segments[0] + '/' : '/';
-
-  if (loc.pathname !== targetPath) {
-    loc.replace(loc.origin + targetPath + loc.search + loc.hash);
-  }
+  const home = document.querySelector('.fallback-link');
+  if (!(home instanceof HTMLAnchorElement)) return;
+  const target = new URL(home.href);
+  const { location } = window;
+  if (target.origin !== location.origin || location.pathname === target.pathname) return;
+  target.search = location.search;
+  target.hash = location.hash;
+  location.replace(target.href);
 })();

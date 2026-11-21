@@ -799,7 +799,7 @@ export function classifyEventToEraSphere(
   ev: Pick<EnrichedEvent, 'task' | 'type'>,
   branchById: Map<string, BranchDefinition>,
   branches?: BranchDefinition[],
-): EraEventSphereId {
+): EraEventSphereId | null {
   const task = ev.task || '';
   const branch = branchById.get(task);
 
@@ -827,7 +827,7 @@ export function classifyEventToEraSphere(
   ) {
     return 'science';
   }
-  return 'reforms';
+  return task === 'REFORMS_ECO' ? 'reforms' : null;
 }
 
 function normalizeEraFigureKey(rawName: string): string {
@@ -872,7 +872,7 @@ function buildSphereEventsAndSummaries(
   }
   for (const ev of sphereEvents) {
     const sphereId = classifyEventToEraSphere(ev, branchById, branches);
-    eventsBySphere.get(sphereId)!.push(ev);
+    if (sphereId) eventsBySphere.get(sphereId)?.push(ev);
   }
 
   const sphereSummaries: EraEventSphereSummary[] = ERA_SPHERE_ORDER.map((sphereId) => {
@@ -2414,7 +2414,7 @@ function buildComparisonSide(
 
   const branchById = new Map(branches.map((b) => [b.id, b]));
   const sideDiscoveries = overlappingAll.filter((ev) => isScienceDiscoveryNode(ev, branches));
-  const { sphereSummaries: sideSphereSummaries } = buildSphereEventsAndSummaries(
+  const { sphereSummaries: sideSphereSummaries, sphereEvents } = buildSphereEventsAndSummaries(
     historicalEvents,
     sideDiscoveries,
     branchById,
@@ -2456,6 +2456,7 @@ function buildComparisonSide(
     worksAboutPeriodCount,
     branchBreakdown,
     sphereCounts,
+    unclassifiedSphereEventsCount: sphereEvents.length - sideSphereSummaries.reduce((sum, sphere) => sum + sphere.events.length, 0),
     crossBranchPairs,
     topConnectedEvents,
     syncTags,

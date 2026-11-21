@@ -6,6 +6,7 @@ import {
   buildPersonDossierIndex,
   buildUnifiedTimelineStream,
   classifyEventToEraSphere,
+  isMajorCampaignOrConflictNode,
   computeBranchPresetMap,
   computeBranchSubLaneLayout,
   computePeriodComparison,
@@ -261,6 +262,22 @@ describe('Performance optimizations — semantic equivalence & caching', () => {
       }
     });
 
+    const wars = built.matchingEvents.filter((event) => isMajorCampaignOrConflictNode(event, branches));
+    for (const [index, row] of built.stream.entries()) {
+      if (row.rowType === 'ERA_START') {
+        expect(layout.rowIndexByDomId.get(`era-${row.era.id}`)).toBe(index);
+        expect(layout.carryOverWarsByEraId.get(row.era.id) ?? []).toEqual(
+          wars.filter((war) => war.startYear < row.year && war.endYear > row.year),
+        );
+      }
+      if (row.rowType === 'RULER_COMMIT') {
+        const year = row.rulerObj.startYear;
+        expect(layout.ongoingWarsByRulerId.get(row.rulerObj.id) ?? []).toEqual(
+          wars.filter((war) => war.startYear < year && war.endYear > year),
+        );
+      }
+    }
+
     // Spot-check 25 evenly distributed rows against exact brute-force passing rail scan
     const step = Math.max(1, Math.floor(built.stream.length / 25));
     for (let idx = 0; idx < built.stream.length; idx += step) {
@@ -327,7 +344,9 @@ describe('Performance optimizations — semantic equivalence & caching', () => {
         (acc, s) => acc + s.events.length,
         0,
       );
-      expect(totalAcrossSpheres).toBe(summary.eraSphereEvents.length);
+        expect(totalAcrossSpheres).toBe(
+        summary.eraSphereEvents.filter((event) => classifyEventToEraSphere(event, branchById, branches) !== null).length,
+      );
 
       for (const sphere of summary.sphereSummaries) {
         for (const ev of sphere.events) {
@@ -399,7 +418,9 @@ describe('Performance optimizations — semantic equivalence & caching', () => {
       (acc, s) => acc + s.events.length,
       0,
     );
-    expect(totalAcrossSpheres).toBe(summary.windowSphereEvents.length);
+    expect(totalAcrossSpheres).toBe(
+      summary.windowSphereEvents.filter((event) => classifyEventToEraSphere(event, branchById, branches) !== null).length,
+    );
     expect(summary.windowSphereEvents.length).toBeGreaterThan(0);
 
     for (const sphere of summary.sphereSummaries) {
@@ -481,7 +502,7 @@ describe('Performance optimizations — semantic equivalence & caching', () => {
         expect(count).toBeGreaterThanOrEqual(0);
         sphereTotal += count;
       }
-      expect(sphereTotal).toBeGreaterThanOrEqual(side.historicalEventsCount);
+      expect(sphereTotal + side.unclassifiedSphereEventsCount).toBeGreaterThanOrEqual(side.historicalEventsCount);
     }
   });
 });

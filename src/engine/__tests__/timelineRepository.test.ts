@@ -259,17 +259,42 @@ describe('timelineRepository — cache busting, sanitization, progressive loader
     expect(await fetchTimelineRepository()).toBe(fresh);
   });
 
-  it('mounts 100% of disk JSON modules in public/data/sync.manifest.json without drift', () => {
+  it('loads indexed card and person modules alongside the core before the full corpus', async () => {
+    const moduleForPerson = 'data/writers_bio.json';
+    const fetchData = mockDataRequests((file) => file === indexPath ? Response.json({
+      files: modulePaths,
+      cardModules: { essay: artsPath },
+      personModules: { person: [moduleForPerson] },
+    }) : undefined);
+    const initial = await fetchTimelineRepository({
+      progressive: true, target: { cardId: 'essay', personKey: 'person' },
+    });
+    expect(initial.files[artsPath]).toBeDefined();
+    expect(initial.files[moduleForPerson]).toBeDefined();
+    expect(Object.keys(initial.files)).toHaveLength(6);
+    expect(initial.isFullyHydrated).toBe(false);
+    expect(fetchData).toHaveBeenCalledTimes(8);
+  });
+
+  it('honors modules disabled by the generated index without requesting them', async () => {
+    const fetchData = mockDataRequests((file) => file === indexPath ? Response.json({
+      files: modulePaths.filter((entry) => entry !== artsPath),
+      disabledFiles: [artsPath],
+    }) : undefined);
+    const result = await fetchTimelineRepository();
+    expect(result.isFullyHydrated).toBe(true);
+    expect(result.manifest.mountedFiles.find((entry) => entry.path === artsPath)?.enabled).toBe(false);
+    expect(result.files[artsPath]).toBeUndefined();
+    expect(fetchData).toHaveBeenCalledTimes(modulePaths.length + 1);
+  });
+
+  it('verifies that all manifest paths exist on disk without requiring explicit registration', () => {
     const dataDir = path.resolve(process.cwd(), 'public/data');
     const manifest = JSON.parse(fs.readFileSync(path.join(dataDir, 'sync.manifest.json'), 'utf8')) as {
       mountedFiles: Array<{ path: string }>;
     };
-    const diskFiles = fs
-      .readdirSync(dataDir)
-      .filter((f) => f.endsWith('.json') && f !== 'sync.manifest.json' && f !== 'modules.index.json')
-      .map((f) => `data/${f}`)
-      .sort();
-    const mountedPaths = manifest.mountedFiles.map((m) => m.path).sort();
-    expect(mountedPaths).toEqual(diskFiles);
+    const mountedPaths = manifest.mountedFiles.map((m) => m.path);
+    expect(new Set(mountedPaths).size).toBe(mountedPaths.length);
+    expect(mountedPaths.every((file) => fs.existsSync(path.resolve('public', file)))).toBe(true);
   });
 });

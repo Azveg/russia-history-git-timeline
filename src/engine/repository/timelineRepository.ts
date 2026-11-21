@@ -551,6 +551,8 @@ interface RepositoryBootstrapState {
   manifestMetaByNormPath: Map<string, MountedFileMeta>;
   orderedCandidatePaths: string[];
   requiredModulePaths: string[];
+  cardModules?: ModulesIndexFile['cardModules'];
+  personModules?: ModulesIndexFile['personModules'];
   fileHashes: Record<string, string>;
   fallbackVersion: string;
 }
@@ -682,6 +684,9 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
   };
 
   let discoveredPaths: string[] = [];
+  let disabledPaths: string[] = [];
+  let cardModules: ModulesIndexFile['cardModules'];
+  let personModules: ModulesIndexFile['personModules'];
   let fileHashes: Record<string, string> = {};
   let indexVersion = cacheVersion;
 
@@ -694,6 +699,11 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
       if (Array.isArray(idxData?.files)) {
         discoveredPaths = idxData.files.map(normalizeDataPath).filter(Boolean);
       }
+      if (Array.isArray(idxData?.disabledFiles)) {
+        disabledPaths = idxData.disabledFiles.filter((file) => typeof file === 'string').map(normalizeDataPath);
+      }
+      cardModules = idxData?.cardModules;
+      personModules = idxData?.personModules;
       if (idxData?.fileHashes && isPlainRecord(idxData.fileHashes)) {
         Object.entries(idxData.fileHashes).forEach(([rawKey, val]) => {
           if (typeof val === 'string' && val.trim()) {
@@ -712,13 +722,14 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
   const manifestMetaByNormPath = new Map<string, MountedFileMeta>();
   manifest.mountedFiles.forEach((meta) => {
     if (meta?.path) {
-      manifestMetaByNormPath.set(normalizeDataPath(meta.path), meta);
+      const file = normalizeDataPath(meta.path);
+      manifestMetaByNormPath.set(file, disabledPaths.includes(file) ? { ...meta, enabled: false } : meta);
     }
   });
 
   const orderedCandidatePaths = [...new Set([...manifestMetaByNormPath.keys(), ...discoveredPaths])];
   const requiredModulePaths = orderedCandidatePaths.filter(
-    (normPath) => manifestMetaByNormPath.get(normPath)?.enabled !== false,
+    (normPath) => !disabledPaths.includes(normPath) && manifestMetaByNormPath.get(normPath)?.enabled !== false,
   );
 
   return {
@@ -726,6 +737,8 @@ async function loadRepositoryBootstrap(): Promise<RepositoryBootstrapState> {
     manifestMetaByNormPath,
     orderedCandidatePaths,
     requiredModulePaths,
+    cardModules,
+    personModules,
     fileHashes,
     fallbackVersion: indexVersion,
   };
@@ -735,13 +748,24 @@ function selectInitialModulePaths(
   bootstrap: RepositoryBootstrapState,
   progressive: boolean,
   requiredBranchIds?: Set<string>,
+  target?: { cardId?: string; personKey?: string },
 ): string[] {
   if (!progressive) {
     return bootstrap.requiredModulePaths;
   }
 
+  const requiredPaths = new Set<string>();
+  if (target?.cardId && Object.hasOwn(bootstrap.cardModules ?? {}, target.cardId)) {
+    const file = bootstrap.cardModules?.[target.cardId];
+    if (typeof file === 'string') requiredPaths.add(file);
+  }
+  if (target?.personKey && Object.hasOwn(bootstrap.personModules ?? {}, target.personKey)) {
+    const files = bootstrap.personModules?.[target.personKey];
+    if (Array.isArray(files)) files.forEach((file) => requiredPaths.add(file));
+  }
+
   const initialPaths = bootstrap.requiredModulePaths.filter((normPath) => {
-    if (CORE_INITIAL_MODULE_PATHS.has(normPath)) return true;
+    if (CORE_INITIAL_MODULE_PATHS.has(normPath) || requiredPaths.has(normPath)) return true;
     if (requiredBranchIds && requiredBranchIds.size > 0) {
       const meta = bootstrap.manifestMetaByNormPath.get(normPath);
       if (meta?.branchIds?.some((id) => requiredBranchIds.has(id))) {
@@ -751,7 +775,7 @@ function selectInitialModulePaths(
     return false;
   });
 
-  return initialPaths.length > 0 ? initialPaths : bootstrap.requiredModulePaths;
+  return initialPaths.length > 0 ? initialPaths : bootstrap.requiredModulePaths.slice(0, 1);
 }
 
 function yieldToMainThread(): Promise<void> {
@@ -829,6 +853,7 @@ export async function fetchTimelineRepository(options?: {
   forceRefresh?: boolean;
   progressive?: boolean;
   requiredBranchIds?: string[];
+  target?: { cardId?: string; personKey?: string };
 }): Promise<TimelineRepositorySnapshot> {
   if (options?.forceRefresh) {
     clearTimelineRepositoryCache();
@@ -850,7 +875,7 @@ export async function fetchTimelineRepository(options?: {
   const requiredSet = options?.requiredBranchIds ? new Set(options.requiredBranchIds) : undefined;
   cache.initialLoad = (async () => {
     const bootstrap = await loadRepositoryBootstrap();
-    const initialPaths = selectInitialModulePaths(bootstrap, progressive, requiredSet);
+    const initialPaths = selectInitialModulePaths(bootstrap, progressive, requiredSet, options?.target);
     const snapshot = await loadModuleBatch(bootstrap, initialPaths);
     cache.current = { bootstrap, snapshot };
     return snapshot;

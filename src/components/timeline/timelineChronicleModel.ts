@@ -1,3 +1,4 @@
+import { eraGraphAnchor, timelineEventAnchor } from './timelineAnchors';
 import {
   ERA_SPHERE_ORDER,
   classifyEventToEraSphere,
@@ -36,6 +37,7 @@ export interface TimelineChronicleData {
   sphereTotals: Record<EraEventSphereId, number>;
   totalMatchingEvents: number;
   visibleEventsCount: number;
+  unclassifiedCount: number;
   orderedEventIds: string[];
   sphereByEventId: Map<string, EraEventSphereId>;
 }
@@ -107,8 +109,10 @@ export function buildTimelineChronicleData({
 
   for (const ev of sortedEvents) {
     const sphere = classifyEventToEraSphere(ev, branchById, branches);
-    sphereByEventId.set(ev.id, sphere);
-    sphereTotals[sphere] += 1;
+    if (sphere) {
+      sphereByEventId.set(ev.id, sphere);
+      sphereTotals[sphere] += 1;
+    }
 
     const era =
       findMacroEraForYear(ev.startYear, resolvedEras) ??
@@ -121,7 +125,7 @@ export function buildTimelineChronicleData({
     if (!chapter) continue;
 
     chapter.totalEventsInEra += 1;
-    chapter.sphereCounts[sphere] += 1;
+    if (sphere) chapter.sphereCounts[sphere] += 1;
 
     if (sphereFilter === 'all' || sphere === sphereFilter) {
       chapter.events.push(ev);
@@ -148,6 +152,7 @@ export function buildTimelineChronicleData({
     sphereTotals,
     totalMatchingEvents: matchingEvents.length,
     visibleEventsCount,
+    unclassifiedCount: matchingEvents.length - sphereByEventId.size,
     orderedEventIds,
     sphereByEventId,
   };
@@ -183,7 +188,7 @@ export function buildEraJumpEntries({
     const row = stream[idx];
     if (row.rowType === 'ERA_START') {
       if (!firstStreamByEraId.has(row.era.id)) {
-        firstStreamByEraId.set(row.era.id, { idx, domId: `era-${row.era.id}` });
+        firstStreamByEraId.set(row.era.id, { idx, domId: eraGraphAnchor(row.era.id) });
       }
       continue;
     }
@@ -198,7 +203,7 @@ export function buildEraJumpEntries({
       domId = row.rulerObj.id;
     } else if (row.rowType === 'EVENT_COMMIT') {
       eraId = findMacroEraForYear(row.eventObj.startYear, resolvedEras)?.id ?? null;
-      domId = `row-${row.eventObj.id}`;
+      domId = timelineEventAnchor(row.eventObj.id, 'graph');
     }
 
     if (eraId && !firstStreamByEraId.has(eraId)) {
@@ -217,6 +222,16 @@ export function buildEraJumpEntries({
         firstDomId: firstRow?.domId ?? null,
       };
     });
+}
+
+export function resolveReaderEventId(
+  orderedIds: readonly string[],
+  selectedId: string | null,
+  focusedId?: string,
+): string | null {
+  return [selectedId, focusedId].find((id) => id && orderedIds.includes(id))
+    ?? orderedIds[0]
+    ?? null;
 }
 
 /**

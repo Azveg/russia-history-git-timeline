@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   parseInitialYearBound,
   parseWindowRangeParam,
+  resolveUrlYearRange,
   safelyReplaceUrlState,
 } from '../../hooks/useTimelineUrlSync';
 import { detectAxisResolution } from '../timelineEngine';
@@ -60,11 +61,22 @@ describe('Timeline window dragging & URL sync resilience', () => {
 
     const invalidParams = new URLSearchParams('from=abc&to=9999');
     expect(parseInitialYearBound(invalidParams, 'from', 862)).toBe(862);
-    expect(parseInitialYearBound(invalidParams, 'to', 2000)).toBe(2000);
+    expect(parseInitialYearBound(invalidParams, 'to', 2000)).toBe(9999);
+    expect(resolveUrlYearRange(undefined, 9999, { minYear: 862, maxYear: 2019 }, true)).toEqual({ from: 862, to: 2019 });
 
     expect(parseWindowRangeParam('1700-1721')).toEqual({ from: 1700, to: 1721 });
     expect(parseWindowRangeParam('1800-1700')).toBeNull();
     expect(parseWindowRangeParam('invalid')).toBeNull();
+  });
+
+  it('restores years outside the initial modules and validates against the full data bounds', () => {
+    const params = new URLSearchParams('from=2005&to=2010&window=2005-2010');
+    const from = parseInitialYearBound(params, 'from', undefined);
+    const to = parseInitialYearBound(params, 'to', undefined);
+    expect(resolveUrlYearRange(from, to, { minYear: 862, maxYear: 2000 }, false)).toEqual({ from: 2005, to: 2010 });
+    expect(resolveUrlYearRange(from, to, { minYear: 862, maxYear: 2019 }, true)).toEqual({ from: 2005, to: 2010 });
+    expect(parseWindowRangeParam(params.get('window'))).toEqual({ from: 2005, to: 2010 });
+    expect(resolveUrlYearRange(1900, 1700, { minYear: 862, maxYear: 2019 }, true)).toEqual({ from: 862, to: 2019 });
   });
 
   it('transitions axis resolution cleanly when narrowing or dragging window to micro intervals', () => {

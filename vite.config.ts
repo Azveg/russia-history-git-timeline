@@ -1,4 +1,5 @@
-import crypto from 'node:crypto';
+import { buildTimelineModuleIndex } from './scripts/buildTimelineModuleIndex.ts';
+import { buildPages404 } from './scripts/buildPages404.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
@@ -10,61 +11,6 @@ import {
   buildSchemaOrgJsonLd,
   collectRepositorySnapshot,
 } from './scripts/seoSnapshot.ts';
-
-function scanDataModules(rootDir: string): string[] {
-  const dataDir = path.resolve(rootDir, 'public/data');
-  if (!fs.existsSync(dataDir)) {
-    return [];
-  }
-
-  const results: string[] = [];
-
-  function walk(dir: string) {
-    const entries = fs.readdirSync(dir, {withFileTypes: true});
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        walk(fullPath);
-      } else if (entry.isFile() && entry.name.endsWith('.json')) {
-        if (entry.name === 'sync.manifest.json' || entry.name === 'modules.index.json') {
-          continue;
-        }
-        const relFromPublic = path.relative(path.resolve(rootDir, 'public'), fullPath).replace(/\\/g, '/');
-        results.push(relFromPublic);
-      }
-    }
-  }
-
-  walk(dataDir);
-  return results.sort((a, b) => a.localeCompare(b));
-}
-
-function buildModulesIndexPayload(rootDir: string): string {
-  const files = scanDataModules(rootDir).map((p) => p.replace(/^(?:\.\/|\/)+/, ''));
-  const fileHashes: Record<string, string> = {};
-
-  for (const relPath of files) {
-    const fullPath = path.resolve(rootDir, 'public', relPath);
-    if (fs.existsSync(fullPath)) {
-      fileHashes[relPath] = crypto
-        .createHash('sha256')
-        .update(fs.readFileSync(fullPath))
-        .digest('hex')
-        .slice(0, 12);
-    }
-  }
-
-  return JSON.stringify(
-    {
-      schemaVersion: '2.1.0',
-      generatedAt: new Date().toISOString(),
-      files,
-      fileHashes,
-    },
-    null,
-    2,
-  );
-}
 
 function resolveBuildSiteUrl(): string {
   const raw = (process.env.VITE_SITE_URL || process.env.SITE_URL || '')
@@ -92,7 +38,7 @@ function timelineDataModulesIndex(): Plugin {
       server.middlewares.use((req, res, next) => {
         const cleanUrl = req.url?.split('?')[0] ?? '';
         if (cleanUrl === '/data/modules.index.json' || cleanUrl.endsWith('/data/modules.index.json')) {
-          const payload = buildModulesIndexPayload(rootDir);
+          const payload = JSON.stringify(buildTimelineModuleIndex(path.join(rootDir, 'public')));
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json; charset=utf-8');
           res.setHeader('Cache-Control', 'no-cache');
@@ -106,7 +52,7 @@ function timelineDataModulesIndex(): Plugin {
       this.emitFile({
         type: 'asset',
         fileName: 'data/modules.index.json',
-        source: buildModulesIndexPayload(rootDir),
+        source: JSON.stringify(buildTimelineModuleIndex(path.join(rootDir, 'public'))),
       });
     },
   };
@@ -138,6 +84,12 @@ function timelineSeoSnapshotPlugin(): Plugin {
         type: 'asset',
         fileName: 'llms.txt',
         source: buildLlmsTxt(snapshot, siteUrl),
+      });
+
+      this.emitFile({
+        type: 'asset',
+        fileName: '404.html',
+        source: buildPages404(fs.readFileSync(path.join(rootDir, 'public/404.html'), 'utf8'), siteUrl),
       });
 
       if (siteUrl) {

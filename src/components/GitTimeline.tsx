@@ -1,3 +1,6 @@
+import { createPortal } from 'react-dom';
+import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { chronicleEraAnchor, timelineEventAnchor } from './timeline/timelineAnchors';
 import {
   BookOpen,
   ChevronDown,
@@ -62,6 +65,7 @@ import {
   buildEraJumpEntries,
   buildTimelineChronicleData,
   stepEventId,
+  resolveReaderEventId,
   type ChronicleSphereFilter,
   type EraJumpEntry,
   type TimelineDisplayMode,
@@ -161,6 +165,28 @@ function getStreamRowKey(item: StreamRow, idx: number): string {
   return `end-${item.eventObj.id}-${idx}`;
 }
 
+function MobileReaderDialog({ children, onClose }: {
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  const dialogRef = useModalFocusTrap(onClose);
+  useEffect(() => {
+    const desktop = window.matchMedia('(min-width: 1024px)');
+    const closeOnDesktop = () => { if (desktop.matches) onClose(); };
+    desktop.addEventListener('change', closeOnDesktop);
+    return () => desktop.removeEventListener('change', closeOnDesktop);
+  }, [onClose]);
+
+  return createPortal(
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Живая читалка"
+      tabIndex={-1} className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-950/70 backdrop-blur-sm">
+      <div className="flex-1" onClick={onClose} aria-hidden="true" />
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
 export const GitTimeline = memo(function GitTimeline({
   stream,
   matchingEvents,
@@ -219,8 +245,10 @@ export const GitTimeline = memo(function GitTimeline({
   const [displayMode, setDisplayMode] = useState<TimelineDisplayMode>('graph');
   const [chronicleSphere, setChronicleSphere] = useState<ChronicleSphereFilter>('all');
   const [collapsedChronicleEras, setCollapsedChronicleEras] = useState<Record<string, boolean>>({});
+  const [pendingChronicleEventId, setPendingChronicleEventId] = useState<string | null>(null);
   const [selectedReaderEventId, setSelectedReaderEventId] = useState<string | null>(null);
   const [isMobileReaderOpen, setIsMobileReaderOpen] = useState(false);
+  const closeMobileReader = useCallback(() => setIsMobileReaderOpen(false), []);
 
   const [localHoveredEventId, setLocalHoveredEventId] = useState<string | null>(null);
   const [activeStickyRulerId, setActiveStickyRulerId] = useState<string | null>(null);
@@ -562,19 +590,14 @@ export const GitTimeline = memo(function GitTimeline({
   // Expand rendered slice on demand when an external jump (App.tsx) targets a row beyond visibleRowCount
   useEffect(() => {
     if (!highlightedJumpId) return;
-    const domId = rowIndexByDomId.has(`row-${highlightedJumpId}`)
-      ? `row-${highlightedJumpId}`
-      : rowIndexByDomId.has(highlightedJumpId)
-        ? highlightedJumpId
-        : null;
-    if (!domId) return;
-
-    const targetIdx = rowIndexByDomId.get(domId)!;
-    if (targetIdx >= visibleRowCount) {
-      pendingScrollDomIdRef.current = domId;
-      setVisibleRowCount(Math.min(stream.length, targetIdx + 24));
-    }
-  }, [highlightedJumpId, rowIndexByDomId, visibleRowCount, stream.length]);
+    if (displayMode !== 'graph') return;
+    const eventAnchor = timelineEventAnchor(highlightedJumpId, 'graph');
+    const domId = rowIndexByDomId.has(eventAnchor) ? eventAnchor : highlightedJumpId;
+    const targetIdx = rowIndexByDomId.get(domId);
+    if (targetIdx === undefined) return;
+    pendingScrollDomIdRef.current = domId;
+    setVisibleRowCount((count) => Math.max(count, Math.min(stream.length, targetIdx + 24)));
+  }, [displayMode, highlightedJumpId, rowIndexByDomId, stream.length]);
 
   // Execute deferred smooth scroll once target row has been mounted
   useEffect(() => {
@@ -584,7 +607,7 @@ export const GitTimeline = memo(function GitTimeline({
     if (!el) return;
     pendingScrollDomIdRef.current = null;
     el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [visibleRowCount, stream]);
+  }, [displayMode, highlightedJumpId, visibleRowCount, stream]);
 
   // Progressive infinite expansion as user scrolls down (non-blocking via startTransition)
   useEffect(() => {
@@ -611,7 +634,7 @@ export const GitTimeline = memo(function GitTimeline({
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [visibleRowCount, stream.length]);
+  }, [displayMode, visibleRowCount, stream.length]);
 
   const triggerScrollToDomRow = useCallback(
     (domId: string, eventId: string) => {
@@ -953,17 +976,14 @@ export const GitTimeline = memo(function GitTimeline({
     [matchingEvents, matchingRulers, resolvedEras, branches, chronicleSphere],
   );
 
-  const eraJumpEntries = useMemo(
-    () =>
-      buildEraJumpEntries({
-        resolvedEras,
-        stream,
-        matchingEvents,
-        yearFrom,
-        yearTo: effectiveSliceEndYear,
-      }),
-    [resolvedEras, matchingEvents, stream, yearFrom, effectiveSliceEndYear],
-  );
+  const eraJumpEntries = useMemo(() => displayMode === 'chronicle'
+    ? chronicleData.chapters.map(({ era, events }) => ({
+        era, eventCount: events.length, firstStreamIdx: null, firstDomId: chronicleEraAnchor(era.id),
+      }))
+    : buildEraJumpEntries({
+        resolvedEras, stream, matchingEvents, yearFrom, yearTo: effectiveSliceEndYear,
+      }).filter((entry) => entry.firstDomId !== null),
+  [displayMode, chronicleData.chapters, resolvedEras, stream, matchingEvents, yearFrom, effectiveSliceEndYear]);
 
   const graphOrderedEventIds = useMemo(() => {
     const ids: string[] = [];
@@ -974,14 +994,8 @@ export const GitTimeline = memo(function GitTimeline({
         ids.push(row.eventObj.id);
       }
     }
-    for (const ev of matchingEvents) {
-      if (!seen.has(ev.id)) {
-        seen.add(ev.id);
-        ids.push(ev.id);
-      }
-    }
     return ids;
-  }, [stream, matchingEvents]);
+  }, [stream]);
 
   const orderedReaderIds =
     displayMode === 'chronicle' ? chronicleData.orderedEventIds : graphOrderedEventIds;
@@ -993,22 +1007,32 @@ export const GitTimeline = memo(function GitTimeline({
   }, [focusedEvent]);
 
   useEffect(() => {
-    if (highlightedJumpId && matchingEventById.has(highlightedJumpId)) {
-      setSelectedReaderEventId(highlightedJumpId);
-    }
-  }, [highlightedJumpId, matchingEventById]);
+    if (!highlightedJumpId || !matchingEventById.has(highlightedJumpId)) return;
+    setSelectedReaderEventId(highlightedJumpId);
+    if (displayMode === 'chronicle') setPendingChronicleEventId(highlightedJumpId);
+  }, [displayMode, highlightedJumpId, matchingEventById]);
 
-  const activeReaderEvent = useMemo(() => {
-    if (selectedReaderEventId) {
-      const found = matchingEventById.get(selectedReaderEventId);
-      if (found) return found;
+  useEffect(() => {
+    if (displayMode !== 'chronicle' || !pendingChronicleEventId) return;
+    const chapter = chronicleData.chapters.find((item) =>
+      item.events.some((event) => event.id === pendingChronicleEventId),
+    );
+    if (!chapter) {
+      if (chronicleSphere !== 'all') setChronicleSphere('all');
+      else setPendingChronicleEventId(null);
+      return;
     }
-    if (focusedEvent) return focusedEvent;
-    if (orderedReaderIds.length > 0) {
-      return matchingEventById.get(orderedReaderIds[0]) ?? null;
+    if (collapsedChronicleEras[chapter.era.id]) {
+      setCollapsedChronicleEras((previous) => ({ ...previous, [chapter.era.id]: false }));
+      return;
     }
-    return matchingEvents[0] ?? null;
-  }, [selectedReaderEventId, matchingEventById, focusedEvent, orderedReaderIds, matchingEvents]);
+    document.getElementById(timelineEventAnchor(pendingChronicleEventId, 'chronicle'))
+      ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setPendingChronicleEventId(null);
+  }, [displayMode, pendingChronicleEventId, chronicleData.chapters, chronicleSphere, collapsedChronicleEras]);
+
+  const readerId = resolveReaderEventId(orderedReaderIds, selectedReaderEventId, focusedEvent?.id);
+  const activeReaderEvent = readerId ? matchingEventById.get(readerId) ?? null : null;
 
   const activeReaderIndex = activeReaderEvent
     ? orderedReaderIds.indexOf(activeReaderEvent.id)
@@ -1062,16 +1086,9 @@ export const GitTimeline = memo(function GitTimeline({
     ];
   }, [readerLinkGeometry]);
 
-  const activeJumpEraId = useMemo(() => {
-    if (displayMode === 'chronicle' && activeReaderEvent) {
-      return (
-        findMacroEraForYear(activeReaderEvent.startYear, resolvedEras)?.id ??
-        activeStickyEra?.id ??
-        null
-      );
-    }
-    return activeStickyEra?.id ?? null;
-  }, [displayMode, activeReaderEvent, resolvedEras, activeStickyEra]);
+  const activeJumpEraId = displayMode === 'chronicle'
+    ? chronicleData.chapters.find(({ events }) => events.some(({ id }) => id === activeReaderEvent?.id))?.era.id ?? null
+    : activeStickyEra?.id ?? null;
 
   const handleSelectReaderEvent = useCallback(
     (eventId: string) => {
@@ -1091,53 +1108,11 @@ export const GitTimeline = memo(function GitTimeline({
       setSelectedReaderEventId(nextId);
       setPinnedHoverEventId(nextId);
 
-      if (displayMode === 'chronicle') {
-        const chapter = chronicleData.chapters.find((ch) =>
-          ch.events.some((ev) => ev.id === nextId),
-        );
-        if (chapter) {
-          setCollapsedChronicleEras((prev) =>
-            prev[chapter.era.id] ? { ...prev, [chapter.era.id]: false } : prev,
-          );
-        }
-        window.requestAnimationFrame(() => {
-          document
-            .getElementById(`chronicle-ev-${nextId}`)
-            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        });
-      } else {
-        triggerScrollToDomRow(`row-${nextId}`, nextId);
-      }
+      if (displayMode === 'chronicle') setPendingChronicleEventId(nextId);
+      else triggerScrollToDomRow(timelineEventAnchor(nextId, 'graph'), nextId);
     },
-    [orderedReaderIds, activeReaderEvent, displayMode, chronicleData.chapters, triggerScrollToDomRow],
+    [orderedReaderIds, activeReaderEvent, displayMode, triggerScrollToDomRow],
   );
-
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.tagName === 'SELECT' ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
-      if (document.querySelector('[role="dialog"][aria-modal="true"]')) {
-        return;
-      }
-      if ((e.altKey && e.key === 'ArrowLeft') || (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === 'k')) {
-        e.preventDefault();
-        handleStepReader(-1);
-      } else if ((e.altKey && e.key === 'ArrowRight') || (!e.metaKey && !e.ctrlKey && !e.altKey && e.key === 'j')) {
-        e.preventDefault();
-        handleStepReader(1);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [handleStepReader]);
 
   const handleToggleChronicleEra = useCallback((eraId: string) => {
     setCollapsedChronicleEras((prev) => ({ ...prev, [eraId]: !prev[eraId] }));
@@ -1156,25 +1131,19 @@ export const GitTimeline = memo(function GitTimeline({
 
   const handleJumpToEra = useCallback(
     (entry: EraJumpEntry) => {
-      const firstEraEvent = matchingEvents.find(
-        (ev) => ev.startYear >= entry.era.startYear && ev.startYear <= entry.era.endYear,
-      );
-      if (firstEraEvent) {
-        setSelectedReaderEventId(firstEraEvent.id);
-      }
-
       if (displayMode === 'chronicle') {
-        setCollapsedChronicleEras((prev) =>
-          prev[entry.era.id] ? { ...prev, [entry.era.id]: false } : prev,
-        );
-        window.requestAnimationFrame(() => {
-          document
-            .getElementById(`chronicle-era-${entry.era.id}`)
-            ?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        });
+        const first = chronicleData.chapters.find(({ era }) => era.id === entry.era.id)?.events[0];
+        if (first) setSelectedReaderEventId(first.id);
+        setCollapsedChronicleEras((previous) => ({ ...previous, [entry.era.id]: false }));
+        document.getElementById(chronicleEraAnchor(entry.era.id))
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
       }
 
+      const first = matchingEvents.find(
+        (event) => event.startYear >= entry.era.startYear && event.startYear <= entry.era.endYear,
+      );
+      if (first) setSelectedReaderEventId(first.id);
       if (entry.firstDomId) {
         const el = document.getElementById(entry.firstDomId);
         if (el) {
@@ -1187,7 +1156,7 @@ export const GitTimeline = memo(function GitTimeline({
         }
       }
     },
-    [displayMode, matchingEvents, stream.length],
+    [displayMode, matchingEvents, chronicleData.chapters, stream.length],
   );
 
   const effectiveVisibleCount = Math.min(stream.length, Math.max(INITIAL_VISIBLE_ROWS, visibleRowCount));
@@ -1205,13 +1174,12 @@ export const GitTimeline = memo(function GitTimeline({
             <div className="flex items-center gap-3 overflow-x-auto no-scrollbar min-w-0">
               <div
                 className="inline-flex items-center rounded-lg bg-slate-950 border border-slate-800 p-0.5 text-xs font-sans shrink-0"
-                role="tablist"
+                role="group"
                 aria-label="Режим отображения оси времени"
               >
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={displayMode === 'graph'}
+                  aria-pressed={displayMode === 'graph'}
                   onClick={() => setDisplayMode('graph')}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
                     displayMode === 'graph'
@@ -1224,8 +1192,7 @@ export const GitTimeline = memo(function GitTimeline({
                 </button>
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={displayMode === 'chronicle'}
+                  aria-pressed={displayMode === 'chronicle'}
                   onClick={() => setDisplayMode('chronicle')}
                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md transition-colors cursor-pointer whitespace-nowrap ${
                     displayMode === 'chronicle'
@@ -2332,12 +2299,7 @@ export const GitTimeline = memo(function GitTimeline({
           </div>
 
           {isMobileReaderOpen && (
-            <div className="lg:hidden fixed inset-0 z-50 flex flex-col justify-end bg-slate-950/70 backdrop-blur-sm">
-              <div
-                className="flex-1"
-                onClick={() => setIsMobileReaderOpen(false)}
-                aria-hidden="true"
-              />
+            <MobileReaderDialog onClose={closeMobileReader}>
               <TimelineLiveReader
                 variant="sheet"
                 event={activeReaderEvent}
@@ -2375,9 +2337,9 @@ export const GitTimeline = memo(function GitTimeline({
                     : undefined
                 }
                 onToggleFocusEvent={onToggleFocusEvent}
-                onCloseMobileSheet={() => setIsMobileReaderOpen(false)}
+                onCloseMobileSheet={closeMobileReader}
               />
-            </div>
+            </MobileReaderDialog>
           )}
         </>
       )}

@@ -1,3 +1,4 @@
+import { eraGraphAnchor, timelineEventAnchor } from './timelineAnchors';
 import { classifyEventMacroRegions } from '../../engine/regionFilter';
 import {
   getEventEffectiveEndYear,
@@ -215,25 +216,42 @@ export function precomputeTimelineLayout(params: {
   const carryOverWarsByEraId = new Map<string, EnrichedEvent[]>();
   const ongoingWarsByRulerId = new Map<string, EnrichedEvent[]>();
 
+  const boundaryYears = [...new Set(stream.flatMap((row) => {
+    if (row.rowType === 'ERA_START') return [row.year];
+    if (row.rowType === 'RULER_COMMIT') return [row.rulerObj.startYear];
+    return [];
+  }))].sort((a, b) => a - b);
+  const warsAtBoundary = new Map<number, EnrichedEvent[]>();
+  for (const war of majorWars) {
+    let low = 0;
+    let high = boundaryYears.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (boundaryYears[mid] <= war.startYear) low = mid + 1;
+      else high = mid;
+    }
+    for (let i = low; i < boundaryYears.length && boundaryYears[i] < war.endYear; i += 1) {
+      const year = boundaryYears[i];
+      const wars = warsAtBoundary.get(year);
+      if (wars) wars.push(war);
+      else warsAtBoundary.set(year, [war]);
+    }
+  }
+
   for (let idx = 0; idx < stream.length; idx++) {
     const row = stream[idx];
     if (row.rowType === 'ERA_START') {
-      const carry = majorWars.filter((ev) => ev.startYear < row.year && ev.endYear > row.year);
-      if (carry.length > 0) {
-        carryOverWarsByEraId.set(row.era.id, carry);
-      }
+      rowIndexByDomId.set(eraGraphAnchor(row.era.id), idx);
+      const carry = warsAtBoundary.get(row.year);
+      if (carry) carryOverWarsByEraId.set(row.era.id, carry);
     } else if (row.rowType === 'RULER_COMMIT') {
       rowIndexByDomId.set(row.rulerObj.id, idx);
-      const ongoing = majorWars.filter(
-        (ev) => ev.startYear < row.rulerObj.startYear && ev.endYear > row.rulerObj.startYear,
-      );
-      if (ongoing.length > 0) {
-        ongoingWarsByRulerId.set(row.rulerObj.id, ongoing);
-      }
+      const ongoing = warsAtBoundary.get(row.rulerObj.startYear);
+      if (ongoing) ongoingWarsByRulerId.set(row.rulerObj.id, ongoing);
     } else if (row.rowType === 'EVENT_COMMIT') {
       const ev = row.eventObj;
       rowIndexByEventId.set(ev.id, idx);
-      rowIndexByDomId.set(`row-${ev.id}`, idx);
+      rowIndexByDomId.set(timelineEventAnchor(ev.id, 'graph'), idx);
       rowIndexByDomId.set(ev.id, idx);
 
       if (!row.isAtomicInView) {

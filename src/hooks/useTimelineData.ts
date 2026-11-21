@@ -1,3 +1,4 @@
+import { parseBranchSelection } from '../engine/layout/branchSelection';
 import { startTransition, useCallback, useEffect, useState } from 'react';
 import {
   fetchTimelineRepository,
@@ -50,20 +51,17 @@ export function useTimelineData({ initialParams }: UseTimelineDataOptions): UseT
     setLoading(true);
     setInitialLoadError(null);
 
-    const hasDeepLinkOrSearch = Boolean(
-      initialParams.get('card') ||
-        initialParams.get('person') ||
-        initialParams.get('search'),
-    );
-    const requestedBranches = (initialParams.get('branches') ?? '')
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const selection = parseBranchSelection(initialParams.get('branches'));
+    const requestedBranches = Object.keys(selection.overrides).filter((id) => selection.overrides[id]);
 
     try {
       const repo = await fetchTimelineRepository({
-        progressive: !hasDeepLinkOrSearch,
+        progressive: true,
         requiredBranchIds: requestedBranches,
+        target: {
+          cardId: initialParams.get('card') ?? undefined,
+          personKey: initialParams.get('person') ?? undefined,
+        },
       });
       setSnapshot(repo);
     } catch (err) {

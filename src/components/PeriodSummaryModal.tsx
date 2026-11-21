@@ -1,3 +1,4 @@
+import { useDossierTabs } from '../hooks/useDossierTabs';
 import {
   ArrowRight,
   BookMarked,
@@ -173,6 +174,7 @@ export function PeriodSummaryModal({
   onCompareWithRuler,
 }: PeriodSummaryModalProps) {
   const [activeTab, setActiveTab] = useState<ModalTabId>('biography');
+  const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
   const [showCitation, setShowCitation] = useState(false);
   const [showSources, setShowSources] = useState(false);
 
@@ -664,6 +666,7 @@ export function PeriodSummaryModal({
           {/* 4 последовательные вкладки изучения */}
           <div
             role="tablist"
+            onKeyDown={handleTabKeyDown}
             aria-label="Разделы досье правителя"
             className="mt-4 -mb-px flex items-center gap-1 overflow-x-auto no-scrollbar"
           >
@@ -673,8 +676,7 @@ export function PeriodSummaryModal({
                 <button
                   key={tab.id}
                   type="button"
-                  role="tab"
-                  aria-selected={isActive}
+                  {...tabProps(tab.id)}
                   onClick={() => handleTabChange(tab.id)}
                   className={`px-3 py-2.5 text-xs font-mono font-semibold inline-flex items-center gap-1.5 border-b-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/70 ${
                     isActive
@@ -704,8 +706,11 @@ export function PeriodSummaryModal({
           {/* ============================================================== */}
           {/* ВКЛАДКА 1: БИОГРАФИЯ, КЛЮЧЕВЫЕ ДЕЛА И ИТОГИ                    */}
           {/* ============================================================== */}
+          {tabs.filter((tab) => tab.id !== activeTab).map(({ id }) => (
+            <div key={id} {...panelProps(id)} />
+          ))}
           {activeTab === 'biography' && (
-            <div className="space-y-6">
+            <div {...panelProps('biography')} className="space-y-6">
               {/* Биография */}
               <section className="space-y-2.5">
                 <h4 className="text-[11px] font-mono uppercase tracking-widest text-amber-300/90 font-bold">
@@ -835,7 +840,7 @@ export function PeriodSummaryModal({
           {/* ВКЛАДКА 2: ОКРУЖЕНИЕ (БЛИЖНИЙ КРУГ + СОВРЕМЕННИКИ)             */}
           {/* ============================================================== */}
           {activeTab === 'people' && (
-            <div className="space-y-6">
+            <div {...panelProps('people')} className="space-y-6">
               {/* Блок 1: Ближний круг с явным объяснением связи */}
               <section className="space-y-3.5">
                 <div className="flex flex-wrap items-center justify-between gap-2.5">
@@ -1083,7 +1088,7 @@ export function PeriodSummaryModal({
           {/* ВКЛАДКА 3: СОБЫТИЯ И КУЛЬТУРА (КОМПАКТНЫЕ ВЫПАДАЮЩИЕ ФИЛЬТРЫ)  */}
           {/* ============================================================== */}
           {activeTab === 'events' && (
-            <div className="space-y-5">
+            <div {...panelProps('events')} className="space-y-5">
               {/* Компактная панель выпадающих фильтров */}
               <div className="space-y-2.5">
                 <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -1380,7 +1385,7 @@ export function PeriodSummaryModal({
           {/* ВКЛАДКА 4: АНАЛИТИКА СВЯЗЕЙ ГРАФА                              */}
           {/* ============================================================== */}
           {activeTab === 'analytics' && (
-            <div className="space-y-6">
+            <div {...panelProps('analytics')} className="space-y-6">
               {/* 3 компактных сводных показателя */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs font-mono">
                 <div className="rounded-xl bg-slate-900/75 border border-slate-800 p-3">

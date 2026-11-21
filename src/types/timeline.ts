@@ -248,6 +248,9 @@ export interface ModulesIndexFile {
   generatedAt?: string;
   files: string[];
   fileHashes?: Record<string, string>;
+  disabledFiles?: string[];
+  cardModules?: Record<string, string>;
+  personModules?: Record<string, string[]>;
 }
 
 export interface SyncManifest {
@@ -428,7 +431,8 @@ export type MacroRegionId =
   | 'europe'
   | 'asia_east'
   | 'middle_east_africa'
-  | 'americas_global';
+  | 'americas_global'
+  | 'unknown';
 
 export type FocusScope = 'sync_only' | 'sync_and_concurrent';
 
@@ -652,6 +656,7 @@ export interface ComparisonSideSummary {
   worksAboutPeriodCount: number;
   branchBreakdown: Array<{ branch: BranchDefinition; count: number; sharePct: number }>;
   sphereCounts: Record<EraEventSphereId, number>;
+  unclassifiedSphereEventsCount: number;
   crossBranchPairs: ReignBranchPairSummary[];
   topConnectedEvents: EnrichedEvent[];
   syncTags: Array<{ tag: string; label: string; count: number }>;

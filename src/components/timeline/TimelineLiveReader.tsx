@@ -124,6 +124,18 @@ export const TimelineLiveReader = memo(function TimelineLiveReader({
 
   return (
     <section
+      onKeyDown={(event) => {
+        const target = event.target;
+        if (event.defaultPrevented || event.ctrlKey || event.metaKey ||
+          (target instanceof HTMLElement && (target.isContentEditable ||
+            ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))) return;
+        const previous = event.altKey ? event.key === 'ArrowLeft' : event.key.toLowerCase() === 'k';
+        const next = event.altKey ? event.key === 'ArrowRight' : event.key.toLowerCase() === 'j';
+        if ((previous && hasPrev) || (next && hasNext)) {
+          event.preventDefault();
+          onStep(previous ? -1 : 1);
+        }
+      }}
       aria-label="Живая читалка выбранного события"
       className={`rounded-2xl border border-amber-500/30 bg-[#0b1325]/98 shadow-xl overflow-hidden flex flex-col ${
         variant === 'sheet' ? 'max-h-[78vh]' : ''

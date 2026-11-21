@@ -1,3 +1,4 @@
+import { chronicleEraAnchor, timelineEventAnchor } from './timelineAnchors';
 import {
   ChevronDown,
   ChevronRight,
@@ -57,13 +58,12 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
       <div className="px-3 sm:px-5 py-2.5 border-b border-slate-800/80 bg-slate-950/70 flex flex-wrap items-center justify-between gap-2">
         <div
           className="flex flex-wrap items-center gap-1"
-          role="tablist"
+          role="group"
           aria-label="Фильтр хроники по 5 сферам"
         >
           <button
             type="button"
-            role="tab"
-            aria-selected={sphereFilter === 'all'}
+            aria-pressed={sphereFilter === 'all'}
             onClick={() => onChangeSphereFilter('all')}
             className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-colors cursor-pointer tabular-nums whitespace-nowrap ${
               sphereFilter === 'all'
@@ -81,8 +81,7 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
               <button
                 key={sphereId}
                 type="button"
-                role="tab"
-                aria-selected={isActive}
+                aria-pressed={isActive}
                 disabled={count === 0 && !isActive}
                 onClick={() => onChangeSphereFilter(sphereId)}
                 className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-colors tabular-nums whitespace-nowrap ${
@@ -119,6 +118,11 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
           </button>
         )}
       </div>
+      {sphereFilter === 'all' && chronicle.unclassifiedCount > 0 && (
+        <p className="px-3 py-2 text-xs text-slate-400 sm:px-5">
+          Вне пяти сфер: {chronicle.unclassifiedCount}. Эти материалы доступны в разделе «Все».
+        </p>
+      )}
 
       {/* Список глав-эпох */}
       {chronicle.chapters.length === 0 ? (
@@ -150,7 +154,7 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
             return (
               <section
                 key={chapter.era.id}
-                id={`chronicle-era-${chapter.era.id}`}
+                id={chronicleEraAnchor(chapter.era.id)}
                 data-era-chapter={chapter.era.id}
                 className="scroll-mt-36"
               >
@@ -241,13 +245,13 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
                     {chapter.events.map((ev) => {
                       const isSelected = selectedEventId === ev.id;
                       const isFocused = focusedEventId === ev.id;
-                      const sphereId = chronicle.sphereByEventId.get(ev.id) ?? 'world';
+                      const sphereId = chronicle.sphereByEventId.get(ev.id);
                       const branch = branchById.get(ev.task);
 
                       return (
                         <button
                           key={ev.id}
-                          id={`chronicle-ev-${ev.id}`}
+                          id={timelineEventAnchor(ev.id, 'chronicle')}
                           type="button"
                           onClick={() => onSelectEvent(ev.id)}
                           onDoubleClick={() => onOpenCardModal(ev.id)}
@@ -272,7 +276,7 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
                                 ·
                               </span>
                               <span className="text-sky-300/90 shrink-0">
-                                {CHRONICLE_SPHERE_LABELS[sphereId]}
+                                {sphereId ? CHRONICLE_SPHERE_LABELS[sphereId] : 'Вне пяти сфер'}
                               </span>
                               <span aria-hidden="true" className="text-slate-600">
                                 ·

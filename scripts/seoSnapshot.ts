@@ -1,3 +1,4 @@
+import { discoverTimelineModules } from './timelineModules.mjs';
 import fs from 'fs';
 import path from 'path';
 
@@ -208,17 +209,6 @@ export function collectRepositorySnapshot(rootDir: string): RepositorySnapshot {
     thesis: era.thesis,
   }));
 
-  const crossLinks: SnapshotCrossLink[] = (manifest?.crossLinks ?? []).filter(
-    (link): link is SnapshotCrossLink =>
-      Boolean(link && link.id && link.from && link.to && link.label),
-  );
-
-  const linkDegreeMap = new Map<string, number>();
-  for (const link of crossLinks) {
-    linkDegreeMap.set(link.from, (linkDegreeMap.get(link.from) ?? 0) + 1);
-    linkDegreeMap.set(link.to, (linkDegreeMap.get(link.to) ?? 0) + 1);
-  }
-
   const branchCountMap = new Map<string, number>();
   const rawBranches: SnapshotBranch[] = [];
   const rulers: SnapshotRuler[] = [];
@@ -228,45 +218,20 @@ export function collectRepositorySnapshot(rootDir: string): RepositorySnapshot {
     sourceFile: string;
   }> = [];
 
-  let totalInlineLinks = 0;
-
-  const dataDir = path.join(publicDir, 'data');
-  const diskDataFiles = fs.existsSync(dataDir)
-    ? fs
-        .readdirSync(dataDir)
-        .filter((f) => f.endsWith('.json') && f !== 'sync.manifest.json' && f !== 'modules.index.json')
-        .map((f) => `data/${f}`)
-        .sort()
-    : [];
-
-  const mountedEntries = manifest?.mountedFiles ?? [];
-  const manifestPathSet = new Set(
-    mountedEntries
-      .map((entry) => entry.path?.replace(/^(?:\.\/|\/)+/, ''))
-      .filter((p): p is string => Boolean(p)),
-  );
-  const unmountedDiskFiles = diskDataFiles.filter((p) => !manifestPathSet.has(p));
-  if (unmountedDiskFiles.length > 0) {
-    throw new Error(
-      `[SEO Snapshot] Unmounted data modules detected in public/data/: ${unmountedDiskFiles.join(', ')}. Register them in public/data/sync.manifest.json.`,
-    );
-  }
-
-  const seenFiles = new Set<string>();
-
-  for (const entry of mountedEntries) {
-    if (!entry.path || entry.enabled === false) continue;
-    const relPath = entry.path.replace(/^(?:\.\/|\/)+/, '');
-    if (seenFiles.has(relPath)) continue;
-    seenFiles.add(relPath);
-
-    const fullFilePath = path.resolve(publicDir, relPath);
-    const data = safeReadJson<{
+  const manifestByPath = new Map((manifest?.mountedFiles ?? []).map((entry) => [
+    entry.path?.trim().replace(/^(?:\.\/|\/)+/, ''), entry,
+  ]));
+  for (const { relFromPublic: relPath, enabled, data: moduleData, parseError } of discoverTimelineModules(publicDir, manifest?.mountedFiles)) {
+    if (parseError) throw new Error(`[SEO Snapshot] ${relPath}: ${parseError}`);
+    if (!enabled) continue;
+    const entry = manifestByPath.get(relPath);
+    const data = moduleData as {
+      fileId?: string;
       branch?: RawBranch;
       branches?: RawBranch[];
       rulers?: SnapshotRuler[];
       nodes?: RawNode[];
-    }>(fullFilePath);
+    } | null;
 
     if (!data) continue;
 
@@ -304,31 +269,39 @@ export function collectRepositorySnapshot(rootDir: string): RepositorySnapshot {
       if (taskId) {
         branchCountMap.set(taskId, (branchCountMap.get(taskId) ?? 0) + 1);
       }
-      if (Array.isArray(node.linksTo)) {
-        totalInlineLinks += node.linksTo.length;
-        linkDegreeMap.set(node.id, (linkDegreeMap.get(node.id) ?? 0) + node.linksTo.length);
-        for (const inlineLink of node.linksTo) {
-          if (inlineLink?.targetId) {
-            linkDegreeMap.set(
-              inlineLink.targetId,
-              (linkDegreeMap.get(inlineLink.targetId) ?? 0) + 1,
-            );
-          }
-        }
-      }
       rawEvents.push({node, sourceFile: relPath});
     }
 
     mountedFiles.push({
-      fileId: entry.fileId ?? relPath,
+      fileId: entry?.fileId ?? data.fileId ?? relPath,
       path: relPath,
-      role: entry.role ?? 'thematic_branch',
-      branchIds: entry.branchIds ?? fileBranches.map((b) => b.id!).filter(Boolean),
-      title: entry.title ?? relPath,
+      role: entry?.role ?? (Array.isArray(data.rulers) ? 'rulers_branch' : 'thematic_branch'),
+      branchIds: entry?.branchIds ?? fileBranches.map((b) => b.id!).filter(Boolean),
+      title: entry?.title ?? fileBranches[0]?.label ?? relPath,
       enabled: true,
       nodesCount: fileNodes.length,
       rulersCount: fileRulers.length,
     });
+  }
+
+  const visibleIds = new Set([...rawEvents.map(({ node }) => node.id), ...rulers.map(({ id }) => id)]);
+  const crossLinks = (manifest?.crossLinks ?? []).filter((link) =>
+    link?.id && link.label && visibleIds.has(link.from) && visibleIds.has(link.to),
+  );
+  const linkDegreeMap = new Map<string, number>();
+  const countLink = (from: string, to: string) => {
+    linkDegreeMap.set(from, (linkDegreeMap.get(from) ?? 0) + 1);
+    linkDegreeMap.set(to, (linkDegreeMap.get(to) ?? 0) + 1);
+  };
+  for (const link of crossLinks) countLink(link.from, link.to);
+  let totalInlineLinks = 0;
+  for (const { node } of rawEvents) {
+    if (!node.id || !Array.isArray(node.linksTo)) continue;
+    for (const link of node.linksTo) {
+      if (!link?.targetId || !visibleIds.has(link.targetId)) continue;
+      countLink(node.id, link.targetId);
+      totalInlineLinks += 1;
+    }
   }
 
   const branchLabelById = new Map<string, string>();

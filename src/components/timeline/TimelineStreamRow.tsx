@@ -1,3 +1,4 @@
+import { eraGraphAnchor, timelineEventAnchor } from './timelineAnchors';
 import {
   AlertTriangle,
   ArrowDown,
@@ -750,7 +751,7 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
     const wars = carryOverWars ?? [];
 
     rowEl = (
-      <div className="timeline-row-cv relative flex items-stretch bg-gradient-to-r from-slate-900/95 via-slate-900/70 to-slate-950 border-y border-amber-500/30">
+      <div id={eraGraphAnchor(item.era.id)} className="timeline-row-cv relative flex items-stretch bg-gradient-to-r from-slate-900/95 via-slate-900/70 to-slate-950 border-y border-amber-500/30">
         <div
           title={gutter.title}
           className={`${gutterWidthClass} shrink-0 border-r border-slate-800/70 bg-slate-950/60 px-2 sm:px-2.5 pt-[27px] pb-2 items-start justify-end font-mono text-[11px] font-bold text-amber-300 tabular-nums whitespace-nowrap select-none`}
@@ -1300,31 +1301,26 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
       cardHighlightClass = 'overlap-highlighted';
     }
 
+    const openEventCard = () => {
+      onCloseCardTooltip();
+      onOpenCardModal(ev.id);
+    };
+    const openFromTitle = (event: React.MouseEvent<HTMLButtonElement>) => {
+      event.stopPropagation();
+      openEventCard();
+    };
+
     rowEl = (
       <div
-        id={`row-${ev.id}`}
-        role="button"
-        tabIndex={0}
-        aria-label={`${ev.title} (${ev.period})`}
+        id={timelineEventAnchor(ev.id, 'graph')}
         data-ruler-context={ev.overlappingRulers[0]?.id ?? ''}
-        onClick={() => {
-          onCloseCardTooltip();
-          onOpenCardModal(ev.id);
-        }}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return;
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onCloseCardTooltip();
-            onOpenCardModal(ev.id);
-          }
-        }}
+        onClick={openEventCard}
         onMouseEnter={() => onActivateHoverEvent(ev.id)}
         onMouseLeave={() => {
           onScheduleClearHoverEvent();
           onCloseCardTooltip();
         }}
-        className="timeline-row-cv commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
+        className="timeline-row-cv commit-row relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-within:ring-2 focus-within:ring-inset focus-within:ring-amber-400/80"
       >
         <div
           title={gutter.title}
@@ -1612,9 +1608,9 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
                 <span aria-hidden="true" className="hidden sm:inline text-slate-400 shrink-0">
                   ·
                 </span>
-                <span className="text-[13px] sm:text-sm font-bold text-white group-hover:text-amber-200 leading-snug line-clamp-2 sm:truncate min-w-0">
+                <button type="button" onClick={openFromTitle} aria-label={`${ev.title} (${ev.period})`} className="text-[13px] sm:text-sm font-bold text-white group-hover:text-amber-200 leading-snug line-clamp-2 sm:truncate min-w-0 text-left">
                   {ev.title}
-                </span>
+                </button>
                 <span className="hidden md:inline-flex items-center gap-1.5 text-xs font-sans text-slate-300 shrink-0 max-w-[175px]">
                   <span aria-hidden="true" className="text-slate-400">
                     ·
@@ -1800,7 +1796,9 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
                     ·
                   </span>
                   <h4 className="text-[15px] leading-snug font-bold text-white group-hover:text-amber-200 transition-colors line-clamp-2 sm:truncate min-w-0">
-                    {ev.title}
+                    <button type="button" className="text-left" onClick={openFromTitle} aria-label={`${ev.title} (${ev.period})`}>
+                      {ev.title}
+                    </button>
                   </h4>
                   {!isAtomic && !isBioNode && item.startedBeforeWindow && (
                     <span className="hidden lg:inline text-xs font-sans text-amber-300 shrink-0 whitespace-nowrap">
@@ -2065,20 +2063,10 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
     rowEl = (
       <div
         id={`row-end-${ev.id}`}
-        role="button"
-        tabIndex={0}
-        aria-label={`Окончание: ${ev.title} (${item.dateLabel})`}
         onClick={() => onOpenCardModal(ev.id)}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return;
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onOpenCardModal(ev.id);
-          }
-        }}
         onMouseEnter={() => onActivateHoverEvent(ev.id)}
         onMouseLeave={() => onScheduleClearHoverEvent()}
-        className="timeline-row-cv relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/80"
+        className="timeline-row-cv relative flex items-stretch hover:bg-slate-900/40 transition-colors cursor-pointer group focus-within:ring-2 focus-within:ring-inset focus-within:ring-amber-400/80"
       >
         <div
           title={gutter.title}
@@ -2208,9 +2196,17 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
                     ? 'Окончание кампании:'
                     : 'Завершение процесса:'}
               </span>
-              <span className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 sm:truncate min-w-0">
+              <button
+                type="button"
+                aria-label={`Окончание: ${ev.title} (${item.dateLabel})`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onOpenCardModal(ev.id);
+                }}
+                className="font-semibold text-slate-200 group-hover:text-white line-clamp-2 sm:truncate min-w-0 text-left"
+              >
                 {formatEventTitleWithPeriod(ev)}
-              </span>
+              </button>
             </div>
             <div className="flex items-center gap-2 shrink-0 font-sans text-xs tabular-nums whitespace-nowrap ml-auto sm:ml-0">
               <span className="text-slate-400 hidden sm:inline">
@@ -2225,7 +2221,7 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onScrollToDomRow(`row-${ev.id}`, ev.id);
+                    onScrollToDomRow(timelineEventAnchor(ev.id, 'graph'), ev.id);
                   }}
                   className="px-2.5 py-1 sm:px-2 sm:py-0.5 rounded-lg border border-slate-700/80 bg-slate-950/70 hover:border-amber-400/60 hover:text-amber-200 text-slate-300 inline-flex items-center gap-1 transition-colors cursor-pointer"
                   title={`Вернуться к началу процесса (${effStartYear} г.)`}

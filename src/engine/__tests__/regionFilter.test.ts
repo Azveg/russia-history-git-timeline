@@ -52,6 +52,16 @@ describe('regionFilter — geographic macro-region facet classifier', () => {
     ).toEqual(['europe']);
   });
 
+  it('distinguishes London from the Don and matches Cyrillic inflections', () => {
+    expect(classifyEventMacroRegions({ region: 'Париж / Лондон / Санкт-Петербург', task: 'DIPLOMACY_TREATIES' }))
+      .toEqual(['rus_north_west', 'europe']);
+    expect(classifyEventMacroRegions({ region: 'Дон / Средняя Азия', task: 'SEAS' }))
+      .toEqual(['rus_south_caucasus', 'rus_volga_ural']);
+    expect(classifyEventMacroRegions({ region: 'Тульская губерния / Дальний Восток / Москва', task: 'DOCTORS_BIO' }))
+      .toEqual(['rus_siberia_fareast', 'rus_center']);
+    expect(classifyEventMacroRegions({ region: 'Место не установлено', task: 'WORLD_CONTEXT' })).toEqual(['unknown']);
+  });
+
   it('computes facet counts and supports matching against "all"', () => {
     const sample = [
       { region: 'Москва', task: 'REFORMS_ECO' },

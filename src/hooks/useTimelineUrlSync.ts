@@ -1,7 +1,7 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import { parseMacroRegionParam } from '../engine/regionFilter';
-import { computeBranchPresetMap } from '../engine/timelineEngine';
-import type { BranchDefinition, MacroRegionId } from '../types/timeline';
+import { serializeBranchSelection, type BranchSelection } from '../engine/layout/branchSelection';
+import type { MacroRegionId } from '../types/timeline';
 
 export interface TimelineUrlModalState {
   activeCardId: string | null;
@@ -12,17 +12,16 @@ export interface TimelineUrlModalState {
 }
 
 export interface UseTimelineUrlSyncOptions extends TimelineUrlModalState {
-  yearFrom: number;
-  yearTo: number;
+  yearFrom: number | undefined;
+  yearTo: number | undefined;
   searchQuery: string;
   selectedMacroRegion?: MacroRegionId;
-  activeBranches: Record<string, boolean>;
-  branches: BranchDefinition[];
-  setYearFrom: Dispatch<SetStateAction<number>>;
-  setYearTo: Dispatch<SetStateAction<number>>;
+  branchSelection: BranchSelection;
+  setYearFrom: Dispatch<SetStateAction<number | undefined>>;
+  setYearTo: Dispatch<SetStateAction<number | undefined>>;
   setSearchQuery: Dispatch<SetStateAction<string>>;
   setSelectedMacroRegion?: Dispatch<SetStateAction<MacroRegionId>>;
-  setActiveBranches: Dispatch<SetStateAction<Record<string, boolean>>>;
+  restoreBranchSelection: (value: string | null) => void;
   onPopModalFromUrl: (next: {
     cardId: string | null;
     rulerId: string | null;
@@ -32,18 +31,33 @@ export interface UseTimelineUrlSyncOptions extends TimelineUrlModalState {
   }) => void;
 }
 
-export function parseInitialYearBound(params: URLSearchParams, key: 'from' | 'to', fallback: number): number {
-  const raw = Number(params.get(key));
-  return Number.isFinite(raw) && raw >= 862 && raw <= 2000 ? raw : fallback;
+export function parseInitialYearBound<T extends number | undefined>(
+  params: URLSearchParams, key: 'from' | 'to', fallback: T,
+): number | T {
+  const raw = params.get(key);
+  return raw && /^\d{1,4}$/.test(raw) && Number(raw) > 0 ? Number(raw) : fallback;
+}
+
+export function resolveUrlYearRange(
+  from: number | undefined,
+  to: number | undefined,
+  bounds: { minYear: number; maxYear: number },
+  complete: boolean,
+): { from: number; to: number } {
+  const min = complete ? bounds.minYear : Math.min(bounds.minYear, from ?? Infinity, to ?? Infinity);
+  const max = complete ? bounds.maxYear : Math.max(bounds.maxYear, from ?? -Infinity, to ?? -Infinity);
+  const first = Math.min(max, Math.max(min, from ?? min));
+  const last = Math.min(max, Math.max(min, to ?? max));
+  return first <= last ? { from: first, to: last } : { from: min, to: max };
 }
 
 export function parseWindowRangeParam(raw: string | null): { from: number; to: number } | null {
   if (!raw) return null;
-  const match = raw.trim().match(/^(\d{3,4})[-–](\d{3,4})$/);
+  const match = raw.trim().match(/^(\d{1,4})[-–](\d{1,4})$/);
   if (!match) return null;
   const from = Number(match[1]);
   const to = Number(match[2]);
-  if (!Number.isFinite(from) || !Number.isFinite(to) || from < 862 || to > 2000 || from > to) {
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from <= 0 || from > to) {
     return null;
   }
   return { from, to };
@@ -73,22 +87,21 @@ export function useTimelineUrlSync({
   activePersonModalKey,
   activeEraModalId,
   activeWindowModalRange,
-  activeBranches,
-  branches,
+  branchSelection,
   setYearFrom,
   setYearTo,
   setSearchQuery,
   setSelectedMacroRegion,
-  setActiveBranches,
+  restoreBranchSelection,
   onPopModalFromUrl,
 }: UseTimelineUrlSyncOptions): void {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
-      if (yearFrom !== 862) params.set('from', String(yearFrom));
+      if (yearFrom !== undefined) params.set('from', String(yearFrom));
       else params.delete('from');
 
-      if (yearTo !== 2000) params.set('to', String(yearTo));
+      if (yearTo !== undefined) params.set('to', String(yearTo));
       else params.delete('to');
 
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
@@ -118,21 +131,9 @@ export function useTimelineUrlSync({
         params.delete('window');
       }
 
-      if (branches.length > 0 && Object.keys(activeBranches).length > 0) {
-        const overviewMap = computeBranchPresetMap(branches, 'overview');
-        const leafBranches = branches.filter((b) => !b.isGroup);
-        const isOverviewDefault = leafBranches.every(
-          (b) => Boolean(activeBranches[b.id]) === Boolean(overviewMap[b.id]),
-        );
-        if (isOverviewDefault) {
-          params.delete('branches');
-        } else {
-          const enabledIds = leafBranches
-            .filter((b) => activeBranches[b.id])
-            .map((b) => b.id);
-          params.set('branches', enabledIds.length > 0 ? enabledIds.join(',') : 'none');
-        }
-      }
+      const branchParam = serializeBranchSelection(branchSelection);
+      if (branchParam) params.set('branches', branchParam);
+      else params.delete('branches');
 
       const query = params.toString();
       const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`;
@@ -150,15 +151,14 @@ export function useTimelineUrlSync({
     activePersonModalKey,
     activeEraModalId,
     activeWindowModalRange,
-    activeBranches,
-    branches,
+    branchSelection,
   ]);
 
   useEffect(() => {
     const handlePopState = () => {
       const params = new URLSearchParams(window.location.search);
-      setYearFrom(parseInitialYearBound(params, 'from', 862));
-      setYearTo(parseInitialYearBound(params, 'to', 2000));
+      setYearFrom(parseInitialYearBound(params, 'from', undefined));
+      setYearTo(parseInitialYearBound(params, 'to', undefined));
       setSearchQuery(params.get('search') ?? '');
       if (setSelectedMacroRegion) {
         setSelectedMacroRegion(parseMacroRegionParam(params.get('region')));
@@ -172,32 +172,10 @@ export function useTimelineUrlSync({
         windowRange: parseWindowRangeParam(params.get('window')),
       });
 
-      if (branches.length > 0) {
-        const urlBranchesRaw = params.get('branches');
-        if (!urlBranchesRaw) {
-          setActiveBranches(computeBranchPresetMap(branches, 'overview'));
-        } else if (urlBranchesRaw.trim().toLowerCase() === 'none') {
-          setActiveBranches(computeBranchPresetMap(branches, 'none'));
-        } else {
-          const requestedIds = new Set(
-            urlBranchesRaw
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean),
-          );
-          const leafBranches = branches.filter((b) => !b.isGroup);
-          if (leafBranches.some((b) => requestedIds.has(b.id))) {
-            const nextMap: Record<string, boolean> = {};
-            leafBranches.forEach((b) => {
-              nextMap[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
-            });
-            setActiveBranches(nextMap);
-          }
-        }
-      }
+      restoreBranchSelection(params.get('branches'));
     };
 
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [branches, setYearFrom, setYearTo, setSearchQuery, setSelectedMacroRegion, setActiveBranches, onPopModalFromUrl]);
+  }, [setYearFrom, setYearTo, setSearchQuery, setSelectedMacroRegion, restoreBranchSelection, onPopModalFromUrl]);
 }

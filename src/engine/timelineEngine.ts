@@ -1082,15 +1082,7 @@ export function buildUnifiedTimelineStream(
   const hasAnySelectableBranchEnabled = branches.some(
     (b) => !b.isGroup && !b.isTimeAxis && filters.activeBranches[b.id] !== false,
   );
-  const isBareEraSkeletonMode =
-    !hasAnySelectableBranchEnabled &&
-    !focusTarget &&
-    !q &&
-    !requireLinkMatch &&
-    !filters.selectedPersonKey &&
-    !selectedTagNorm &&
-    !pairFilter &&
-    !filters.auditUnlinkedMode;
+  const isBareEraSkeletonMode = !hasAnySelectableBranchEnabled && !focusTarget && !pairFilter;
 
   resolvedEras.forEach((era) => {
     const matchesSelectedEra = !selectedEraObj || era.id === selectedEraObj.id;

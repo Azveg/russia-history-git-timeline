@@ -29,10 +29,12 @@ const PeriodSummaryModal = lazyWithRetry(loadPeriodSummaryModal);
 const PersonDossierModal = lazyWithRetry(loadPersonDossierModal);
 const WindowSummaryModal = lazyWithRetry(loadWindowSummaryModal);
 
+import { parseBranchSelection, resolveBranchSelection, updateBranchSelection } from './engine/layout/branchSelection';
 import { useTimelineData } from './hooks/useTimelineData';
 import {
   parseInitialYearBound,
   parseWindowRangeParam,
+  resolveUrlYearRange,
   useTimelineUrlSync,
 } from './hooks/useTimelineUrlSync';
 import {
@@ -44,7 +46,6 @@ import {
   buildPersonDossierIndex,
   buildSyncTagIndex,
   buildUnifiedTimelineStream,
-  computeBranchPresetMap,
   computeMacroRegionCounts,
   computeTimelineYearBounds,
   countExpectedLeafBranchesFromManifest,
@@ -96,82 +97,6 @@ type ActiveModalState =
   | { type: 'PERSON'; personKey: string }
   | { type: 'WINDOW'; from: number; to: number }
   | { type: 'COMPARE'; pair: { left: ComparisonTarget; right: ComparisonTarget } };
-
-function parseRequestedBranchIds(initialParams: URLSearchParams): Set<string> | 'none' | null {
-  const urlBranchesRaw = initialParams.get('branches');
-  if (!urlBranchesRaw) return null;
-  if (urlBranchesRaw.trim().toLowerCase() === 'none') return 'none';
-  const ids = new Set(
-    urlBranchesRaw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean),
-  );
-  return ids.size > 0 ? ids : null;
-}
-
-function resolveInitialActiveBranches(
-  branches: BranchDefinition[],
-  initialParams: URLSearchParams,
-): Record<string, boolean> {
-  if (branches.length === 0) return {};
-  const overviewMap = computeBranchPresetMap(branches, 'overview');
-  const requestedIds = parseRequestedBranchIds(initialParams);
-  if (!requestedIds) return overviewMap;
-  if (requestedIds === 'none') {
-    return computeBranchPresetMap(branches, 'none');
-  }
-
-  const leafBranches = branches.filter((b) => !b.isGroup);
-  const hasValidMatch = leafBranches.some((b) => requestedIds.has(b.id));
-  if (!hasValidMatch) return overviewMap;
-
-  const customMap: Record<string, boolean> = {};
-  leafBranches.forEach((b) => {
-    customMap[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
-  });
-  return customMap;
-}
-
-function mergeMissingActiveBranches(
-  prev: Record<string, boolean>,
-  branches: BranchDefinition[],
-  initialParams: URLSearchParams,
-): Record<string, boolean> {
-  if (branches.length === 0) return prev;
-  if (Object.keys(prev).length === 0) {
-    return resolveInitialActiveBranches(branches, initialParams);
-  }
-  let hasMissing = false;
-  for (let i = 0; i < branches.length; i += 1) {
-    const b = branches[i];
-    if (!b.isGroup && prev[b.id] === undefined) {
-      hasMissing = true;
-      break;
-    }
-  }
-  if (!hasMissing) return prev;
-
-  const existingEntries = Object.entries(prev).filter(([id]) => id !== 'TIME_AXIS');
-  const allExistingDisabled =
-    existingEntries.length > 0 && existingEntries.every(([, enabled]) => enabled === false);
-
-  const requestedIds = parseRequestedBranchIds(initialParams);
-  const overviewMap = computeBranchPresetMap(branches, 'overview');
-  const next: Record<string, boolean> = { ...prev };
-  for (let i = 0; i < branches.length; i += 1) {
-    const b = branches[i];
-    if (b.isGroup || next[b.id] !== undefined) continue;
-    if (allExistingDisabled || requestedIds === 'none') {
-      next[b.id] = b.isTimeAxis ? true : false;
-    } else if (requestedIds) {
-      next[b.id] = b.isTimeAxis ? true : requestedIds.has(b.id);
-    } else {
-      next[b.id] = overviewMap[b.id] ?? false;
-    }
-  }
-  return next;
-}
 
 function mergeMissingCollapsedParents(
   prev: Record<string, boolean>,
@@ -225,11 +150,11 @@ export default function App() {
   );
   const hasInitializedBranchesRef = useRef(false);
 
-  const [activeBranches, setActiveBranches] = useState<Record<string, boolean>>({});
+  const [branchSelection, setBranchSelection] = useState(() => parseBranchSelection(initialParams.get('branches')));
   const [collapsedParents, setCollapsedParents] = useState<Record<string, boolean>>({});
 
-  const [yearFrom, setYearFrom] = useState<number>(() => parseInitialYearBound(initialParams, 'from', 862));
-  const [yearTo, setYearTo] = useState<number>(() => parseInitialYearBound(initialParams, 'to', 2000));
+  const [requestedYearFrom, setYearFrom] = useState(() => parseInitialYearBound(initialParams, 'from', undefined));
+  const [requestedYearTo, setYearTo] = useState(() => parseInitialYearBound(initialParams, 'to', undefined));
   const [zoomHistory, setZoomHistory] = useState<YearRangeStep[]>([]);
   const [selectedEra, setSelectedEra] = useState('ALL');
   const [selectedReign, setSelectedReign] = useState('ALL');
@@ -257,6 +182,14 @@ export default function App() {
   const [focusScope, setFocusScope] = useState<FocusScope>('sync_only');
   const [focusDepth, setFocusDepth] = useState<FocusDepth>(1);
   const [focusKeepWindow, setFocusKeepWindow] = useState(false);
+  const restoreBranchSelection = useCallback((value: string | null) => {
+    const selection = parseBranchSelection(value);
+    if (selection.preset === 'none' && !Object.values(selection.overrides).some(Boolean)) {
+      setFocusedEventId(null);
+      setBranchPairFilter(null);
+    }
+    setBranchSelection(selection);
+  }, []);
   const [highlightedJumpId, setHighlightedJumpId] = useState<string | null>(null);
 
   const [showEndNodes, setShowEndNodes] = useState(true);
@@ -284,6 +217,8 @@ export default function App() {
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  const manifestReady = manifest !== null;
+
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
   }, []);
@@ -295,10 +230,10 @@ export default function App() {
   }, [toastMessage]);
 
   useEffect(() => {
-    if (searchQuery.trim() || selectedPersonKey || activeModal.type !== 'NONE') {
+    if (manifestReady && (searchQuery.trim() || selectedPersonKey || activeModal.type !== 'NONE')) {
       void ensureAllModulesLoaded({ priority: true });
     }
-  }, [searchQuery, selectedPersonKey, activeModal.type, ensureAllModulesLoaded]);
+  }, [manifestReady, searchQuery, selectedPersonKey, activeModal.type, ensureAllModulesLoaded]);
 
   // Фоновая предзагрузка чанков модальных окон во время простоя браузера (после завершения фоновой гидратации веток)
   useEffect(() => {
@@ -387,7 +322,7 @@ export default function App() {
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
+      if (e.key === 'Escape' && !e.defaultPrevented && !document.querySelector('[aria-modal="true"]')) {
         if (activeModal.type !== 'NONE') {
           handleCloseAllModals();
         } else if (focusedEventId) {
@@ -412,9 +347,13 @@ export default function App() {
   // Синхронное разрешение состояния веток и свёрнутых групп:
   // гарантирует отсутствие промежуточного рендера с пустой картой activeBranches или неинициализированными ветками Phase 2
   const resolvedActiveBranches = useMemo(
-    () => mergeMissingActiveBranches(activeBranches, branches, initialParams),
-    [activeBranches, branches, initialParams],
+    () => resolveBranchSelection(branches, branchSelection),
+    [branches, branchSelection],
   );
+
+  const setActiveBranches = useCallback((update: (mask: Record<string, boolean>) => Record<string, boolean>) => {
+    setBranchSelection((previous) => updateBranchSelection(branches, previous, update));
+  }, [branches]);
 
   const resolvedCollapsedParents = useMemo(
     () => mergeMissingCollapsedParents(collapsedParents, branches),
@@ -426,7 +365,6 @@ export default function App() {
     if (branches.length === 0) return;
 
     const applyBranchSync = () => {
-      setActiveBranches((prev) => mergeMissingActiveBranches(prev, branches, initialParams));
       setCollapsedParents((prev) => mergeMissingCollapsedParents(prev, branches));
     };
 
@@ -436,7 +374,7 @@ export default function App() {
     } else {
       startTransition(applyBranchSync);
     }
-  }, [branches, initialParams]);
+  }, [branches]);
 
   // Двусторонняя синхронизация с URLSearchParams (Deep Linking и History API)
   const activeCardId = activeModal.type === 'CARD' ? activeModal.cardId : null;
@@ -491,8 +429,8 @@ export default function App() {
   );
 
   useTimelineUrlSync({
-    yearFrom,
-    yearTo,
+    yearFrom: requestedYearFrom,
+    yearTo: requestedYearTo,
     searchQuery,
     selectedMacroRegion,
     activeCardId,
@@ -500,13 +438,12 @@ export default function App() {
     activePersonModalKey,
     activeEraModalId,
     activeWindowModalRange,
-    activeBranches: resolvedActiveBranches,
-    branches,
+    branchSelection,
     setYearFrom,
     setYearTo,
     setSearchQuery,
     setSelectedMacroRegion,
-    setActiveBranches,
+    restoreBranchSelection,
     onPopModalFromUrl: handlePopModalFromUrl,
   });
 
@@ -553,12 +490,9 @@ export default function App() {
     [manifest, rulers, enrichedEvents],
   );
 
-  // Расширяем дефолтное окно лет, если подключённые модули охватывают более ранние или поздние годы
-  useEffect(() => {
-    if (!manifest) return;
-    setYearFrom((prev) => (prev === 862 ? timelineBounds.minYear : Math.max(timelineBounds.minYear, prev)));
-    setYearTo((prev) => (prev === 2000 ? timelineBounds.maxYear : Math.min(timelineBounds.maxYear, prev)));
-  }, [manifest, timelineBounds.minYear, timelineBounds.maxYear]);
+  const { from: yearFrom, to: yearTo } = resolveUrlYearRange(
+    requestedYearFrom, requestedYearTo, timelineBounds, isFullyHydrated,
+  );
 
   // Изоляция устаревших ID при удалении файлов веток или правителей (только после завершения гидратации)
   useEffect(() => {
@@ -803,11 +737,10 @@ export default function App() {
   );
 
   const activeWindowRange = useMemo(
-    () =>
-      activeModal.type === 'WINDOW'
-        ? { from: activeModal.from, to: activeModal.to }
-        : null,
-    [activeModal],
+    () => activeModal.type === 'WINDOW'
+      ? resolveUrlYearRange(activeModal.from, activeModal.to, timelineBounds, isFullyHydrated)
+      : null,
+    [activeModal, timelineBounds, isFullyHydrated],
   );
 
   const activeComparePair = useMemo(
@@ -1106,7 +1039,7 @@ export default function App() {
         `Таймлайн отфильтрован по персоне: ${dossier.displayName} (событий: ${dossier.events.length})`,
       );
     },
-    [personDossiers, timelineBounds.minYear, timelineBounds.maxYear, branches, showToast],
+    [personDossiers, timelineBounds.minYear, timelineBounds.maxYear, branches, showToast, setActiveBranches],
   );
 
   const handleModalNavigateBack = useCallback(() => {
@@ -1332,8 +1265,8 @@ export default function App() {
     setForceShowHiddenLinks(false);
     setDismissedHiddenLinks(false);
     setZoomHistory([]);
-    setYearFrom(timelineBounds.minYear);
-    setYearTo(timelineBounds.maxYear);
+    setYearFrom(undefined);
+    setYearTo(undefined);
   }
 
   function handleToggleOnlySynced() {
@@ -1374,14 +1307,13 @@ export default function App() {
 
   function handleResetAll() {
     handleResetFiltersOnly();
-    const nextActive = computeBranchPresetMap(branches, 'overview');
     const nextCollapsed: Record<string, boolean> = {};
     branches.forEach((b) => {
       if (b.defaultCollapsedOnTimeline) {
         nextCollapsed[b.id] = true;
       }
     });
-    setActiveBranches(nextActive);
+    setBranchSelection({ preset: 'overview', overrides: {} });
     setCollapsedParents(nextCollapsed);
   }
 
@@ -1406,7 +1338,7 @@ export default function App() {
 
     if (!isEventBranchActive(target, resolvedActiveBranches)) {
       setActiveBranches((prev) => ({
-        ...mergeMissingActiveBranches(prev, branches, initialParams),
+        ...prev,
         [target.task]: true,
       }));
       const branch = branches.find((b) => b.id === target.task);
@@ -1437,8 +1369,14 @@ export default function App() {
     if (selectedReign !== 'ALL' && !target.overlappingRulers.some((r) => r.id === selectedReign)) {
       setSelectedReign('ALL');
     }
-    if (searchQuery.trim() !== '') {
-      setSearchQuery('');
+    if (searchQuery.trim() !== '') setSearchQuery('');
+    if (!matchingEvents.some((event) => event.id === target.id)) {
+      setBranchPairFilter(null);
+      setSelectedPersonKey(null);
+      setSelectedSyncTag(null);
+      setAuditUnlinkedMode(false);
+      setOnlyWithSyncLinks(false);
+      if (!doesEventMatchMacroRegion(target, selectedMacroRegion)) setSelectedMacroRegion('all');
     }
 
     if (focusedEventId && !matchingEvents.some((e) => e.id === target.id)) {
@@ -1452,13 +1390,6 @@ export default function App() {
     } else {
       showToast(`Переход к событию: «${target.title}».`);
     }
-
-    window.setTimeout(() => {
-      const el = document.getElementById(`row-${target.id}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
-    }, 80);
   }
 
   function handleJumpToRuler(rulerId: string) {
@@ -1469,7 +1400,7 @@ export default function App() {
 
     if (resolvedActiveBranches.MAIN_RULERS === false) {
       setActiveBranches((prev) => ({
-        ...mergeMissingActiveBranches(prev, branches, initialParams),
+        ...prev,
         MAIN_RULERS: true,
       }));
       adjustments.push('включена ветка правителей');
@@ -1521,7 +1452,7 @@ export default function App() {
         const currentlyActive = isBranchOrDescendantActive(target, branches, resolvedActiveBranches);
         const nextEnable = !currentlyActive;
         setActiveBranches((prev) => {
-          const next = { ...mergeMissingActiveBranches(prev, branches, initialParams) };
+          const next = { ...prev };
           if (!target.isGroup) {
             next[target.id] = nextEnable;
           }
@@ -1537,7 +1468,7 @@ export default function App() {
       }
 
       setActiveBranches((prev) => {
-        const base = mergeMissingActiveBranches(prev, branches, initialParams);
+        const base = prev;
         return {
           ...base,
           [branchId]: base[branchId] === false,
@@ -1602,22 +1533,10 @@ export default function App() {
 
   function handleToggleBranchCategory(branchIds: string[], enable: boolean) {
     preserveViewportScrollAnchor(() => {
-      setActiveBranches((prev) => {
-        const next = { ...prev };
-        branchIds.forEach((id) => {
-          const b = branches.find((item) => item.id === id);
-          if (b && !b.isGroup) {
-            next[id] = enable;
-          }
-          getDescendantBranchIds(id, branches).forEach((dId) => {
-            const d = branches.find((item) => item.id === dId);
-            if (d && !d.isGroup) {
-              next[dId] = enable;
-            }
-          });
-        });
-        return next;
-      });
+      setActiveBranches((prev) => ({
+        ...prev,
+        ...Object.fromEntries(branchIds.map((id) => [id, enable])),
+      }));
     });
   }
 
@@ -1626,10 +1545,11 @@ export default function App() {
       void ensureAllModulesLoaded({ priority: true });
     }
     preserveViewportScrollAnchor(() => {
-      setActiveBranches((prev) => ({
-        ...prev,
-        ...computeBranchPresetMap(branches, presetId),
-      }));
+      if (presetId === 'none') {
+        setFocusedEventId(null);
+        setBranchPairFilter(null);
+      }
+      setBranchSelection({ preset: presetId, overrides: {} });
     });
   }
 
@@ -1639,13 +1559,10 @@ export default function App() {
       const descendants = getDescendantBranchIds(branchId, branches);
       const keepSet = new Set<string>([branchId, ...descendants]);
 
-      const next: Record<string, boolean> = {};
-      branches.forEach((b) => {
-        if (!b.isGroup) {
-          next[b.id] = keepSet.has(b.id);
-        }
+      setBranchSelection({
+        preset: 'none',
+        overrides: Object.fromEntries([...keepSet].map((id) => [id, true])),
       });
-      setActiveBranches(next);
 
       if (target?.parentBranchId) {
         setCollapsedParents((prev) => {
@@ -2161,10 +2078,17 @@ export default function App() {
       </div>
 
       <main className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 pt-4 pb-8">
+        {isHydrating && searchQuery.trim() && (
+          <p role="status" className="text-sm text-slate-300">
+            Поиск по загруженным веткам. Результаты обновятся после догрузки данных.
+          </p>
+        )}
         {stream.length === 0 ? (
           <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-12 text-center my-8">
             <h3 className="font-serif text-xl font-bold text-white">
-              На выбранном отрезке времени активных событий не найдено
+              {searchQuery.trim() && !isFullyHydrated
+                ? 'В загруженных ветках ничего не найдено'
+                : 'На выбранном отрезке времени активных событий не найдено'}
             </h3>
             <p className="text-sm text-slate-400 mt-1 max-w-md mx-auto">
               Расширьте диапазон лет, включите дополнительные ветви или сбросьте фильтры.
@@ -2281,10 +2205,7 @@ export default function App() {
                 setSelectedReign('ALL');
                 setYearFrom(timelineBounds.minYear);
                 setYearTo(timelineBounds.maxYear);
-                setActiveBranches((prev) => ({
-                  ...prev,
-                  ...computeBranchPresetMap(branches, 'all'),
-                }));
+                handleApplyBranchPreset('all');
                 setSearchQuery(cleanName);
                 setIsFiltersCollapsed(false);
                 showToast(`Поиск по исторической личности: «${cleanName}» (включены все ветки)`);

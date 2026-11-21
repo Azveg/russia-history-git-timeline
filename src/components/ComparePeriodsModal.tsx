@@ -1,3 +1,4 @@
+import { useDossierTabs } from '../hooks/useDossierTabs';
 import {
   ArrowLeftRight,
   ArrowRight,
@@ -328,6 +329,7 @@ export function ComparePeriodsModal({
   onSelectYearRange,
 }: ComparePeriodsModalProps) {
   const [activeTab, setActiveTab] = useState<CompareTabId>('summary');
+  const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
   const [showBranchDetails, setShowBranchDetails] = useState(false);
   const [showAllPairs, setShowAllPairs] = useState(false);
   const [showAllTags, setShowAllTags] = useState(false);
@@ -724,6 +726,7 @@ export function ComparePeriodsModal({
           <div
             ref={tabBarRef}
             role="tablist"
+            onKeyDown={handleTabKeyDown}
             aria-label="Разделы сравнения периодов"
             className="sticky top-0 z-10 -mx-5 sm:-mx-6 px-5 sm:px-6 bg-[#0b1325]/95 backdrop-blur-sm border-b border-slate-800/90 flex items-center gap-1 overflow-x-auto"
           >
@@ -733,8 +736,7 @@ export function ComparePeriodsModal({
                 <button
                   key={tab.id}
                   type="button"
-                  role="tab"
-                  aria-selected={isActive}
+                  {...tabProps(tab.id)}
                   onClick={() => handleTabChange(tab.id)}
                   className={`px-3.5 py-2.5 text-xs font-mono inline-flex items-center gap-2 border-b-2 transition-colors cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-amber-400/70 ${
                     isActive
@@ -759,8 +761,11 @@ export function ComparePeriodsModal({
           </div>
 
           {/* ВКЛАДКА 1: СВОДКА */}
+          {tabs.filter((tab) => tab.id !== activeTab).map(({ id }) => (
+            <div key={id} {...panelProps(id)} />
+          ))}
           {activeTab === 'summary' && (
-            <div className="space-y-6">
+            <div {...panelProps('summary')} className="space-y-6">
               {/* Таблица количественных показателей */}
               <section className="space-y-2.5">
                 <h5 className="text-xs font-mono font-semibold uppercase tracking-wider text-slate-300 inline-flex items-center gap-1.5">
@@ -850,7 +855,12 @@ export function ComparePeriodsModal({
 
           {/* ВКЛАДКА 2: СФЕРЫ И ВЕТКИ */}
           {activeTab === 'spheres' && (
-            <div className="space-y-6">
+            <div {...panelProps('spheres')} className="space-y-6">
+              {(left.unclassifiedSphereEventsCount > 0 || right.unclassifiedSphereEventsCount > 0) && (
+                <p className="text-xs text-slate-400">
+                  Материалы вне пяти сфер · {left.unclassifiedSphereEventsCount} и {right.unclassifiedSphereEventsCount}
+                </p>
+              )}
               {/* 5 укрупнённых сфер A vs B */}
               <section className="space-y-2.5">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -973,7 +983,7 @@ export function ComparePeriodsModal({
 
           {/* ВКЛАДКА 3: СВЯЗИ И ДЕЯТЕЛИ */}
           {activeTab === 'connections' && (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div {...panelProps('connections')} className="grid grid-cols-1 lg:grid-cols-3 gap-5">
               {/* Повторяющиеся контуры связей */}
               <section className="space-y-2">
                 <div className="flex items-center justify-between gap-2">

@@ -1,7 +1,12 @@
 import { useEffect, useRef } from 'react';
 
 const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+  ':is(button, [href], input, select, textarea, [tabindex]):not([disabled], [tabindex="-1"], [hidden])';
+
+function focusableWithin(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+    .filter((element) => element.offsetParent !== null || element === document.activeElement);
+}
 
 let activeScrollLocks = 0;
 let initialBodyOverflow = '';
@@ -41,7 +46,7 @@ export function useModalFocusTrap<T extends HTMLElement = HTMLDivElement>(onClos
 
     const container = dialogRef.current;
     if (container && !container.contains(document.activeElement)) {
-      const initialFocusable = container.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      const [initialFocusable] = focusableWithin(container);
       if (initialFocusable) {
         initialFocusable.focus();
       } else {
@@ -62,9 +67,7 @@ export function useModalFocusTrap<T extends HTMLElement = HTMLDivElement>(onClos
         return;
       }
       if (event.key === 'Tab' && dialogRef.current) {
-        const focusable = Array.from(
-          dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-        ).filter((el) => el.offsetParent !== null || el === document.activeElement);
+        const focusable = focusableWithin(dialogRef.current);
 
         if (focusable.length === 0) {
           event.preventDefault();

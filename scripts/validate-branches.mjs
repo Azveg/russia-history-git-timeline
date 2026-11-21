@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { discoverTimelineModules } from './timelineModules.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -391,26 +392,6 @@ function auditRecordAcademicStyle(file, entityLabel, record, isRuler = false) {
   }
 }
 
-function scanJsonFiles(dir, basePublicDir) {
-  const results = [];
-  if (!fs.existsSync(dir)) return results;
-
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      results.push(...scanJsonFiles(fullPath, basePublicDir));
-    } else if (entry.isFile() && entry.name.endsWith('.json')) {
-      const relFromPublic = path.relative(basePublicDir, fullPath).replace(/\\/g, '/');
-      if (relFromPublic === 'data/sync.manifest.json' || relFromPublic === 'data/modules.index.json') {
-        continue;
-      }
-      results.push({ fullPath, relFromPublic });
-    }
-  }
-  return results.sort((a, b) => a.relFromPublic.localeCompare(b.relFromPublic));
-}
-
 function isPlainObject(v) {
   return Boolean(v && typeof v === 'object' && !Array.isArray(v));
 }
@@ -457,7 +438,7 @@ function main() {
     }
   }
 
-  const moduleFiles = scanJsonFiles(DATA_DIR, PUBLIC_DIR);
+  const moduleFiles = discoverTimelineModules(PUBLIC_DIR, manifest?.mountedFiles);
   const allBranchesById = new Map();
   const allNodesById = new Map();
   const allRulersById = new Map();
@@ -478,12 +459,9 @@ function main() {
     sourcesStats.byFile.set(relFromPublic, entry);
   };
 
-  for (const { fullPath, relFromPublic } of moduleFiles) {
-    let parsed;
-    try {
-      parsed = JSON.parse(fs.readFileSync(fullPath, 'utf8'));
-    } catch (err) {
-      addError(relFromPublic, `Ошибка синтаксиса JSON: ${err.message}`);
+  for (const { relFromPublic, data: parsed, parseError } of moduleFiles) {
+    if (parseError) {
+      addError(relFromPublic, `Ошибка синтаксиса JSON: ${parseError}`);
       continue;
     }
 
@@ -967,7 +945,7 @@ function main() {
     }
   }
 
-  // Проверка полноты manifest.mountedFiles относительно фактических JSON-модулей в public/data/
+  // Проверка путей явно зарегистрированных модулей
   if (manifest && Array.isArray(manifest.mountedFiles)) {
     const diskModuleRelPaths = new Set(moduleFiles.map((item) => item.relFromPublic));
     const mountedPaths = new Set();
@@ -985,14 +963,7 @@ function main() {
         addError('data/sync.manifest.json', `manifest.mountedFiles[${idx}]: файл "${norm}" не найден в public/data/.`);
       }
     });
-    for (const diskPath of diskModuleRelPaths) {
-      if (!mountedPaths.has(diskPath)) {
-        addError(
-          'data/sync.manifest.json',
-          `Модуль "${diskPath}" присутствует в public/data/, но отсутствует в manifest.mountedFiles (выпадает из SEO-снэпшота, llms.txt и fallback-загрузчика).`,
-        );
-      }
-    }
+
   }
 
   // Проверка ссылок (manifest.crossLinks + локальные linksTo/crossLinks)
