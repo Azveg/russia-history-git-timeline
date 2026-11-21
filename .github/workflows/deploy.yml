@@ -34,16 +34,8 @@ jobs:
           node-version: "22"
           cache: "npm"
 
-      - name: Resolve and check lockfile tarball integrity
-        run: |
-          npm run sync:lock-integrity
-          npm run sync:lock-integrity -- --check
-
-      - name: Install dependencies (deterministic lockfile)
-        run: npm ci
-
-      - name: Security audit (all dependencies)
-        run: npm audit --audit-level=high
+      - name: Verify integrity, install and audit all dependencies
+        run: bash scripts/install-ci-dependencies.sh
 
       - name: Verify multi-agent governance & UI invariants
         run: npm run verify:invariants
