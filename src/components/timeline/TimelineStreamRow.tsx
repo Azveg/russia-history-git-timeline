@@ -1134,20 +1134,7 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
     const mergeY = 22;
 
     rowEl = (
-      <div
-        role="button"
-        tabIndex={0}
-        aria-label={`Завершение правления: ${r.ruler} (${r.reignPeriod})`}
-        onClick={() => onOpenPeriodModal(r.id)}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget) return;
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onOpenPeriodModal(r.id);
-          }
-        }}
-        className="timeline-row-cv relative flex items-stretch bg-slate-950/55 hover:bg-slate-900/45 focus-visible:outline-2 focus-visible:outline-amber-400 transition-colors cursor-pointer group"
-      >
+      <div className="timeline-row-cv relative flex items-stretch bg-slate-950/55 hover:bg-slate-900/45 transition-colors group">
         <div
           title={gutter.title}
           className={`${gutterWidthClass} shrink-0 border-r border-slate-800/50 bg-slate-950/30 px-2 sm:px-2.5 py-2 flex-col items-end justify-center font-mono text-[10px] leading-tight tabular-nums whitespace-nowrap select-none transition-colors ${
@@ -1239,7 +1226,12 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
         )}
 
         <div className="flex-1 min-w-0 overflow-hidden py-2 pr-2.5 sm:pr-6">
-          <div className="w-full max-w-[760px] min-w-0 overflow-hidden rounded-lg bg-slate-900/40 border border-slate-800/70 group-hover:border-slate-700 px-3 sm:px-3.5 min-h-[36px] py-1.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 gap-y-1 text-xs font-sans">
+          <button
+            type="button"
+            aria-label={`Завершение правления: ${r.ruler} (${r.reignPeriod})`}
+            onClick={() => onOpenPeriodModal(r.id)}
+            className="w-full max-w-[760px] min-w-0 overflow-hidden text-left rounded-lg bg-slate-900/40 border border-slate-800/70 hover:border-slate-700 group-hover:border-slate-700 focus-visible:outline-2 focus-visible:outline-amber-400 px-3 sm:px-3.5 min-h-[36px] py-1.5 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-2 gap-y-1 text-xs font-sans cursor-pointer transition-colors"
+          >
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-x-2 gap-y-0.5 min-w-0 flex-1 overflow-hidden">
               <GitMerge className="w-3.5 h-3.5 shrink-0" style={{ color: rColor }} />
               <span className="font-mono font-bold text-slate-200 tabular-nums shrink-0">
@@ -1269,7 +1261,7 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
             <span className="text-xs font-sans text-slate-400 shrink-0 tabular-nums ml-auto sm:ml-0">
               ~<span className="font-mono">{Math.max(1, r.endYear - r.startYear)}</span> л. у власти
             </span>
-          </div>
+          </button>
         </div>
       </div>
     );

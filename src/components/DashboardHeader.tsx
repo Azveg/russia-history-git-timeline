@@ -20,7 +20,7 @@ export const DashboardHeader = memo(function DashboardHeader({
   hiddenLinksCount = 0,
   onRevealHiddenLinks,
   minYear = 862,
-  maxYear = 2000,
+  maxYear = 2019,
 }: DashboardHeaderProps) {
   return (
     <header className="relative border-b border-slate-800/80 bg-gradient-to-b from-slate-900/70 via-[#060a15] to-[#050811]">

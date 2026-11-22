@@ -60,6 +60,8 @@ export * from './nlp/personExtractor';
 export * from './repository/timelineRepository';
 export * from './layout/subLaneLayout';
 export * from './analytics/periodAnalytics';
+export * from './analytics/eraInsights';
+export * from './search/commandSearch';
 export * from './regionFilter';
 export * from './campaigns/campaignPacks';
 export * from './campaigns/causalChainTracer';

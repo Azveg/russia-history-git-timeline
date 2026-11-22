@@ -28,6 +28,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { DossierModalHeader } from './DossierModalHeader';
+import { EraAnalyticalProfileSection } from './EraAnalyticalProfileSection';
 import { downloadMarkdownFile, formatWindowDossierToMarkdown } from '../utils/markdownExport';
 import {
   ERA_SPHERE_META,
@@ -68,6 +69,7 @@ interface WindowSummaryModalProps {
   onOpenPersonModal?: (personKey: string) => void;
   onRevealBranches?: (branchIds: string[]) => void;
   onCompareWithWindow?: (from: number, to: number) => void;
+  onFocusSubWindow?: (from: number, to: number) => void;
   activeCampaignId?: string | null;
 }
 
@@ -268,6 +270,7 @@ export function WindowSummaryModal({
   onOpenPersonModal,
   onRevealBranches,
   onCompareWithWindow,
+  onFocusSubWindow,
   activeCampaignId = null,
 }: WindowSummaryModalProps) {
   const [activeTab, setActiveTab] = useState<WindowModalTabId>('overview');
@@ -1117,6 +1120,24 @@ export function WindowSummaryModal({
                   })}
                 </div>
               </section>
+
+              {/* Интерактивный пульс интенсивности, развилки и пошаговый маршрут по отрезку */}
+              <EraAnalyticalProfileSection
+                events={windowSphereEvents}
+                yearFrom={yearFrom}
+                yearTo={yearTo}
+                branches={branches}
+                periodLabel={`${yearFrom}–${yearTo} гг.`}
+                onSelectEvent={onSelectEvent}
+                onFocusSubWindow={
+                  onFocusSubWindow
+                    ? (from, to) => {
+                        onFocusSubWindow(from, to);
+                        onClose();
+                      }
+                    : undefined
+                }
+              />
 
               {/* Окна переходящих событий через границы окна */}
               {(carryOverInEvents.length > 0 || carryOverOutEvents.length > 0) && (

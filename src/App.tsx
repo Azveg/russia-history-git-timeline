@@ -5,7 +5,6 @@ import type { EpochSlicePreset } from './components/EraSelectorPopover';
 import { FilterPanel } from './components/FilterPanel';
 import { GitTimeline } from './components/GitTimeline';
 import { HiddenLinksNotice } from './components/HiddenLinksNotice';
-import { OverlapMapSection } from './components/OverlapMapSection';
 import { CampaignModeBar } from './components/timeline/CampaignModeBar';
 import { TopControlBar } from './components/TopControlBar';
 import { lazyWithRetry } from './utils/lazyWithRetry';
@@ -30,6 +29,14 @@ const loadCampaignCatalogModal = () =>
   import('./components/CampaignCatalogModal').then((m) => ({
     default: m.CampaignCatalogModal,
   }));
+const loadCommandPaletteModal = () =>
+  import('./components/CommandPaletteModal').then((m) => ({
+    default: m.CommandPaletteModal,
+  }));
+const loadOverlapMapSection = () =>
+  import('./components/OverlapMapSection').then((m) => ({
+    default: m.OverlapMapSection,
+  }));
 
 const CardDetailModal = lazyWithRetry(loadCardDetailModal);
 const ComparePeriodsModal = lazyWithRetry(loadComparePeriodsModal);
@@ -39,6 +46,8 @@ const PersonDossierModal = lazyWithRetry(loadPersonDossierModal);
 const WindowSummaryModal = lazyWithRetry(loadWindowSummaryModal);
 const CampaignCausalTracerModal = lazyWithRetry(loadCampaignCausalTracerModal);
 const CampaignCatalogModal = lazyWithRetry(loadCampaignCatalogModal);
+const CommandPaletteModal = lazyWithRetry(loadCommandPaletteModal);
+const OverlapMapSection = lazyWithRetry(loadOverlapMapSection);
 
 import {
   parseBranchSelection,
@@ -60,6 +69,7 @@ import {
 } from './engine/regionFilter';
 import {
   buildCampaignBranchMask,
+  buildCommandSearchIndex,
   buildPersonDossierIndex,
   buildSyncTagIndex,
   buildUnifiedTimelineStream,
@@ -93,6 +103,7 @@ import {
   resolveMacroEras,
   resolvePersonKey,
   type CampaignReturnSnapshot,
+  type CommandSearchItem,
 } from './engine/timelineEngine';
 import { preserveViewportScrollAnchor } from './utils/scrollIsolation';
 import type {
@@ -266,6 +277,7 @@ export default function App() {
     return { type: 'NONE' };
   });
   const [modalHistory, setModalHistory] = useState<ModalHistoryItem[]>([]);
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -281,11 +293,33 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [toastMessage]);
 
+  // Глобальный шорткат Ctrl+K / ⌘K для быстрого поиска по всему атласу
   useEffect(() => {
-    if (manifestReady && (searchQuery.trim() || selectedPersonKey || activeModal.type !== 'NONE')) {
+    function handleGlobalKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsCommandPaletteOpen((prev) => !prev);
+      }
+    }
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown);
+  }, []);
+
+  useEffect(() => {
+    if (
+      manifestReady &&
+      (searchQuery.trim() || selectedPersonKey || activeModal.type !== 'NONE' || isCommandPaletteOpen)
+    ) {
       void ensureAllModulesLoaded({ priority: true });
     }
-  }, [manifestReady, searchQuery, selectedPersonKey, activeModal.type, ensureAllModulesLoaded]);
+  }, [
+    manifestReady,
+    searchQuery,
+    selectedPersonKey,
+    activeModal.type,
+    isCommandPaletteOpen,
+    ensureAllModulesLoaded,
+  ]);
 
   // Фоновая предзагрузка чанков модальных окон во время простоя браузера (после завершения фоновой гидратации веток)
   useEffect(() => {
@@ -299,6 +333,8 @@ export default function App() {
       loadWindowSummaryModal,
       loadComparePeriodsModal,
       loadCampaignCatalogModal,
+      loadCommandPaletteModal,
+      loadOverlapMapSection,
     ];
     const timers: number[] = [];
     const idleIds: number[] = [];
@@ -582,6 +618,7 @@ export default function App() {
   const shouldComputePersonIndex =
     isPersonIndexReady ||
     activeModal.type !== 'NONE' ||
+    isCommandPaletteOpen ||
     searchQuery.trim().length >= 2 ||
     selectedPersonKey !== null;
 
@@ -1088,6 +1125,46 @@ export default function App() {
     },
     [transitionToModal],
   );
+
+  const commandSearchIndex = useMemo(() => {
+    if (!isCommandPaletteOpen) return null;
+    return buildCommandSearchIndex({
+      eras: resolvedMacroEras,
+      rulers,
+      events: enrichedEvents,
+      personDossiers,
+      campaignPacks,
+      branches,
+    });
+  }, [
+    isCommandPaletteOpen,
+    resolvedMacroEras,
+    rulers,
+    enrichedEvents,
+    personDossiers,
+    campaignPacks,
+    branches,
+  ]);
+
+  const handleSelectCommandItem = (item: CommandSearchItem) => {
+    switch (item.category) {
+      case 'eras':
+        handleOpenEraModal(item.targetId);
+        break;
+      case 'rulers':
+        handleOpenPeriodModal(item.targetId);
+        break;
+      case 'events':
+        handleOpenCardModal(item.targetId);
+        break;
+      case 'people':
+        handleOpenPersonModal(item.targetId);
+        break;
+      case 'campaigns':
+        handleOpenCampaign(item.targetId);
+        break;
+    }
+  };
 
   const handleOpenWindowModal = useCallback(
     (fromVal: number, toVal: number) => {
@@ -2385,6 +2462,7 @@ export default function App() {
         isFiltersCollapsed={isFiltersCollapsed}
         activeAdvancedCount={activeAdvancedCount}
         onToggleFilters={stableToggleFilters}
+        onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
         isCampaignMode={Boolean(activeCampaignPack)}
       />
 
@@ -2525,31 +2603,39 @@ export default function App() {
         />
 
         {showOverlapMatrix && (
-          <OverlapMapSection
-            matchingEvents={matchingEvents}
-            rulers={rulers}
-            branches={branches}
-            activeBranches={effectiveActiveBranches}
-            yearFrom={effectiveYearFrom}
-            yearTo={effectiveYearTo}
-            minYear={effectiveNavBounds.minYear}
-            maxYear={effectiveNavBounds.maxYear}
-            hoveredEventId={hoveredEventId}
-            onHoverEvent={setHoveredEventId}
-            onOpenCardModal={handleOpenCardModal}
-            onOpenPeriodModal={handleOpenPeriodModal}
-            onOpenWindowModal={handleOpenWindowModal}
-            onSelectYearRange={stableSelectYearRangeResettingEra}
-            zoomHistoryCount={zoomHistory.length}
-            lastZoomStep={lastZoomStep}
-            isExpanded={isOverlapMapExpanded}
-            onStepBackZoom={stableStepBackZoom}
-            onZoomIn={stableZoomIn}
-            onZoomOut={stableZoomOut}
-            onShiftWindow={stableShiftWindow}
-            onApplySpanPreset={stableApplySpanPreset}
-            onRecordZoomCheckpoint={stableRecordZoomCheckpoint}
-          />
+          <Suspense
+            fallback={
+              <div className="rounded-2xl border border-slate-800/80 bg-[#0b1325]/60 px-4 py-6 text-center text-xs font-mono text-slate-400">
+                Загрузка синхронной карты полос…
+              </div>
+            }
+          >
+            <OverlapMapSection
+              matchingEvents={matchingEvents}
+              rulers={rulers}
+              branches={branches}
+              activeBranches={effectiveActiveBranches}
+              yearFrom={effectiveYearFrom}
+              yearTo={effectiveYearTo}
+              minYear={effectiveNavBounds.minYear}
+              maxYear={effectiveNavBounds.maxYear}
+              hoveredEventId={hoveredEventId}
+              onHoverEvent={setHoveredEventId}
+              onOpenCardModal={handleOpenCardModal}
+              onOpenPeriodModal={handleOpenPeriodModal}
+              onOpenWindowModal={handleOpenWindowModal}
+              onSelectYearRange={stableSelectYearRangeResettingEra}
+              zoomHistoryCount={zoomHistory.length}
+              lastZoomStep={lastZoomStep}
+              isExpanded={isOverlapMapExpanded}
+              onStepBackZoom={stableStepBackZoom}
+              onZoomIn={stableZoomIn}
+              onZoomOut={stableZoomOut}
+              onShiftWindow={stableShiftWindow}
+              onApplySpanPreset={stableApplySpanPreset}
+              onRecordZoomCheckpoint={stableRecordZoomCheckpoint}
+            />
+          </Suspense>
         )}
 
         {shouldShowHiddenLinksNotice && (
@@ -2824,6 +2910,11 @@ export default function App() {
               onOpenPersonModal={handleOpenPersonModal}
               onRevealBranches={handleRevealBranches}
               onCompareWithWindow={handleCompareWithWindow}
+              onFocusSubWindow={(fromVal, toVal) => {
+                setSelectedEra('ALL');
+                setSelectedReign('ALL');
+                handleYearRangeChange(fromVal, toVal);
+              }}
             />
           )}
 
@@ -2851,6 +2942,14 @@ export default function App() {
                 setSelectedReign('ALL');
                 handleYearRangeChange(fromVal, toVal);
               }}
+            />
+          )}
+
+          {isCommandPaletteOpen && commandSearchIndex && (
+            <CommandPaletteModal
+              index={commandSearchIndex}
+              onClose={() => setIsCommandPaletteOpen(false)}
+              onSelectItem={handleSelectCommandItem}
             />
           )}
         </Suspense>

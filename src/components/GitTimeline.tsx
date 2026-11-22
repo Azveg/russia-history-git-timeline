@@ -59,6 +59,7 @@ import {
   computeNodeVisualStatusMeta,
 } from './timeline/TimelineStreamRow';
 import {
+  EMPTY_CHRONICLE_DATA,
   buildEraJumpEntries,
   buildTimelineChronicleData,
   stepEventId,
@@ -910,14 +911,16 @@ export const GitTimeline = memo(function GitTimeline({
 
   const chronicleData = useMemo(
     () =>
-      buildTimelineChronicleData({
-        matchingEvents,
-        matchingRulers,
-        resolvedEras,
-        branches,
-        sphereFilter: chronicleSphere,
-      }),
-    [matchingEvents, matchingRulers, resolvedEras, branches, chronicleSphere],
+      displayMode === 'chronicle'
+        ? buildTimelineChronicleData({
+            matchingEvents,
+            matchingRulers,
+            resolvedEras,
+            branches,
+            sphereFilter: chronicleSphere,
+          })
+        : EMPTY_CHRONICLE_DATA,
+    [displayMode, matchingEvents, matchingRulers, resolvedEras, branches, chronicleSphere],
   );
 
   const eraJumpEntries = useMemo(() => displayMode === 'chronicle'

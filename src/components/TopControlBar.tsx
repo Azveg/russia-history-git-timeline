@@ -13,6 +13,7 @@ import {
   Rows3,
   Rows4,
   Ruler,
+  Search,
   SlidersHorizontal,
   Undo2,
   X,
@@ -86,6 +87,7 @@ interface TopControlBarProps {
   isFiltersCollapsed: boolean;
   activeAdvancedCount?: number;
   onToggleFilters: () => void;
+  onOpenCommandPalette?: () => void;
   isCampaignMode?: boolean;
 }
 
@@ -145,7 +147,7 @@ export const TopControlBar = memo(function TopControlBar({
   yearFrom,
   yearTo,
   minYear = 862,
-  maxYear = 2000,
+  maxYear = 2019,
   onYearRangeChange,
   zoomHistoryCount,
   lastZoomStep,
@@ -164,6 +166,7 @@ export const TopControlBar = memo(function TopControlBar({
   isFiltersCollapsed,
   activeAdvancedCount = 0,
   onToggleFilters,
+  onOpenCommandPalette,
   isCampaignMode = false,
 }: TopControlBarProps) {
   const barRef = useRef<HTMLDivElement | null>(null);
@@ -747,9 +750,22 @@ export const TopControlBar = memo(function TopControlBar({
             </div>
           </div>
 
-          {/* Правая группа действий (Вид и Анализ) — фиксированная ширина, всегда в пределах экрана */}
+          {/* Правая группа действий (Поиск, Вид и Анализ) — фиксированная ширина, всегда в пределах экрана */}
           <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
             <span className="hidden xl:block w-px h-4 bg-slate-800/90 shrink-0" aria-hidden="true" />
+
+            {onOpenCommandPalette && (
+              <button
+                type="button"
+                onClick={onOpenCommandPalette}
+                aria-label="Быстрый поиск по атласу (Ctrl+K / ⌘K)"
+                title="Быстрый поиск по эпохам, правителям, событиям и деятелям (Ctrl+K / ⌘K)"
+                className="px-2 py-1.5 rounded-lg border border-transparent text-[11px] font-mono font-semibold inline-flex items-center gap-1.5 text-slate-300 hover:bg-slate-800/70 hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                <Search className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
+                <span className="hidden 2xl:inline text-[10px] text-slate-400">⌘K</span>
+              </button>
+            )}
 
             {/* Единое меню «Вид» без текстовых плашек статуса — только мягкая подсветка при активных настройках */}
             <div ref={viewPopoverRef} className="relative shrink-0">

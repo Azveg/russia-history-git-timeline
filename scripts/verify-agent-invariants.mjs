@@ -88,6 +88,8 @@ const zeroInlineStyleModals = [
   'src/components/CampaignCausalTracerModal.tsx',
   'src/components/CampaignCatalogModal.tsx',
   'src/components/DossierModalHeader.tsx',
+  'src/components/CommandPaletteModal.tsx',
+  'src/components/EraAnalyticalProfileSection.tsx',
 ];
 
 for (const modalPath of zeroInlineStyleModals) {

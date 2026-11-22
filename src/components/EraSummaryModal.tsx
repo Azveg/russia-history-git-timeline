@@ -26,6 +26,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { DossierModalHeader } from './DossierModalHeader';
+import { EraAnalyticalProfileSection } from './EraAnalyticalProfileSection';
 import { downloadMarkdownFile, formatEraDossierToMarkdown } from '../utils/markdownExport';
 import {
   ERA_SPHERE_META,
@@ -1025,6 +1026,20 @@ export function EraSummaryModal({
                   })}
                 </div>
               </section>
+
+              {/* Интерактивный пульс интенсивности, развилки и пошаговый маршрут по эпохе */}
+              <EraAnalyticalProfileSection
+                events={eraSphereEvents}
+                yearFrom={resolvedEra.startYear}
+                yearTo={resolvedEra.endYear}
+                branches={branches}
+                periodLabel={`${resolvedEra.displayShortTitle} (${resolvedEra.period})`}
+                onSelectEvent={onSelectEvent}
+                onFocusSubWindow={(from, to) => {
+                  onFilterByEraRange(from, to);
+                  onClose();
+                }}
+              />
 
               {/* Окна переходящих событий на границах эпохи */}
               {(carryOverInEvents.length > 0 || carryOverOutEvents.length > 0) && (

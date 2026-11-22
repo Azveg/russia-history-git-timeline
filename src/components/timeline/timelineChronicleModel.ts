@@ -59,6 +59,33 @@ function createEmptySphereCounts(): Record<EraEventSphereId, number> {
   };
 }
 
+export const EMPTY_CHRONICLE_DATA: TimelineChronicleData = {
+  chapters: [],
+  sphereTotals: createEmptySphereCounts(),
+  totalMatchingEvents: 0,
+  visibleEventsCount: 0,
+  unclassifiedCount: 0,
+  orderedEventIds: [],
+  sphereByEventId: new Map<string, EraEventSphereId>(),
+};
+
+function resolveEventEraForChronicle(
+  ev: EnrichedEvent,
+  resolvedEras: ResolvedMacroEra[],
+  eraById: Map<string, ResolvedMacroEra>,
+): ResolvedMacroEra | null {
+  if (ev.eraId) {
+    const direct = eraById.get(ev.eraId);
+    if (direct) return direct;
+  }
+  return (
+    findMacroEraForYear(ev.startYear, resolvedEras, ev.startPrecision?.month) ??
+    (ev.startYear < (resolvedEras[0]?.startYear ?? 0)
+      ? resolvedEras[0] ?? null
+      : resolvedEras[resolvedEras.length - 1] ?? null)
+  );
+}
+
 /**
  * Single-pass O(N) grouping of matching timeline events into macro-era chapters
  * classified by the 5 canonical historical spheres.
@@ -80,6 +107,7 @@ export function buildTimelineChronicleData({
   const sphereTotals = createEmptySphereCounts();
   const sphereByEventId = new Map<string, EraEventSphereId>();
 
+  const eraById = new Map(resolvedEras.map((era) => [era.id, era]));
   const chapterByEraId = new Map<string, ChronicleEraChapter>();
   for (const era of resolvedEras) {
     chapterByEraId.set(era.id, {
@@ -114,11 +142,7 @@ export function buildTimelineChronicleData({
       sphereTotals[sphere] += 1;
     }
 
-    const era =
-      findMacroEraForYear(ev.startYear, resolvedEras) ??
-      (ev.startYear < (resolvedEras[0]?.startYear ?? 0)
-        ? resolvedEras[0]
-        : resolvedEras[resolvedEras.length - 1]);
+    const era = resolveEventEraForChronicle(ev, resolvedEras, eraById);
 
     if (!era) continue;
     const chapter = chapterByEraId.get(era.id);
@@ -175,9 +199,10 @@ export function buildEraJumpEntries({
   yearFrom: number;
   yearTo: number;
 }): EraJumpEntry[] {
+  const eraById = new Map(resolvedEras.map((era) => [era.id, era]));
   const countByEraId = new Map<string, number>();
   for (const ev of matchingEvents) {
-    const era = findMacroEraForYear(ev.startYear, resolvedEras);
+    const era = resolveEventEraForChronicle(ev, resolvedEras, eraById);
     if (era) {
       countByEraId.set(era.id, (countByEraId.get(era.id) ?? 0) + 1);
     }
@@ -202,7 +227,7 @@ export function buildEraJumpEntries({
         null;
       domId = row.rulerObj.id;
     } else if (row.rowType === 'EVENT_COMMIT') {
-      eraId = findMacroEraForYear(row.eventObj.startYear, resolvedEras)?.id ?? null;
+      eraId = resolveEventEraForChronicle(row.eventObj, resolvedEras, eraById)?.id ?? null;
       domId = timelineEventAnchor(row.eventObj.id, 'graph');
     }
 

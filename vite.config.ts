@@ -125,7 +125,7 @@ function timelineSeoSnapshotPlugin(): Plugin {
       const dynamicDescription = `Интерактивный Git-граф истории (${snapshot.minYear}–${snapshot.maxYear}): ${snapshot.branches.length} ветвей, ${snapshot.rulers.length} правлений и ${snapshot.events.length} событий — войны, реформы, дипломатия, наука, искусство и литература.`;
 
       let nextHtml = html.replace(
-        /Интерактивный Git-граф истории \(862–2000\): синхронное изучение правлений, войн, реформ, дипломатии, науки, культуры и литературы\./g,
+        /Интерактивный Git-граф истории \(\d+–\d+\): синхронное изучение правлений, войн, реформ, дипломатии, науки, культуры и литературы\./g,
         dynamicDescription,
       );
 

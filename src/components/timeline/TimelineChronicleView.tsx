@@ -7,7 +7,7 @@ import {
   Crown,
   Link2,
 } from 'lucide-react';
-import { Fragment, memo } from 'react';
+import { Fragment, memo, useMemo, useState } from 'react';
 import type { BranchDefinition, EraEventSphereId } from '../../types/timeline';
 import {
   CHRONICLE_SPHERE_LABELS,
@@ -32,6 +32,8 @@ interface TimelineChronicleViewProps {
   onOpenPeriodModal: (rulerId: string) => void;
 }
 
+const CHAPTER_PAGE_SIZE = 24;
+
 export const TimelineChronicleView = memo(function TimelineChronicleView({
   chronicle,
   branches,
@@ -47,7 +49,8 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
   onOpenEraModal,
   onOpenPeriodModal,
 }: TimelineChronicleViewProps) {
-  const branchById = new Map(branches.map((b) => [b.id, b]));
+  const [visibleCountByEra, setVisibleCountByEra] = useState<Record<string, number>>({});
+  const branchById = useMemo(() => new Map(branches.map((b) => [b.id, b])), [branches]);
   const allCollapsed =
     chronicle.chapters.length > 0 &&
     chronicle.chapters.every((ch) => Boolean(collapsedEras[ch.era.id]));
@@ -239,86 +242,133 @@ export const TimelineChronicleView = memo(function TimelineChronicleView({
                   </button>
                 </div>
 
-                {/* Список событий главы */}
-                {!isCollapsed && (
-                  <div className="divide-y divide-slate-800/65">
-                    {chapter.events.map((ev) => {
-                      const isSelected = selectedEventId === ev.id;
-                      const isFocused = focusedEventId === ev.id;
-                      const sphereId = chronicle.sphereByEventId.get(ev.id);
-                      const branch = branchById.get(ev.task);
+                {/* Список событий главы (с пагинацией по 24 записи для быстрого DOM) */}
+                {!isCollapsed && (() => {
+                  const baseLimit = visibleCountByEra[chapter.era.id] ?? CHAPTER_PAGE_SIZE;
+                  const selectedIdx = selectedEventId
+                    ? chapter.events.findIndex((ev) => ev.id === selectedEventId)
+                    : -1;
+                  const effectiveLimit = Math.max(
+                    baseLimit,
+                    selectedIdx >= 0 ? selectedIdx + 1 : CHAPTER_PAGE_SIZE,
+                  );
+                  const visibleEvents = chapter.events.slice(0, effectiveLimit);
+                  const remainingCount = chapter.events.length - visibleEvents.length;
 
-                      return (
-                        <button
-                          key={ev.id}
-                          id={timelineEventAnchor(ev.id, 'chronicle')}
-                          type="button"
-                          onClick={() => onSelectEvent(ev.id)}
-                          onDoubleClick={() => onOpenCardModal(ev.id)}
-                          className={`w-full text-left px-3 sm:px-5 py-3 transition-colors cursor-pointer scroll-mt-36 group ${
-                            isSelected
-                              ? 'bg-amber-500/12'
-                              : isFocused
-                                ? 'bg-emerald-500/8 hover:bg-emerald-500/12'
-                                : 'hover:bg-slate-900/75'
-                          }`}
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs font-mono">
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
-                              <span
-                                className={`font-bold tabular-nums shrink-0 ${
-                                  isSelected ? 'text-amber-300' : 'text-amber-300/90'
-                                }`}
-                              >
-                                {ev.period}
-                              </span>
-                              <span aria-hidden="true" className="text-slate-600">
-                                ·
-                              </span>
-                              <span className="text-sky-300/90 shrink-0">
-                                {sphereId ? CHRONICLE_SPHERE_LABELS[sphereId] : 'Вне пяти сфер'}
-                              </span>
-                              <span aria-hidden="true" className="text-slate-600">
-                                ·
-                              </span>
-                              <span className="text-slate-400 truncate">
-                                {branch?.label || ev.task}
-                              </span>
-                            </div>
+                  return (
+                    <div className="divide-y divide-slate-800/65">
+                      {visibleEvents.map((ev) => {
+                        const isSelected = selectedEventId === ev.id;
+                        const isFocused = focusedEventId === ev.id;
+                        const sphereId = chronicle.sphereByEventId.get(ev.id);
+                        const branch = branchById.get(ev.task);
 
-                            <div className="flex items-center gap-2 shrink-0 text-[11px]">
-                              {ev.explicitLinks.length > 0 && (
-                                <span className="inline-flex items-center gap-1 text-emerald-300/90 tabular-nums">
-                                  <Link2 className="w-3 h-3" />
-                                  {ev.explicitLinks.length}
-                                </span>
-                              )}
-                              {isSelected && (
-                                <span className="text-amber-300 font-semibold">в читалке</span>
-                              )}
-                            </div>
-                          </div>
-
-                          <div
-                            className={`text-sm sm:text-[15px] font-semibold leading-snug mt-1 transition-colors ${
+                        return (
+                          <button
+                            key={ev.id}
+                            id={timelineEventAnchor(ev.id, 'chronicle')}
+                            type="button"
+                            onClick={() => onSelectEvent(ev.id)}
+                            onDoubleClick={() => onOpenCardModal(ev.id)}
+                            className={`w-full text-left px-3 sm:px-5 py-3 transition-colors cursor-pointer scroll-mt-36 group ${
                               isSelected
-                                ? 'text-amber-100'
-                                : 'text-white group-hover:text-amber-200'
+                                ? 'bg-amber-500/12'
+                                : isFocused
+                                  ? 'bg-emerald-500/8 hover:bg-emerald-500/12'
+                                  : 'hover:bg-slate-900/75'
                             }`}
                           >
-                            {ev.title}
-                          </div>
+                            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs font-mono">
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 min-w-0">
+                                <span
+                                  className={`font-bold tabular-nums shrink-0 ${
+                                    isSelected ? 'text-amber-300' : 'text-amber-300/90'
+                                  }`}
+                                >
+                                  {ev.period}
+                                </span>
+                                <span aria-hidden="true" className="text-slate-600">
+                                  ·
+                                </span>
+                                <span className="text-sky-300/90 shrink-0">
+                                  {sphereId ? CHRONICLE_SPHERE_LABELS[sphereId] : 'Вне пяти сфер'}
+                                </span>
+                                <span aria-hidden="true" className="text-slate-600">
+                                  ·
+                                </span>
+                                <span className="text-slate-400 truncate">
+                                  {branch?.label || ev.task}
+                                </span>
+                              </div>
 
-                          {(ev.subtitle || ev.outcome) && (
-                            <p className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed line-clamp-2 max-w-3xl">
-                              {ev.subtitle || ev.outcome}
-                            </p>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                              <div className="flex items-center gap-2 shrink-0 text-[11px]">
+                                {ev.explicitLinks.length > 0 && (
+                                  <span className="inline-flex items-center gap-1 text-emerald-300/90 tabular-nums">
+                                    <Link2 className="w-3 h-3" />
+                                    {ev.explicitLinks.length}
+                                  </span>
+                                )}
+                                {isSelected && (
+                                  <span className="text-amber-300 font-semibold">в читалке</span>
+                                )}
+                              </div>
+                            </div>
+
+                            <div
+                              className={`text-sm sm:text-[15px] font-semibold leading-snug mt-1 transition-colors ${
+                                isSelected
+                                  ? 'text-amber-100'
+                                  : 'text-white group-hover:text-amber-200'
+                              }`}
+                            >
+                              {ev.title}
+                            </div>
+
+                            {(ev.subtitle || ev.outcome) && (
+                              <p className="text-xs sm:text-sm text-slate-400 mt-1 leading-relaxed line-clamp-2 max-w-3xl">
+                                {ev.subtitle || ev.outcome}
+                              </p>
+                            )}
+                          </button>
+                        );
+                      })}
+
+                      {remainingCount > 0 && (
+                        <div className="px-3 sm:px-5 py-2.5 bg-slate-950/45 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+                          <span className="text-slate-400 tabular-nums">
+                            Показано {visibleEvents.length} из {chapter.events.length} событий главы
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setVisibleCountByEra((prev) => ({
+                                  ...prev,
+                                  [chapter.era.id]: effectiveLimit + CHAPTER_PAGE_SIZE,
+                                }))
+                              }
+                              className="px-3 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-200 transition-colors cursor-pointer tabular-nums"
+                            >
+                              Показать ещё {Math.min(CHAPTER_PAGE_SIZE, remainingCount)}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setVisibleCountByEra((prev) => ({
+                                  ...prev,
+                                  [chapter.era.id]: chapter.events.length,
+                                }))
+                              }
+                              className="px-2.5 py-1 rounded-lg text-slate-400 hover:text-white transition-colors cursor-pointer tabular-nums"
+                            >
+                              Показать все ({chapter.events.length})
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </section>
             );
           })}
