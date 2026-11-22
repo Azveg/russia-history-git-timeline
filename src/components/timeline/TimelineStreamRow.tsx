@@ -170,7 +170,7 @@ export interface TimelineStreamRowProps {
   isConnectedToBus: boolean;
   showBusSegment: boolean;
   busY1: number;
-  busY2: number;
+  busY2: number | string;
   showUpArrow: boolean;
   showDownArrow: boolean;
   dimOtherPassingRails: boolean;
@@ -211,7 +211,7 @@ function renderPrecomputedDesktopRails(params: {
   subLaneLayout: BranchSubLaneLayout;
   showBusSegment: boolean;
   busY1: number;
-  busY2: number;
+  busY2: number | string;
   dimOtherPassingRails: boolean;
   hoveredPassingRailId: string | null;
   linkedPassingRailSet: Set<string> | null;
@@ -245,7 +245,7 @@ function renderPrecomputedDesktopRails(params: {
                   x1={rx}
                   y1={0}
                   x2={rx}
-                  y2={420}
+                  y2="100%"
                   stroke={activeSlot.color}
                   strokeWidth={3}
                   strokeOpacity={0.65}
@@ -258,7 +258,7 @@ function renderPrecomputedDesktopRails(params: {
                 x1={rx}
                 y1={0}
                 x2={rx}
-                y2={420}
+                y2="100%"
                 stroke="#f59e0b"
                 strokeWidth={1.1}
                 strokeOpacity={0.14}
@@ -274,7 +274,7 @@ function renderPrecomputedDesktopRails(params: {
         x1={timeSpineX}
         y1={0}
         x2={timeSpineX}
-        y2={420}
+        y2="100%"
         stroke="#cbd5e1"
         strokeWidth={3.2}
         strokeOpacity={0.85}
@@ -302,6 +302,29 @@ function renderPrecomputedDesktopRails(params: {
         const hasBasePassing = laneBucket?.hasBasePassing ?? false;
         const passingRails = laneBucket?.rails;
 
+        // При сжатии нескольких процессов на один слот не наслаиваем десятки одинаковых полупрозрачных линий:
+        // рисуем по одной базовой линии на слот, а подсвеченные (hover/связи) всегда выводим поверх.
+        let railsToRender = passingRails;
+        if (passingRails && passingRails.length > 1) {
+          const baseBySlot = new Map<number, (typeof passingRails)[number]>();
+          const highlighted: typeof passingRails = [];
+          for (let i = 0; i < passingRails.length; i += 1) {
+            const rail = passingRails[i];
+            const isHighlighted =
+              hoveredPassingRailId === rail.eventId ||
+              Boolean(linkedPassingRailSet && linkedPassingRailSet.has(rail.eventId));
+            if (isHighlighted) {
+              highlighted.push(rail);
+            } else {
+              const existing = baseBySlot.get(rail.slot);
+              if (!existing || (existing.isBioRail && !rail.isBioRail)) {
+                baseBySlot.set(rail.slot, rail);
+              }
+            }
+          }
+          railsToRender = [...baseBySlot.values(), ...highlighted];
+        }
+
         return (
           <g key={lane.id}>
             {!hasBasePassing && (
@@ -309,7 +332,7 @@ function renderPrecomputedDesktopRails(params: {
                 x1={baseX}
                 y1={0}
                 x2={baseX}
-                y2={420}
+                y2="100%"
                 stroke={lane.color}
                 strokeWidth={1.3}
                 strokeOpacity={0.22}
@@ -317,8 +340,8 @@ function renderPrecomputedDesktopRails(params: {
               />
             )}
 
-            {passingRails &&
-              passingRails.map((rail) => {
+            {railsToRender &&
+              railsToRender.map((rail) => {
                 const isRailSelfHovered = hoveredPassingRailId === rail.eventId;
                 const isRailLinkedHovered = Boolean(
                   linkedPassingRailSet && linkedPassingRailSet.has(rail.eventId),
@@ -333,7 +356,7 @@ function renderPrecomputedDesktopRails(params: {
                         x1={rail.x}
                         y1={0}
                         x2={rail.x}
-                        y2={420}
+                        y2="100%"
                         stroke={isRailLinkedHovered && !isRailSelfHovered ? '#34d399' : lane.color}
                         strokeWidth={6.5}
                         strokeOpacity={0.28}
@@ -343,7 +366,7 @@ function renderPrecomputedDesktopRails(params: {
                       x1={rail.x}
                       y1={0}
                       x2={rail.x}
-                      y2={420}
+                      y2="100%"
                       stroke={isRailLinkedHovered && !isRailSelfHovered ? '#34d399' : lane.color}
                       strokeWidth={
                         isRailSelfHovered
@@ -390,7 +413,7 @@ function renderMobileSpine(options: {
   startedBeforeWindow?: boolean;
   showBusSegment: boolean;
   busY1: number;
-  busY2: number;
+  busY2: number | string;
 }) {
   const nodeColor = options.color ?? '#f59e0b';
   const commitY = options.kind === 'event_commit' ? (options.isCompact ? 22 : 28) : 22;
@@ -402,7 +425,7 @@ function renderMobileSpine(options: {
           x1={MOBILE_SPINE_X}
           y1={0}
           x2={MOBILE_SPINE_X}
-          y2={420}
+          y2="100%"
           stroke="#cbd5e1"
           strokeWidth={2.6}
           strokeOpacity={0.78}
@@ -460,7 +483,7 @@ function renderMobileSpine(options: {
               x1={MOBILE_SPINE_X - 7}
               y1={options.startedBeforeWindow ? 0 : 28}
               x2={MOBILE_SPINE_X - 7}
-              y2={420}
+              y2="100%"
               stroke={nodeColor}
               strokeWidth={2.4}
               strokeOpacity={0.6}
@@ -532,7 +555,7 @@ function renderMobileSpine(options: {
                 x1={MOBILE_SPINE_X + 5}
                 y1={options.startedBeforeWindow ? 0 : commitY}
                 x2={MOBILE_SPINE_X + 5}
-                y2={420}
+                y2="100%"
                 stroke={nodeColor}
                 strokeWidth={options.isSelfHovered ? 2.6 : 1.8}
                 strokeDasharray={options.isBioNode ? '4 2' : undefined}
@@ -688,7 +711,7 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
                 x1={MOBILE_SPINE_X}
                 y1={0}
                 x2={MOBILE_SPINE_X}
-                y2={420}
+                y2="100%"
                 stroke="#cbd5e1"
                 strokeWidth={2.6}
                 strokeOpacity={0.78}
@@ -698,7 +721,7 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
                   x1={MOBILE_CONNECTOR_BUS_X}
                   y1={0}
                   x2={MOBILE_CONNECTOR_BUS_X}
-                  y2={420}
+                  y2="100%"
                   stroke="#10b981"
                   strokeWidth={2}
                   strokeDasharray="4 3"
@@ -723,7 +746,7 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
                 subLaneLayout,
                 showBusSegment: showSpacerBus,
                 busY1: 0,
-                busY2: 420,
+                busY2: '100%',
                 dimOtherPassingRails,
                 hoveredPassingRailId,
                 linkedPassingRailSet,
@@ -985,7 +1008,7 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
                     x1={rx}
                     y1={item.startedBeforeWindow ? 0 : 34}
                     x2={rx}
-                    y2={420}
+                    y2="100%"
                     stroke={rColor}
                     strokeWidth={3}
                     strokeOpacity={0.65}
@@ -1451,7 +1474,7 @@ export const TimelineStreamRow = memo(function TimelineStreamRow({
                     x1={commitX}
                     y1={commitY}
                     x2={commitX}
-                    y2={420}
+                    y2="100%"
                     stroke={branchObj.color}
                     strokeWidth={isSelfHovered ? 3.6 : isBioNode ? 2.1 : 2.6}
                     strokeDasharray={isBioNode && !isSelfHovered ? '6 3' : undefined}

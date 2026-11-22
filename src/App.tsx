@@ -63,6 +63,7 @@ import {
   buildPersonDossierIndex,
   buildSyncTagIndex,
   buildUnifiedTimelineStream,
+  collapseAllParentBranches,
   computeMacroRegionCounts,
   computeTimelineYearBounds,
   countExpectedLeafBranchesFromManifest,
@@ -132,12 +133,17 @@ type ActiveModalState =
 function mergeMissingCollapsedParents(
   prev: Record<string, boolean>,
   branches: BranchDefinition[],
+  collapseAllByDefault = false,
 ): Record<string, boolean> {
   if (branches.length === 0) return prev;
+  const shouldCollapseBranch = (b: BranchDefinition) =>
+    Boolean(b.defaultCollapsedOnTimeline) ||
+    (collapseAllByDefault && hasChildBranches(b.id, branches));
+
   let hasMissing = false;
   for (let i = 0; i < branches.length; i += 1) {
     const b = branches[i];
-    if (b.defaultCollapsedOnTimeline && prev[b.id] === undefined) {
+    if (shouldCollapseBranch(b) && prev[b.id] === undefined) {
       hasMissing = true;
       break;
     }
@@ -147,7 +153,7 @@ function mergeMissingCollapsedParents(
   const next: Record<string, boolean> = { ...prev };
   for (let i = 0; i < branches.length; i += 1) {
     const b = branches[i];
-    if (b.defaultCollapsedOnTimeline && next[b.id] === undefined) {
+    if (shouldCollapseBranch(b) && next[b.id] === undefined) {
       next[b.id] = true;
     }
   }
@@ -402,9 +408,12 @@ export default function App() {
     setBranchSelection((previous) => updateBranchSelection(branches, previous, update));
   }, [branches]);
 
+  const isAllBranchesPresetActive =
+    branchSelection.preset === 'all' && Object.keys(branchSelection.overrides).length === 0;
+
   const resolvedCollapsedParents = useMemo(
-    () => mergeMissingCollapsedParents(collapsedParents, branches),
-    [collapsedParents, branches],
+    () => mergeMissingCollapsedParents(collapsedParents, branches, isAllBranchesPresetActive),
+    [collapsedParents, branches, isAllBranchesPresetActive],
   );
 
   // Динамическая синхронизация состояния веток в React-state при первичном монтировании и фоновой догрузке Phase 2
@@ -412,7 +421,9 @@ export default function App() {
     if (branches.length === 0) return;
 
     const applyBranchSync = () => {
-      setCollapsedParents((prev) => mergeMissingCollapsedParents(prev, branches));
+      setCollapsedParents((prev) =>
+        mergeMissingCollapsedParents(prev, branches, isAllBranchesPresetActive),
+      );
     };
 
     if (!hasInitializedBranchesRef.current) {
@@ -421,7 +432,7 @@ export default function App() {
     } else {
       startTransition(applyBranchSync);
     }
-  }, [branches]);
+  }, [branches, isAllBranchesPresetActive]);
 
   // Двусторонняя синхронизация с URLSearchParams (Deep Linking и History API)
   const activeCardId = activeModal.type === 'CARD' ? activeModal.cardId : null;
@@ -1925,6 +1936,9 @@ export default function App() {
       if (presetId === 'none') {
         setFocusedEventId(null);
         setBranchPairFilter(null);
+      }
+      if (presetId === 'all') {
+        setCollapsedParents(collapseAllParentBranches(branches));
       }
       setBranchSelection({ preset: presetId, overrides: {} });
     });

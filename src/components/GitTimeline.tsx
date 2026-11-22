@@ -16,28 +16,23 @@ import {
   LockOpen,
   MapPin,
   X,
-  Zap,
 } from 'lucide-react';
 import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getMacroRegionOption } from '../engine/regionFilter';
 import {
+  DEFAULT_MAX_TIMELINE_SVG_WIDTH,
   computeBranchSubLaneLayout,
   computeRulerSubLaneLayout,
   findCampaignPackForEvent,
   findMacroEraForYear,
   formatAxisGutterDate,
   formatCalendarDetailBadge,
-  formatEventTitleWithPeriod,
   getDirectChildBranches,
   getEventEffectiveEndYear,
   getEventEffectiveStartYear,
   hasChildBranches,
   isBiographyNode,
   isBranchOrDescendantActive,
-  isHistoricalEventNode,
-  isMajorCampaignOrConflictNode,
-  isScientistBioNode,
-  isWriterBioNode,
   resolveMacroEras,
 } from '../engine/timelineEngine';
 import type {
@@ -205,7 +200,6 @@ export const GitTimeline = memo(function GitTimeline({
   manifest,
   yearFrom,
   yearTo,
-  minYear = 862,
   axisResolution,
   hoveredEventId,
   cardDensity,
@@ -527,7 +521,10 @@ export const GitTimeline = memo(function GitTimeline({
         branches,
         axisResolution,
         timeSpineX,
-        { collapsedParents },
+        {
+          collapsedParents,
+          maxSvgWidth: DEFAULT_MAX_TIMELINE_SVG_WIDTH,
+        },
       ),
     [matchingEvents, thematicLanes, branches, axisResolution, timeSpineX, collapsedParents],
   );
@@ -760,69 +757,6 @@ export const GitTimeline = memo(function GitTimeline({
         return activeChildren.length >= 2;
       }),
     [branches, activeBranches, collapsedParents],
-  );
-
-  const alreadyRunningEvents = useMemo(
-    () =>
-      !focusedEvent
-        ? matchingEvents.filter(
-            (ev) => ev.startYear < yearFrom && isHistoricalEventNode(ev, branches),
-          )
-        : [],
-    [focusedEvent, matchingEvents, yearFrom, branches],
-  );
-
-  const alreadyRunningGroups = useMemo(() => {
-    if (alreadyRunningEvents.length === 0) return [];
-    const wars: EnrichedEvent[] = [];
-    const economy: EnrichedEvent[] = [];
-    const diplomacyAndWorld: EnrichedEvent[] = [];
-
-    alreadyRunningEvents.forEach((ev) => {
-      if (isMajorCampaignOrConflictNode(ev, branches)) {
-        wars.push(ev);
-      } else if (
-        ev.task.includes('ECO') ||
-        ev.task.includes('REFORM') ||
-        ev.eventType === 'economy' ||
-        ev.eventType === 'reform'
-      ) {
-        economy.push(ev);
-      } else {
-        diplomacyAndWorld.push(ev);
-      }
-    });
-
-    return [
-      { id: 'wars', label: 'Войны и конфликты', items: wars },
-      { id: 'eco', label: 'Экономика и реформы', items: economy },
-      { id: 'world', label: 'Дипломатия и мир', items: diplomacyAndWorld },
-    ].filter((g) => g.items.length > 0);
-  }, [alreadyRunningEvents, branches]);
-
-  const contemporaryBioGroups = useMemo(() => {
-    if (focusedEvent) return [];
-    const writers = matchingEvents.filter((ev) => isWriterBioNode(ev, branches));
-    const scientists = matchingEvents.filter((ev) => isScientistBioNode(ev, branches));
-    return [
-      {
-        id: 'writers',
-        label: 'Писатели и летописцы',
-        color: '#e879f9',
-        items: writers,
-      },
-      {
-        id: 'scientists',
-        label: 'Учёные и изобретатели',
-        color: '#2dd4bf',
-        items: scientists,
-      },
-    ].filter((g) => g.items.length > 0);
-  }, [focusedEvent, matchingEvents, branches]);
-
-  const totalContemporaryBios = useMemo(
-    () => contemporaryBioGroups.reduce((sum, g) => sum + g.items.length, 0),
-    [contemporaryBioGroups],
   );
 
   const gutterWidthClass =
@@ -1629,93 +1563,6 @@ export const GitTimeline = memo(function GitTimeline({
             </div>
           )}
 
-          {yearFrom > minYear && alreadyRunningGroups.length > 0 && (
-            <div className="bg-amber-500/10 border-b border-amber-500/30 px-4 py-3 space-y-2 font-sans">
-              <div className="text-xs font-semibold text-amber-200 flex items-center gap-1.5">
-                <Zap className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                <span className="tabular-nums">
-                  Сквозные процессы, начавшиеся до <span className="font-mono">{yearFrom}</span> г. и продолжающиеся в окне (
-                  <span className="font-mono">{alreadyRunningEvents.length}</span>):
-                </span>
-              </div>
-              <div className="space-y-1.5">
-                {alreadyRunningGroups.map((group) => (
-                  <div key={group.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-                    <span className="text-xs font-bold text-amber-300/90 shrink-0">
-                      {group.label}:
-                    </span>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-amber-100">
-                      {group.items.map((e) => (
-                        <button
-                          key={e.id}
-                          type="button"
-                          onClick={() => onOpenCardModal(e.id)}
-                          className="underline decoration-amber-400/50 hover:text-white cursor-pointer text-left"
-                        >
-                          {formatEventTitleWithPeriod(e)}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {contemporaryBioGroups.length > 0 && (
-            <div className="bg-fuchsia-950/20 border-b border-fuchsia-500/25 px-4 py-2.5 space-y-2 font-sans">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-1.5 font-semibold text-fuchsia-200">
-                  <span className="w-2 h-2 rounded-full bg-fuchsia-400 shrink-0" />
-                  <span className="tabular-nums">
-                    Деятели эпохи (активны в окне: <span className="font-mono">{totalContemporaryBios}</span>):
-                  </span>
-                </div>
-                <span className="text-xs text-slate-400 hidden sm:inline">
-                  показаны по периоду зрелой творческой и научной активности (клик — биография и труды)
-                </span>
-              </div>
-              <div className="space-y-1.5">
-                {contemporaryBioGroups.map((group) => (
-                  <div key={group.id} className="flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-200 shrink-0 mr-1">
-                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-                      <span>
-                        {group.label} (<span className="font-mono tabular-nums">{group.items.length}</span>):
-                      </span>
-                    </span>
-                    {group.items.map((bio) => {
-                      const isHoveredBio = effectiveActiveEventId === bio.id;
-                      return (
-                        <button
-                          key={bio.id}
-                          type="button"
-                          onClick={() => onOpenCardModal(bio.id)}
-                          onMouseEnter={() => activateHoverEvent(bio.id)}
-                          onMouseLeave={() => scheduleClearHoverEvent()}
-                          title={`${bio.title} — годы жизни: ${bio.period}, активный период: ${bio.activeFrom}–${bio.activeTo} гг. Клик для паспорта деятеля`}
-                          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border text-xs font-sans transition-colors cursor-pointer whitespace-nowrap ${
-                            isHoveredBio
-                              ? 'bg-fuchsia-500/25 border-fuchsia-400 text-white shadow-sm'
-                              : 'bg-slate-900/85 hover:bg-slate-800 border-slate-700/80 text-slate-200 hover:border-fuchsia-400/50'
-                          }`}
-                        >
-                          <span className="font-semibold text-white">{bio.title}</span>
-                          <span className="font-mono text-[11px] text-amber-300/95 tabular-nums">
-                            {bio.activeFrom}–{bio.activeTo}
-                          </span>
-                          <span className="font-mono text-[11px] text-slate-400 tabular-nums hidden md:inline">
-                            ({bio.period})
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
           {displayMode === 'chronicle' ? (
             <TimelineChronicleView
               chronicle={chronicleData}
@@ -1758,7 +1605,7 @@ export const GitTimeline = memo(function GitTimeline({
             const busY1 =
               showBusSegment && activeLinkGeometry && idx === activeLinkGeometry.minSpanIdx ? 22 : 0;
             const busY2 =
-              showBusSegment && activeLinkGeometry && idx === activeLinkGeometry.maxSpanIdx ? 22 : 420;
+              showBusSegment && activeLinkGeometry && idx === activeLinkGeometry.maxSpanIdx ? 22 : '100%';
 
             const rowRails = rowRailsByIdx[idx];
             const spacerRails = spacerRailsByIdx[idx];

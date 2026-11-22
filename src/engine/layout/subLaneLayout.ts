@@ -87,6 +87,18 @@ export function getLeafBranches(branches: BranchDefinition[]): BranchDefinition[
   return branches.filter((b) => !b.isGroup && !hasChildBranches(b.id, branches) && b.id !== 'MAIN_RULERS');
 }
 
+export function collapseAllParentBranches(
+  branches: BranchDefinition[],
+): Record<string, boolean> {
+  const collapsed: Record<string, boolean> = {};
+  branches.forEach((b) => {
+    if (hasChildBranches(b.id, branches)) {
+      collapsed[b.id] = true;
+    }
+  });
+  return collapsed;
+}
+
 function getBranchAncestorChain(
   branchId: string,
   byId: Map<string, BranchDefinition>,
@@ -248,6 +260,8 @@ export function getEventRulerSegments(ev: EnrichedEvent): RulerSpanSegment[] {
   }));
 }
 
+export const DEFAULT_MAX_TIMELINE_SVG_WIDTH = 360;
+
 export function computeBranchSubLaneLayout(
   matchingEvents: EnrichedEvent[],
   thematicLanes: BranchDefinition[],
@@ -259,58 +273,178 @@ export function computeBranchSubLaneLayout(
     laneGap?: number;
     subStep?: number;
     collapsedParents?: Record<string, boolean>;
+    maxSvgWidth?: number;
+    maxSubLanesPerBranch?: number;
   },
 ): BranchSubLaneLayout {
-  const firstThematicX = timeSpineX + (options?.firstThematicOffset ?? 28);
-  const laneGap = options?.laneGap ?? 22;
-  const subStep = options?.subStep ?? 10;
+  const laneCount = thematicLanes.length;
   const collapsedParents = options?.collapsedParents ?? {};
+  const maxSvgWidth = options?.maxSvgWidth ?? DEFAULT_MAX_TIMELINE_SVG_WIDTH;
 
-  const slotByEventId = new Map<string, number>();
-  const branchLayouts = new Map<string, BranchLaneLayout>();
+  // Адаптивный выбор плотности графа по числу видимых тематических полос
+  const tierFirstOffset = laneCount >= 10 ? 20 : laneCount >= 6 ? 24 : 28;
+  const tierLaneGap = laneCount >= 10 ? 12 : laneCount >= 6 ? 16 : 22;
+  const tierSubStep = laneCount >= 10 ? 6 : laneCount >= 6 ? 7 : 10;
+  const tierMaxSubLanes = laneCount >= 10 ? 1 : laneCount >= 6 ? 2 : 4;
 
-  let cursorX = firstThematicX;
+  let firstThematicOffset = options?.firstThematicOffset ?? tierFirstOffset;
+  let laneGap = options?.laneGap ?? tierLaneGap;
+  let subStep = options?.subStep ?? tierSubStep;
+  let rightPad = laneCount >= 10 ? 14 : 20;
+  let effectiveMaxSubLanes = Math.max(
+    1,
+    options?.maxSubLanesPerBranch ?? tierMaxSubLanes,
+  );
 
-  thematicLanes.forEach((lane) => {
-    const laneNonAtomicEvents = matchingEvents
-      .filter((ev) => {
-        if (resolveEventBranch(ev, branches, collapsedParents).id !== lane.id) return false;
-        const effStart = getEventEffectiveStartPrecision(ev, branches);
-        return !isAtomicEventNode(ev, effStart, ev.endPrecision, axisResolution);
-      })
-      .sort((a, b) => {
-        const aStart = getEventEffectiveStartPrecision(a, branches).sortKey;
-        const bStart = getEventEffectiveStartPrecision(b, branches).sortKey;
-        if (aStart !== bStart) {
-          return aStart - bStart;
+  // Предварительная группировка неатомарных событий по видимым полосам (O(E log E))
+  const eventsByLaneId = new Map<string, EnrichedEvent[]>();
+  matchingEvents.forEach((ev) => {
+    const effStart = getEventEffectiveStartPrecision(ev, branches);
+    if (isAtomicEventNode(ev, effStart, ev.endPrecision, axisResolution)) return;
+    const resolvedId = resolveEventBranch(ev, branches, collapsedParents).id;
+    let bucket = eventsByLaneId.get(resolvedId);
+    if (!bucket) {
+      bucket = [];
+      eventsByLaneId.set(resolvedId, bucket);
+    }
+    bucket.push(ev);
+  });
+
+  eventsByLaneId.forEach((bucket) => {
+    bucket.sort((a, b) => {
+      const aStart = getEventEffectiveStartPrecision(a, branches).sortKey;
+      const bStart = getEventEffectiveStartPrecision(b, branches).sortKey;
+      if (aStart !== bStart) {
+        return aStart - bStart;
+      }
+      if (a.endPrecision.sortKey !== b.endPrecision.sortKey) {
+        return a.endPrecision.sortKey - b.endPrecision.sortKey;
+      }
+      return a.seq - b.seq;
+    });
+  });
+
+  const assignSlotsWithCap = (maxSubLanes: number) => {
+    const slots = new Map<string, number>();
+    const counts = new Map<string, number>();
+
+    thematicLanes.forEach((lane) => {
+      const laneNonAtomicEvents = eventsByLaneId.get(lane.id) ?? [];
+      const slotEndKeys: number[] = [];
+
+      laneNonAtomicEvents.forEach((ev) => {
+        const effStartKey = getEventEffectiveStartPrecision(ev, branches).sortKey;
+        let assigned = -1;
+        for (let s = 0; s < slotEndKeys.length; s++) {
+          if (slotEndKeys[s] < effStartKey) {
+            assigned = s;
+            break;
+          }
         }
-        if (a.endPrecision.sortKey !== b.endPrecision.sortKey) {
-          return a.endPrecision.sortKey - b.endPrecision.sortKey;
+        if (assigned === -1) {
+          if (slotEndKeys.length < maxSubLanes) {
+            assigned = slotEndKeys.length;
+            slotEndKeys.push(ev.endPrecision.sortKey);
+          } else {
+            // Все разрешённые под-линии заняты — переиспользуем ту, которая завершается раньше остальных
+            let earliestIdx = 0;
+            for (let s = 1; s < slotEndKeys.length; s++) {
+              if (slotEndKeys[s] < slotEndKeys[earliestIdx]) {
+                earliestIdx = s;
+              }
+            }
+            assigned = earliestIdx;
+            slotEndKeys[assigned] = Math.max(slotEndKeys[assigned], ev.endPrecision.sortKey);
+          }
+        } else {
+          slotEndKeys[assigned] = ev.endPrecision.sortKey;
         }
-        return a.seq - b.seq;
+        slots.set(ev.id, assigned);
       });
 
-    const slotEndKeys: number[] = [];
-
-    laneNonAtomicEvents.forEach((ev) => {
-      const effStartKey = getEventEffectiveStartPrecision(ev, branches).sortKey;
-      let assigned = -1;
-      for (let s = 0; s < slotEndKeys.length; s++) {
-        if (slotEndKeys[s] < effStartKey) {
-          assigned = s;
-          break;
-        }
-      }
-      if (assigned === -1) {
-        assigned = slotEndKeys.length;
-        slotEndKeys.push(ev.endPrecision.sortKey);
-      } else {
-        slotEndKeys[assigned] = ev.endPrecision.sortKey;
-      }
-      slotByEventId.set(ev.id, assigned);
+      counts.set(lane.id, Math.max(1, slotEndKeys.length));
     });
 
-    const subLaneCount = Math.max(1, slotEndKeys.length);
+    return { slots, counts };
+  };
+
+  const computeTotalWidth = (
+    counts: Map<string, number>,
+    offset: number,
+    gap: number,
+    step: number,
+    pad: number,
+  ): number => {
+    if (laneCount === 0) return Math.max(112, timeSpineX + 30);
+    let extraSubWidth = 0;
+    thematicLanes.forEach((lane) => {
+      const count = counts.get(lane.id) ?? 1;
+      extraSubWidth += (count - 1) * step;
+    });
+    return Math.max(
+      112,
+      timeSpineX + offset + extraSubWidth + Math.max(0, laneCount - 1) * gap + pad,
+    );
+  };
+
+  let assignedResult = assignSlotsWithCap(effectiveMaxSubLanes);
+  let estimatedWidth = computeTotalWidth(
+    assignedResult.counts,
+    firstThematicOffset,
+    laneGap,
+    subStep,
+    rightPad,
+  );
+
+  // Контроль бюджета ширины SVG-графа, чтобы колонка карточек событий никогда не сжималась за край экрана
+  if (Number.isFinite(maxSvgWidth) && laneCount > 0 && estimatedWidth > maxSvgWidth) {
+    if (effectiveMaxSubLanes > 2) {
+      effectiveMaxSubLanes = 2;
+      subStep = Math.min(subStep, 7);
+      laneGap = Math.min(laneGap, 16);
+      assignedResult = assignSlotsWithCap(effectiveMaxSubLanes);
+      estimatedWidth = computeTotalWidth(
+        assignedResult.counts,
+        firstThematicOffset,
+        laneGap,
+        subStep,
+        rightPad,
+      );
+    }
+
+    if (estimatedWidth > maxSvgWidth && effectiveMaxSubLanes > 1) {
+      effectiveMaxSubLanes = 1;
+      subStep = Math.min(subStep, 6);
+      laneGap = Math.min(laneGap, 12);
+      assignedResult = assignSlotsWithCap(effectiveMaxSubLanes);
+      estimatedWidth = computeTotalWidth(
+        assignedResult.counts,
+        firstThematicOffset,
+        laneGap,
+        subStep,
+        rightPad,
+      );
+    }
+
+    if (estimatedWidth > maxSvgWidth) {
+      firstThematicOffset = Math.min(firstThematicOffset, 16);
+      rightPad = Math.min(rightPad, 12);
+      if (laneCount > 1) {
+        const availableForGaps = Math.max(
+          0,
+          maxSvgWidth - timeSpineX - firstThematicOffset - rightPad,
+        );
+        laneGap = Math.max(6, Math.floor(availableForGaps / (laneCount - 1)));
+      }
+    }
+  }
+
+  const slotByEventId = assignedResult.slots;
+  const branchLayouts = new Map<string, BranchLaneLayout>();
+  let cursorX = timeSpineX + firstThematicOffset;
+
+  thematicLanes.forEach((lane) => {
+    const subLaneCount = assignedResult.counts.get(lane.id) ?? 1;
     const baseX = cursorX;
     const subXs = Array.from({ length: subLaneCount }, (_, idx) => baseX + idx * subStep);
 
@@ -326,7 +460,7 @@ export function computeBranchSubLaneLayout(
 
   const totalSvgWidth = Math.max(
     112,
-    thematicLanes.length > 0 ? cursorX - laneGap + 20 : timeSpineX + 30,
+    laneCount > 0 ? cursorX - laneGap + rightPad : timeSpineX + 30,
   );
 
   return {
