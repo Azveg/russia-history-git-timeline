@@ -20,12 +20,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
-import {
-  AcademicCitationPanel,
-  CiteTriggerButton,
-  SourcesApparatusSection,
-} from './AcademicCitationBar';
+import { SourcesApparatusSection } from './AcademicCitationBar';
 import { DossierModalHeader } from './DossierModalHeader';
+import { downloadMarkdownFile, formatRulerDossierToMarkdown } from '../utils/markdownExport';
 import { RulerKinshipSection } from './RulerKinshipSection';
 import {
   formatCalendarDetailBadge,
@@ -175,7 +172,6 @@ export function PeriodSummaryModal({
 }: PeriodSummaryModalProps) {
   const [activeTab, setActiveTab] = useState<ModalTabId>('biography');
   const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
-  const [showCitation, setShowCitation] = useState(false);
   const [showSources, setShowSources] = useState(false);
 
   // Tab 2: Окружение и современники
@@ -203,7 +199,6 @@ export function PeriodSummaryModal({
 
   useEffect(() => {
     setActiveTab('biography');
-    setShowCitation(false);
     setShowSources(false);
     setRelationFilter('all');
     setContempCategory('all');
@@ -507,6 +502,12 @@ export function PeriodSummaryModal({
         <DossierModalHeader
           lastHistoryItem={lastHistoryItem}
           onNavigateBack={onNavigateBack}
+          onExportMarkdown={() => {
+            const { filename, content } = formatRulerDossierToMarkdown(summary, branches);
+            downloadMarkdownFile(filename, content);
+          }}
+          exportMarkdownTitle="Скачать досье правителя в Markdown (.md)"
+          exportMarkdownAriaLabel="Скачать досье правителя в формате Markdown"
           onClose={onClose}
           closeAriaLabel="Закрыть досье правителя"
           context={
@@ -532,10 +533,6 @@ export function PeriodSummaryModal({
           }
           actions={
             <>
-              <CiteTriggerButton
-                isOpen={showCitation}
-                onToggle={() => setShowCitation((prev) => !prev)}
-              />
               {onCompareWithRuler && (
                 <button
                   type="button"
@@ -563,21 +560,6 @@ export function PeriodSummaryModal({
 
         {/* Компактная музейно-архивная шапка личности правителя + полоса вкладок */}
         <div className="px-5 sm:px-6 pt-4 pb-0 border-b border-slate-800/90 bg-[#0d162c]/70 shrink-0">
-          {showCitation && (
-            <div className="mb-3">
-              <AcademicCitationPanel
-                target={{
-                  kind: 'ruler',
-                  id: ruler.id,
-                  title: ruler.reignTitle,
-                  period: ruler.reignPeriod,
-                  sectionLabel: 'досье правителя',
-                }}
-                onClose={() => setShowCitation(false)}
-              />
-            </div>
-          )}
-
           {/* Краткое имя и паспортные метаданные без пилюль */}
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">

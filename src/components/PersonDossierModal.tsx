@@ -11,12 +11,9 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { isEventBranchActive, resolveBranchCategory } from '../engine/timelineEngine';
 import { aggregatePersonSources } from '../utils/citation';
-import {
-  AcademicCitationPanel,
-  CiteTriggerButton,
-  SourcesApparatusSection,
-} from './AcademicCitationBar';
+import { SourcesApparatusSection } from './AcademicCitationBar';
 import { DossierModalHeader } from './DossierModalHeader';
+import { downloadMarkdownFile, formatPersonDossierToMarkdown } from '../utils/markdownExport';
 import type {
   BranchDefinition,
   ModalHistoryItem,
@@ -84,14 +81,12 @@ export function PersonDossierModal({
   const [sphereFilter, setSphereFilter] = useState<SphereFilterId>('all');
   const [eventsSearch, setEventsSearch] = useState('');
   const [visibleEventsCount, setVisibleEventsCount] = useState(12);
-  const [showCitation, setShowCitation] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setSphereFilter('all');
     setEventsSearch('');
     setVisibleEventsCount(12);
-    setShowCitation(false);
     if (bodyRef.current) bodyRef.current.scrollTop = 0;
   }, [dossier?.key]);
 
@@ -178,6 +173,12 @@ export function PersonDossierModal({
           lastHistoryItem={lastHistoryItem}
           onNavigateBack={onNavigateBack}
           backButtonTone="slate"
+          onExportMarkdown={() => {
+            const { filename, content } = formatPersonDossierToMarkdown(dossier, branches);
+            downloadMarkdownFile(filename, content);
+          }}
+          exportMarkdownTitle="Скачать досье деятеля в Markdown (.md)"
+          exportMarkdownAriaLabel="Скачать досье деятеля в формате Markdown"
           onClose={onClose}
           closeAriaLabel="Закрыть досье участника"
           context={
@@ -199,10 +200,6 @@ export function PersonDossierModal({
           }
           actions={
             <>
-              <CiteTriggerButton
-                isOpen={showCitation}
-                onToggle={() => setShowCitation((prev) => !prev)}
-              />
               <button
                 type="button"
                 onClick={() => {
@@ -221,20 +218,6 @@ export function PersonDossierModal({
 
         {/* Тело модального окна */}
         <div ref={bodyRef} className="p-5 sm:p-6 overflow-y-auto space-y-5 flex-1">
-          {showCitation && (
-            <AcademicCitationPanel
-              target={{
-                kind: 'person',
-                id: dossier.key,
-                title: dossier.displayName,
-                period: yearSpanLabel,
-                sectionLabel: 'досье исторического деятеля',
-              }}
-              secondaryCardDeepLinkId={dossier.bioCard?.id ?? null}
-              onClose={() => setShowCitation(false)}
-            />
-          )}
-
           {/* Заголовок и тихая строка метаданных без декоративных капсул */}
           <div className="space-y-2.5 pb-4 border-b border-slate-800/80">
             <div className="flex flex-wrap items-start justify-between gap-3">

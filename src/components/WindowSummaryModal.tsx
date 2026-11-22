@@ -27,8 +27,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
-import { AcademicCitationPanel, CiteTriggerButton } from './AcademicCitationBar';
 import { DossierModalHeader } from './DossierModalHeader';
+import { downloadMarkdownFile, formatWindowDossierToMarkdown } from '../utils/markdownExport';
 import {
   ERA_SPHERE_META,
   ERA_SPHERE_ORDER,
@@ -272,7 +272,6 @@ export function WindowSummaryModal({
 }: WindowSummaryModalProps) {
   const [activeTab, setActiveTab] = useState<WindowModalTabId>('overview');
   const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
-  const [showCitationPanel, setShowCitationPanel] = useState(false);
   const [includeCampaignDetails, setIncludeCampaignDetails] = useState<boolean>(() =>
     Boolean(activeCampaignId),
   );
@@ -344,7 +343,6 @@ export function WindowSummaryModal({
 
   useEffect(() => {
     setActiveTab('overview');
-    setShowCitationPanel(false);
     setIncludeCampaignDetails(Boolean(activeCampaignId));
     setExpandCarryIn(false);
     setExpandCarryOut(false);
@@ -833,6 +831,14 @@ export function WindowSummaryModal({
         <DossierModalHeader
           lastHistoryItem={lastHistoryItem}
           onNavigateBack={onNavigateBack}
+          onExportMarkdown={() => {
+            const { filename, content } = formatWindowDossierToMarkdown(summary, branches, {
+              includeCampaignDetails,
+            });
+            downloadMarkdownFile(filename, content);
+          }}
+          exportMarkdownTitle="Скачать досье окна в Markdown (.md)"
+          exportMarkdownAriaLabel="Скачать досье окна в формате Markdown"
           onClose={onClose}
           closeAriaLabel="Закрыть досье окна"
           context={
@@ -864,10 +870,6 @@ export function WindowSummaryModal({
                   <span>Детали кампаний (+{loadedCampaignCount})</span>
                 </button>
               )}
-              <CiteTriggerButton
-                isOpen={showCitationPanel}
-                onToggle={() => setShowCitationPanel((prev) => !prev)}
-              />
               {onCompareWithWindow && (
                 <button
                   type="button"
@@ -896,19 +898,6 @@ export function WindowSummaryModal({
 
         {/* Прокручиваемое тело досье */}
         <div ref={bodyRef} className="px-5 sm:px-6 pt-5 pb-6 overflow-y-auto flex-1 space-y-5">
-          {showCitationPanel && (
-            <AcademicCitationPanel
-              target={{
-                kind: 'window',
-                id: `${yearFrom}-${yearTo}`,
-                title: `Сводный срез периода ${yearFrom}–${yearTo} гг.`,
-                period: `${yearFrom}–${yearTo}`,
-                sectionLabel: 'Досье произвольного окна',
-              }}
-              onClose={() => setShowCitationPanel(false)}
-            />
-          )}
-
           {/* Заголовок, пересекаемые эпохи и политические центры */}
           <div className="space-y-2">
             <h3

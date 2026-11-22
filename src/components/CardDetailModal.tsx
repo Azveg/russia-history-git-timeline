@@ -5,9 +5,7 @@ import {
   Award,
   BookOpen,
   Calendar,
-  Check,
   Compass,
-  Copy,
   Crosshair,
   Crown,
   FlaskConical,
@@ -26,12 +24,9 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
-import {
-  AcademicCitationPanel,
-  CiteTriggerButton,
-  SourcesApparatusSection,
-} from './AcademicCitationBar';
+import { SourcesApparatusSection } from './AcademicCitationBar';
 import { DossierModalHeader } from './DossierModalHeader';
+import { downloadMarkdownFile, formatCardToMarkdown } from '../utils/markdownExport';
 import { classifyEventMacroRegions, getMacroRegionOption } from '../engine/regionFilter';
 import {
   findMacroEraForYear,
@@ -140,8 +135,6 @@ export function CardDetailModal({
   const [concurrentOnlyLinked, setConcurrentOnlyLinked] = useState(false);
   const [concurrentSearch, setConcurrentSearch] = useState('');
   const [visibleConcurrentCount, setVisibleConcurrentCount] = useState(12);
-  const [copiedSummary, setCopiedSummary] = useState(false);
-  const [showCitation, setShowCitation] = useState(false);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -153,8 +146,6 @@ export function CardDetailModal({
     setConcurrentOnlyLinked(false);
     setConcurrentSearch('');
     setVisibleConcurrentCount(12);
-    setCopiedSummary(false);
-    setShowCitation(false);
     bodyRef.current?.scrollTo({ top: 0 });
   }, [card?.id]);
 
@@ -531,6 +522,19 @@ export function CardDetailModal({
         <DossierModalHeader
           lastHistoryItem={lastHistoryItem}
           onNavigateBack={onNavigateBack}
+          onExportMarkdown={() => {
+            const { filename, content } = formatCardToMarkdown({
+              card,
+              branch: branchObj,
+              parentBranch: parentBranchObj,
+              era: macroEra,
+              branches,
+              allEventsById: eventById,
+            });
+            downloadMarkdownFile(filename, content);
+          }}
+          exportMarkdownTitle="Скачать всю карточку в Markdown (.md)"
+          exportMarkdownAriaLabel="Скачать карточку в формате Markdown"
           onClose={onClose}
           closeAriaLabel="Закрыть модальное окно"
           context={
@@ -588,39 +592,6 @@ export function CardDetailModal({
               <button
                 type="button"
                 onClick={() => {
-                  const lines: string[] = [`${card.period} — ${card.title}`, card.subtitle];
-                  if (card.prerequisitesList.length > 0) {
-                    lines.push(`Предпосылки: ${card.prerequisitesList.join('; ')}`);
-                  }
-                  if (card.outcome) {
-                    lines.push(`Главный итог: ${card.outcome}`);
-                  }
-                  if (card.details) {
-                    lines.push(card.details);
-                  }
-                  navigator.clipboard?.writeText(lines.join('\n\n'));
-                  setCopiedSummary(true);
-                  window.setTimeout(() => setCopiedSummary(false), 2000);
-                }}
-                className="h-8 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-mono text-indigo-200 inline-flex items-center gap-1.5 transition-colors duration-150 cursor-pointer whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400/70"
-                title="Скопировать краткий конспект карточки (предпосылки, суть, главный итог)"
-              >
-                {copiedSummary ? (
-                  <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                ) : (
-                  <Copy className="w-3.5 h-3.5 shrink-0" />
-                )}
-                <span>{copiedSummary ? 'Скопировано' : 'Конспект'}</span>
-              </button>
-
-              <CiteTriggerButton
-                isOpen={showCitation}
-                onToggle={() => setShowCitation((prev) => !prev)}
-              />
-
-              <button
-                type="button"
-                onClick={() => {
                   onClose();
                   onJumpToTimelineRow(card.id);
                 }}
@@ -665,21 +636,6 @@ export function CardDetailModal({
 
         {/* Прокручиваемое тело */}
         <div ref={bodyRef} className="px-5 sm:px-6 pt-5 pb-6 overflow-y-auto space-y-5 flex-1">
-          {showCitation && (
-            <AcademicCitationPanel
-              target={{
-                kind: 'card',
-                id: card.id,
-                title: card.title,
-                period: card.period,
-                sectionLabel: parentBranchObj
-                  ? `раздел «${parentBranchObj.short} · ${branchObj.label}»`
-                  : `раздел «${branchObj.label}»`,
-              }}
-              onClose={() => setShowCitation(false)}
-            />
-          )}
-
           {/* Заголовок, период и краткая характеристика */}
           <div className="space-y-2">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">

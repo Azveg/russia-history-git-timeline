@@ -1,13 +1,77 @@
 import type {
   BranchDefinition,
+  BranchPairFilter,
   CampaignPackRegistryEntry,
   EnrichedEvent,
+  MacroRegionId,
+  SyncLinkTypeFilter,
 } from '../../types/timeline';
+import type { BranchSelection } from '../layout/branchSelection';
 import {
   getEventEffectiveEndYear,
   getEventEffectiveStartYear,
   intersectsTimeWindow,
 } from '../layout/subLaneLayout';
+
+export interface CampaignReturnSnapshot {
+  yearFrom: number | undefined;
+  yearTo: number | undefined;
+  branchSelection: BranchSelection;
+  collapsedParents: Record<string, boolean>;
+  selectedEra: string;
+  selectedReign: string;
+  searchQuery: string;
+  selectedPersonKey: string | null;
+  selectedSyncTag: string | null;
+  selectedMacroRegion: MacroRegionId;
+  branchPairFilter: BranchPairFilter | null;
+  onlyWithSyncLinks: boolean;
+  syncLinkTypeFilter: SyncLinkTypeFilter;
+  auditUnlinkedMode: boolean;
+}
+
+export function createCampaignReturnSnapshot(
+  state: CampaignReturnSnapshot,
+): CampaignReturnSnapshot {
+  return {
+    ...state,
+    branchSelection: {
+      preset: state.branchSelection.preset,
+      overrides: { ...state.branchSelection.overrides },
+    },
+    collapsedParents: { ...state.collapsedParents },
+    branchPairFilter: state.branchPairFilter ? { ...state.branchPairFilter } : null,
+  };
+}
+
+export function getCampaignEntryFilterDefaults(pack: CampaignPackRegistryEntry) {
+  return {
+    yearFrom: pack.yearFrom,
+    yearTo: pack.yearTo,
+    selectedEra: 'ALL' as const,
+    selectedReign: 'ALL' as const,
+    searchQuery: '',
+    selectedPersonKey: null,
+    selectedSyncTag: null,
+    selectedMacroRegion: 'all' as MacroRegionId,
+    branchPairFilter: null,
+    onlyWithSyncLinks: false,
+    syncLinkTypeFilter: 'all' as SyncLinkTypeFilter,
+    auditUnlinkedMode: false,
+  };
+}
+
+export function resolveCampaignNavigationBounds(
+  activeCampaignPack: Pick<CampaignPackRegistryEntry, 'yearFrom' | 'yearTo'> | null | undefined,
+  atlasBounds: { minYear: number; maxYear: number },
+): { minYear: number; maxYear: number } {
+  if (!activeCampaignPack) {
+    return atlasBounds;
+  }
+  const minYear = Math.min(activeCampaignPack.yearFrom, activeCampaignPack.yearTo);
+  const maxYear = Math.max(activeCampaignPack.yearFrom, activeCampaignPack.yearTo);
+  return { minYear, maxYear };
+}
 
 export function isCampaignBranch(branch: Pick<BranchDefinition, 'detailScope' | 'campaignPackId'>): boolean {
   return branch.detailScope === 'campaign' || Boolean(branch.campaignPackId);

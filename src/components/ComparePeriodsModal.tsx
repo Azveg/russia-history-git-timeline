@@ -22,6 +22,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { DossierModalHeader } from './DossierModalHeader';
+import { downloadMarkdownFile, formatComparisonReportToMarkdown } from '../utils/markdownExport';
 import {
   ERA_SPHERE_META,
   ERA_SPHERE_ORDER,
@@ -639,6 +640,12 @@ export function ComparePeriodsModal({
         <DossierModalHeader
           lastHistoryItem={lastHistoryItem}
           onNavigateBack={onNavigateBack}
+          onExportMarkdown={() => {
+            const { filename, content } = formatComparisonReportToMarkdown(report);
+            downloadMarkdownFile(filename, content);
+          }}
+          exportMarkdownTitle="Скачать сравнительный отчёт в Markdown (.md)"
+          exportMarkdownAriaLabel="Скачать сравнение периодов в формате Markdown"
           onClose={onClose}
           closeAriaLabel="Закрыть сравнение периодов"
           context={

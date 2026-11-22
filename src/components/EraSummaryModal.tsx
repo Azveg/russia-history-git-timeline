@@ -25,8 +25,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
-import { AcademicCitationPanel, CiteTriggerButton } from './AcademicCitationBar';
 import { DossierModalHeader } from './DossierModalHeader';
+import { downloadMarkdownFile, formatEraDossierToMarkdown } from '../utils/markdownExport';
 import {
   ERA_SPHERE_META,
   ERA_SPHERE_ORDER,
@@ -266,7 +266,6 @@ export function EraSummaryModal({
 }: EraSummaryModalProps) {
   const [activeTab, setActiveTab] = useState<EraModalTabId>('overview');
   const { handleTabKeyDown, tabProps, panelProps } = useDossierTabs(activeTab);
-  const [showCitationPanel, setShowCitationPanel] = useState(false);
   const [includeCampaignDetails, setIncludeCampaignDetails] = useState(false);
 
   // Tab 1: Обзор — раскрытие переходящих событий при длинных списках
@@ -339,7 +338,6 @@ export function EraSummaryModal({
   // Reset modal state cleanly when switching era
   useEffect(() => {
     setActiveTab('overview');
-    setShowCitationPanel(false);
     setIncludeCampaignDetails(false);
     setExpandCarryIn(false);
     setExpandCarryOut(false);
@@ -782,6 +780,14 @@ export function EraSummaryModal({
         <DossierModalHeader
           lastHistoryItem={lastHistoryItem}
           onNavigateBack={onNavigateBack}
+          onExportMarkdown={() => {
+            const { filename, content } = formatEraDossierToMarkdown(summary, branches, {
+              includeCampaignDetails,
+            });
+            downloadMarkdownFile(filename, content);
+          }}
+          exportMarkdownTitle="Скачать досье макро-периода в Markdown (.md)"
+          exportMarkdownAriaLabel="Скачать досье макро-периода в формате Markdown"
           onClose={onClose}
           closeAriaLabel="Закрыть досье макро-периода"
           context={
@@ -819,10 +825,6 @@ export function EraSummaryModal({
                   <span>Детали кампаний (+{loadedCampaignCount})</span>
                 </button>
               )}
-              <CiteTriggerButton
-                isOpen={showCitationPanel}
-                onToggle={() => setShowCitationPanel((prev) => !prev)}
-              />
               {onCompareWithEra && (
                 <button
                   type="button"
@@ -850,19 +852,6 @@ export function EraSummaryModal({
 
         {/* Прокручиваемое тело досье */}
         <div ref={bodyRef} className="px-5 sm:px-6 pt-5 pb-6 overflow-y-auto flex-1 space-y-5">
-          {showCitationPanel && (
-            <AcademicCitationPanel
-              target={{
-                kind: 'era',
-                id: resolvedEra.id,
-                title: resolvedEra.title,
-                period: resolvedEra.period,
-                sectionLabel: 'Досье макро-периода',
-              }}
-              onClose={() => setShowCitationPanel(false)}
-            />
-          )}
-
           {/* Название, нейтральная характеристика и политические центры */}
           <div className="space-y-2.5">
             <h3

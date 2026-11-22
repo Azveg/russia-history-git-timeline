@@ -86,6 +86,8 @@ const zeroInlineStyleModals = [
   'src/components/timeline/TimelineLiveReader.tsx',
   'src/components/timeline/CampaignModeBar.tsx',
   'src/components/CampaignCausalTracerModal.tsx',
+  'src/components/CampaignCatalogModal.tsx',
+  'src/components/DossierModalHeader.tsx',
 ];
 
 for (const modalPath of zeroInlineStyleModals) {

@@ -704,8 +704,8 @@ export type ComparisonTarget =
   | { kind: 'window'; from: number; to: number; label?: string };
 
 export interface ModalHistoryItem {
-  type: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare' | 'tracer';
-  kind?: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare' | 'tracer';
+  type: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare' | 'tracer' | 'campaigns';
+  kind?: 'card' | 'ruler' | 'era' | 'person' | 'window' | 'compare' | 'tracer' | 'campaigns';
   id: string;
   label: string;
   windowRange?: { from: number; to: number };

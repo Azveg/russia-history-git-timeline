@@ -6,7 +6,6 @@ import {
   EyeOff,
   GitBranch,
   Globe2,
-  Layers,
   Loader2,
   Swords,
   X,
@@ -24,12 +23,10 @@ interface CampaignModeBarProps {
   activeBranches: Record<string, boolean>;
   isLoading: boolean;
   includeAtlasContext: boolean;
-  isProAnalysisOpen?: boolean;
   tracedChainFilter?: TracedChainFilter | null;
   onToggleCampaignBranch: (branchId: string) => void;
   onEnableAllCampaignBranches: () => void;
   onToggleAtlasContext: () => void;
-  onToggleProAnalysis?: () => void;
   onOpenAnchorCard?: (eventId: string) => void;
   onOpenCausalTracer?: () => void;
   onReopenTracedChain?: () => void;
@@ -43,12 +40,10 @@ export const CampaignModeBar = memo(function CampaignModeBar({
   activeBranches,
   isLoading,
   includeAtlasContext,
-  isProAnalysisOpen = false,
   tracedChainFilter = null,
   onToggleCampaignBranch,
   onEnableAllCampaignBranches,
   onToggleAtlasContext,
-  onToggleProAnalysis,
   onOpenAnchorCard,
   onOpenCausalTracer,
   onReopenTracedChain,
@@ -132,27 +127,6 @@ export const CampaignModeBar = memo(function CampaignModeBar({
             >
               <GitBranch className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>Трассировщик связей</span>
-            </button>
-          )}
-
-          {onToggleProAnalysis && (
-            <button
-              type="button"
-              aria-pressed={isProAnalysisOpen}
-              onClick={onToggleProAnalysis}
-              className={`h-8 px-2.5 rounded-lg border text-xs font-mono inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-                isProAnalysisOpen
-                  ? 'bg-emerald-500/15 border-emerald-400/55 text-emerald-200 font-semibold'
-                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700/80 text-slate-200 hover:text-amber-200'
-              }`}
-              title={
-                isProAnalysisOpen
-                  ? 'Свернуть карту полос и панель расширенного анализа'
-                  : 'Показать карту полос и панель профи-анализа'
-              }
-            >
-              <Layers className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
-              <span>Карта полос</span>
             </button>
           )}
 

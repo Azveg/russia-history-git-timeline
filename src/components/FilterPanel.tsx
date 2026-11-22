@@ -9,8 +9,8 @@ import {
   Flame,
   GitCompare,
   GitCompareArrows,
+  Layers,
   Link2,
-  Loader2,
   MapPin,
   RotateCcw,
   Search,
@@ -24,7 +24,6 @@ import { MACRO_REGION_OPTIONS, searchPersonDossiers } from '../engine/timelineEn
 import type {
   BranchDefinition,
   BranchPairFilter,
-  CampaignPackRegistryEntry,
   MacroRegionId,
   PersonDossier,
   SyncLinkTypeFilter,
@@ -52,12 +51,13 @@ interface FilterPanelProps {
   auditFlaggedCount: number;
   personDossiers?: Map<string, PersonDossier>;
   selectedPersonDossier?: PersonDossier | null;
-  campaignPacks?: CampaignPackRegistryEntry[];
-  activeCampaignId?: string | null;
-  loadedCampaignIds?: string[];
-  loadingCampaignId?: string | null;
-  onOpenCampaign?: (campaignId: string) => void;
-  onExitCampaign?: () => void;
+  isCampaignMode?: boolean;
+  activeCampaignTitle?: string | null;
+  campaignPacksCount?: number;
+  onOpenCampaignCatalogModal?: () => void;
+  isOverlapMapExpanded?: boolean;
+  overlapLanesCount?: number;
+  onToggleOverlapMap?: () => void;
   isAdvancedExpanded: boolean;
   onToggleAdvanced: () => void;
   onChangeYearFrom: (year: number) => void;
@@ -98,12 +98,13 @@ export const FilterPanel = memo(function FilterPanel({
   auditFlaggedCount,
   personDossiers,
   selectedPersonDossier,
-  campaignPacks = [],
-  activeCampaignId = null,
-  loadedCampaignIds = [],
-  loadingCampaignId = null,
-  onOpenCampaign,
-  onExitCampaign,
+  isCampaignMode = false,
+  activeCampaignTitle = null,
+  campaignPacksCount = 0,
+  onOpenCampaignCatalogModal,
+  isOverlapMapExpanded = false,
+  overlapLanesCount,
+  onToggleOverlapMap,
   isAdvancedExpanded,
   onToggleAdvanced,
   onChangeYearFrom,
@@ -137,8 +138,18 @@ export const FilterPanel = memo(function FilterPanel({
 
   const personSuggestions = useMemo(() => {
     if (!personDossiers || !onOpenPersonModal) return [];
-    return searchPersonDossiers(searchQuery, personDossiers, 6);
-  }, [searchQuery, personDossiers, onOpenPersonModal]);
+    const suggestions = searchPersonDossiers(
+      searchQuery,
+      personDossiers,
+      isCampaignMode ? 18 : 6,
+    );
+    if (!isCampaignMode) return suggestions;
+    return suggestions
+      .filter((person) =>
+        person.events.some((ev) => ev.endYear >= minYear && ev.startYear <= maxYear),
+      )
+      .slice(0, 6);
+  }, [searchQuery, personDossiers, onOpenPersonModal, isCampaignMode, minYear, maxYear]);
 
   useEffect(() => {
     setHighlightedPersonIdx(-1);
@@ -155,18 +166,25 @@ export const FilterPanel = memo(function FilterPanel({
   }, []);
 
   const showPersonSuggestions = isSearchFocused && personSuggestions.length > 0;
-  const isFullRange =
-    yearFrom === minYear &&
-    yearTo === maxYear &&
-    !selectedRulerId &&
-    !searchQuery &&
-    !onlySynced &&
-    syncLinkTypeFilter === 'all' &&
-    !selectedPersonDossier &&
-    !selectedSyncTag &&
-    selectedMacroRegion === 'all' &&
-    !branchPairFilter &&
-    !auditUnlinkedMode;
+  const isFullRange = isCampaignMode
+    ? yearFrom === minYear &&
+      yearTo === maxYear &&
+      !searchQuery &&
+      !onlySynced &&
+      syncLinkTypeFilter === 'all' &&
+      !selectedPersonDossier &&
+      !auditUnlinkedMode
+    : yearFrom === minYear &&
+      yearTo === maxYear &&
+      !selectedRulerId &&
+      !searchQuery &&
+      !onlySynced &&
+      syncLinkTypeFilter === 'all' &&
+      !selectedPersonDossier &&
+      !selectedSyncTag &&
+      selectedMacroRegion === 'all' &&
+      !branchPairFilter &&
+      !auditUnlinkedMode;
 
   const selectedSyncTagMeta = useMemo(
     () => (selectedSyncTag ? syncTagOptions.find((t) => t.tag === selectedSyncTag) ?? null : null),
@@ -262,7 +280,11 @@ export const FilterPanel = memo(function FilterPanel({
                 setIsSearchFocused(false);
               }
             }}
-            placeholder="Поиск по событиям, предпосылкам, итогам, личностям (Витте, Сперанский...), договорам..."
+            placeholder={
+              isCampaignMode
+                ? 'Поиск по операциям кампании, командующим, фронтам, итогам…'
+                : 'Поиск по событиям, предпосылкам, итогам, личностям (Витте, Сперанский...), договорам...'
+            }
             aria-autocomplete="list"
             aria-expanded={showPersonSuggestions}
             className="w-full rounded-xl bg-slate-950/90 border border-slate-700/80 pl-9 pr-8 py-1.5 text-xs sm:text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-400 transition-colors"
@@ -332,38 +354,40 @@ export const FilterPanel = memo(function FilterPanel({
         </div>
 
         <div className="flex flex-wrap items-center justify-between lg:justify-end gap-1.5 shrink-0">
-          {/* Всегда видимый фильтр по географическому макрорегиону */}
-          <div className="flex items-center gap-1 bg-slate-950/85 border border-slate-800 rounded-xl px-2 py-1">
-            <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <select
-              aria-label="Фильтр по макрорегиону"
-              value={selectedMacroRegion}
-              onChange={(e) => onSelectMacroRegion(e.target.value as MacroRegionId)}
-              className={`bg-transparent text-xs font-mono transition-colors cursor-pointer focus:outline-none max-w-[190px] sm:max-w-[225px] ${
-                selectedMacroRegion !== 'all'
-                  ? 'text-amber-200 font-semibold'
-                  : 'text-slate-300'
-              }`}
-              title="Фильтр исторических событий по географическому макрорегиону"
-            >
-              {MACRO_REGION_OPTIONS.map((opt) => (
-                <option key={opt.id} value={opt.id} className="bg-slate-950 text-slate-100">
-                  {opt.label} ({macroRegionCounts[opt.id] ?? 0})
-                </option>
-              ))}
-            </select>
-            {selectedMacroRegion !== 'all' && (
-              <button
-                type="button"
-                onClick={() => onSelectMacroRegion('all')}
-                aria-label="Сбросить фильтр по макрорегиону"
-                title="Сбросить фильтр по макрорегиону"
-                className="p-0.5 rounded text-amber-300 hover:text-white cursor-pointer shrink-0"
+          {/* Фильтр по географическому макрорегиону (только для общего атласа) */}
+          {!isCampaignMode && (
+            <div className="flex items-center gap-1 bg-slate-950/85 border border-slate-800 rounded-xl px-2 py-1">
+              <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <select
+                aria-label="Фильтр по макрорегиону"
+                value={selectedMacroRegion}
+                onChange={(e) => onSelectMacroRegion(e.target.value as MacroRegionId)}
+                className={`bg-transparent text-xs font-mono transition-colors cursor-pointer focus:outline-none max-w-[190px] sm:max-w-[225px] ${
+                  selectedMacroRegion !== 'all'
+                    ? 'text-amber-200 font-semibold'
+                    : 'text-slate-300'
+                }`}
+                title="Фильтр исторических событий по географическому макрорегиону"
               >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
+                {MACRO_REGION_OPTIONS.map((opt) => (
+                  <option key={opt.id} value={opt.id} className="bg-slate-950 text-slate-100">
+                    {opt.label} ({macroRegionCounts[opt.id] ?? 0})
+                  </option>
+                ))}
+              </select>
+              {selectedMacroRegion !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => onSelectMacroRegion('all')}
+                  aria-label="Сбросить фильтр по макрорегиону"
+                  title="Сбросить фильтр по макрорегиону"
+                  className="p-0.5 rounded text-amber-300 hover:text-white cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
 
           <div className="flex lg:hidden items-center gap-1.5 bg-slate-950/80 border border-slate-800 rounded-xl px-2.5 py-1 text-xs font-mono">
             <span className="text-slate-400">Окно:</span>
@@ -393,15 +417,19 @@ export const FilterPanel = memo(function FilterPanel({
               type="button"
               onClick={onResetFilters}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-transparent hover:bg-slate-800/75 text-xs font-mono font-medium text-amber-300 hover:text-amber-200 transition-colors cursor-pointer whitespace-nowrap shrink-0"
-              title="Сбросить поисковый запрос, теги, пару веток, аудит, правителя и вернуть весь диапазон"
+              title={
+                isCampaignMode
+                  ? `Сбросить поиск, связи и вернуть весь период кампании (${minYear}–${maxYear})`
+                  : 'Сбросить поисковый запрос, теги, пару веток, аудит, правителя и вернуть весь диапазон'
+              }
             >
               <RotateCcw className="w-3.5 h-3.5 shrink-0" />
-              <span>Все века</span>
+              <span>{isCampaignMode ? 'Вся кампания' : 'Все века'}</span>
             </button>
           )}
 
-          {/* Главная доминирующая кнопка быстрого старта (Primary Entry Point) */}
-          {primaryHotPreset && (
+          {/* Главная доминирующая кнопка быстрого старта (только для общего атласа) */}
+          {!isCampaignMode && primaryHotPreset && (
             <button
               type="button"
               onClick={() =>
@@ -424,16 +452,17 @@ export const FilterPanel = memo(function FilterPanel({
         </div>
       </div>
 
-      {/* Вторая строка: 4 акцентных «горячих» узла быстрого старта + тихий ряд веков */}
-      <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/60 min-w-0">
-        <div
-          ref={slicesRailRef}
-          className="flex-1 min-w-0 flex items-center gap-1.5 flex-nowrap overflow-x-auto no-scrollbar scroll-smooth py-0.5"
-        >
-          <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-amber-300 shrink-0 whitespace-nowrap mr-0.5">
-            <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-            <span className="hidden sm:inline">Горячие узлы:</span>
-          </span>
+      {/* Вторая строка: 4 акцентных «горячих» узла быстрого старта + тихий ряд веков (скрыты в режиме кампании) */}
+      {!isCampaignMode && (
+        <div className="flex items-center gap-1.5 pt-1.5 border-t border-slate-800/60 min-w-0">
+          <div
+            ref={slicesRailRef}
+            className="flex-1 min-w-0 flex items-center gap-1.5 flex-nowrap overflow-x-auto no-scrollbar scroll-smooth py-0.5"
+          >
+            <span className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-amber-300 shrink-0 whitespace-nowrap mr-0.5">
+              <Flame className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span className="hidden sm:inline">Горячие узлы:</span>
+            </span>
 
           {hotPresets.map((preset) => {
             const isActive = yearFrom === preset.from && yearTo === preset.to && !selectedRulerId;
@@ -517,13 +546,16 @@ export const FilterPanel = memo(function FilterPanel({
           </button>
         </div>
       </div>
+      )}
 
       {/* Раскрываемый блок «Профи-режим анализа» (Карта полос + Режим кампаний + аналитические фильтры) */}
       {isAdvancedExpanded && (
         <div className="pt-2 border-t border-slate-800/80 space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono text-slate-400">
             <span>
-              Профи-режим анализа: карта полос, режим кампаний, связи, сюжеты, пары веток, сравнение периодов и досье окна
+              {isCampaignMode
+                ? 'Режим кампании: поиск, узловые связи, досье, карта полос и выбор кампании'
+                : 'Профи-режим анализа: карта полос, режим кампаний, связи, сюжеты, пары веток, сравнение периодов и досье окна'}
             </span>
             <button
               type="button"
@@ -578,8 +610,10 @@ export const FilterPanel = memo(function FilterPanel({
               </select>
             </div>
 
-            {/* Сюжет синхронизации (syncTags) */}
-            <div className="flex items-center gap-1.5 min-w-[210px] flex-1 sm:flex-initial">
+            {!isCampaignMode && (
+              <>
+                {/* Сюжет синхронизации (syncTags) */}
+                <div className="flex items-center gap-1.5 min-w-[210px] flex-1 sm:flex-initial">
               <Tag className="w-3.5 h-3.5 text-sky-400 shrink-0" />
               <select
                 aria-label="Фильтр по сюжету синхронизации"
@@ -708,6 +742,8 @@ export const FilterPanel = memo(function FilterPanel({
                 </button>
               )}
             </div>
+              </>
+            )}
           </div>
 
           <div className="pt-2 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-2">
@@ -735,6 +771,52 @@ export const FilterPanel = memo(function FilterPanel({
                   <span>Досье окна ({yearFrom}–{yearTo})</span>
                 </button>
               )}
+
+              {onToggleOverlapMap && (
+                <button
+                  type="button"
+                  aria-pressed={isOverlapMapExpanded}
+                  aria-expanded={isOverlapMapExpanded}
+                  onClick={onToggleOverlapMap}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono font-semibold transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
+                    isOverlapMapExpanded
+                      ? 'bg-emerald-500/20 border-emerald-400/65 text-emerald-100 hover:bg-emerald-500/30'
+                      : 'bg-emerald-500/10 border-emerald-500/35 text-emerald-100 hover:bg-emerald-500/20 hover:border-emerald-400/60'
+                  }`}
+                  title={
+                    isOverlapMapExpanded
+                      ? 'Свернуть детальную гистограмму и горизонтальные полосы веток'
+                      : 'Раскрыть детальную гистограмму и горизонтальные полосы правлений и тематических веток'
+                  }
+                >
+                  <Layers className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                  <span>
+                    {typeof overlapLanesCount === 'number'
+                      ? `Карта полос (${overlapLanesCount})`
+                      : 'Карта полос'}
+                  </span>
+                </button>
+              )}
+
+              {onOpenCampaignCatalogModal && campaignPacksCount > 0 && (
+                <button
+                  type="button"
+                  onClick={onOpenCampaignCatalogModal}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-mono font-semibold transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
+                    isCampaignMode
+                      ? 'bg-amber-500/20 border-amber-400/65 text-amber-100 hover:bg-amber-500/30'
+                      : 'bg-amber-500/10 border-amber-500/35 text-amber-100 hover:bg-amber-500/20 hover:border-amber-400/60'
+                  }`}
+                  title={
+                    isCampaignMode && activeCampaignTitle
+                      ? `Активна кампания «${activeCampaignTitle}» — открыть каталог кампаний для выбора или выхода`
+                      : 'Открыть окно выбора исторических кампаний (углублённый разбор по державам и фронтам)'
+                  }
+                >
+                  <Swords className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                  <span>Режим кампаний ({campaignPacksCount})</span>
+                </button>
+              )}
             </div>
 
             {/* Внутренний режим аудита связей — доступен только при ?debug=audit */}
@@ -758,92 +840,12 @@ export const FilterPanel = memo(function FilterPanel({
               </button>
             )}
           </div>
-          {campaignPacks.length > 0 && onOpenCampaign && (
-            <div className="pt-2 border-t border-slate-800/60 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-mono">
-                <span className="inline-flex items-center gap-1.5 font-semibold text-amber-300">
-                  <Swords className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                  <span>Режим кампаний (углублённый разбор по державам и фронтам)</span>
-                </span>
-                <span className="text-slate-400 tabular-nums">
-                  пакетов: {campaignPacks.length}
-                </span>
-              </div>
-
-              <div className="divide-y divide-slate-800/75 border-y border-slate-800/75">
-                {campaignPacks.map((pack) => {
-                  const isActive = activeCampaignId === pack.id;
-                  const isPackLoading = loadingCampaignId === pack.id;
-                  const isPackLoaded = loadedCampaignIds.includes(pack.id);
-                  return (
-                    <div
-                      key={pack.id}
-                      className="py-2 flex flex-wrap items-center justify-between gap-2.5"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span className="text-xs sm:text-sm font-semibold text-white">
-                            {pack.title}
-                          </span>
-                          <span aria-hidden="true" className="text-slate-600 font-mono text-xs">
-                            ·
-                          </span>
-                          <span className="text-[11px] font-mono text-amber-300/90 tabular-nums">
-                            {pack.yearFrom}–{pack.yearTo} гг.
-                          </span>
-                          <span aria-hidden="true" className="text-slate-600 font-mono text-xs">
-                            ·
-                          </span>
-                          <span className="text-[11px] font-mono text-slate-400 tabular-nums">
-                            {pack.branches.length} веток · {pack.eventCount} операций
-                            {isPackLoaded && !isActive ? ' · в памяти' : ''}
-                          </span>
-                        </div>
-                        {pack.description && (
-                          <p className="text-xs text-slate-400 leading-relaxed mt-0.5 max-w-3xl">
-                            {pack.description}
-                          </p>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        disabled={isPackLoading}
-                        onClick={() => {
-                          if (isActive && onExitCampaign) {
-                            onExitCampaign();
-                          } else {
-                            onOpenCampaign(pack.id);
-                          }
-                        }}
-                        className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
-                          isActive
-                            ? 'bg-amber-500 text-slate-950 border-amber-400 hover:bg-amber-400'
-                            : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/45 text-amber-100'
-                        }`}
-                      >
-                        {isPackLoading ? (
-                          <>
-                            <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                            <span>Загрузка…</span>
-                          </>
-                        ) : isActive ? (
-                          <span>Выйти из кампании</span>
-                        ) : (
-                          <span>Открыть кампанию</span>
-                        )}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
         </div>
       )}
 
       {/* Активная сводка выбранного региона, сюжета или режима аудита */}
-      {((showAuditTools && auditUnlinkedMode) || selectedSyncTagMeta || selectedMacroRegionMeta) && (
+      {((showAuditTools && auditUnlinkedMode) ||
+        (!isCampaignMode && (selectedSyncTagMeta || selectedMacroRegionMeta))) && (
         <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs">
           <div className="flex flex-wrap items-center gap-2 text-slate-300 min-w-0">
             {showAuditTools && auditUnlinkedMode && (
@@ -851,18 +853,21 @@ export const FilterPanel = memo(function FilterPanel({
                 Режим аудита: показаны узлы с параллелями в других ветках без проставленных связей (кандидатов: <strong className="font-mono tabular-nums">{auditFlaggedCount}</strong>).
               </span>
             )}
-            {showAuditTools && auditUnlinkedMode && (selectedSyncTagMeta || selectedMacroRegionMeta) && (
-              <span aria-hidden="true" className="text-slate-600">·</span>
-            )}
-            {selectedSyncTagMeta && (
+            {showAuditTools &&
+              auditUnlinkedMode &&
+              !isCampaignMode &&
+              (selectedSyncTagMeta || selectedMacroRegionMeta) && (
+                <span aria-hidden="true" className="text-slate-600">·</span>
+              )}
+            {!isCampaignMode && selectedSyncTagMeta && (
               <span className="text-sky-200">
                 Сюжет: <strong>{selectedSyncTagMeta.label}</strong> (всего в базе: <span className="font-mono tabular-nums">{selectedSyncTagMeta.eventCount}</span>)
               </span>
             )}
-            {selectedSyncTagMeta && selectedMacroRegionMeta && (
+            {!isCampaignMode && selectedSyncTagMeta && selectedMacroRegionMeta && (
               <span aria-hidden="true" className="text-slate-600">·</span>
             )}
-            {selectedMacroRegionMeta && (
+            {!isCampaignMode && selectedMacroRegionMeta && (
               <span className="inline-flex items-center gap-1.5 text-amber-200">
                 <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span>
@@ -872,7 +877,7 @@ export const FilterPanel = memo(function FilterPanel({
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
-            {selectedMacroRegionMeta && (
+            {!isCampaignMode && selectedMacroRegionMeta && (
               <button
                 type="button"
                 onClick={() => onSelectMacroRegion('all')}

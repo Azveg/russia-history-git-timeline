@@ -36,7 +36,7 @@
 
 ## 3. Утверждённые стандарты модальных окон
 
-Все аналитические окна используют единую навигационную шапку `DossierModalHeader`, перехват фокуса `useModalFocusTrap`, `AcademicCitationPanel` и `SourcesApparatusSection`.
+Все аналитические окна используют единую навигационную шапку `DossierModalHeader` (с компактным значком выгрузки в Markdown `.md` рядом с кнопкой закрытия), перехват фокуса `useModalFocusTrap` и `SourcesApparatusSection`.
 
 | Окно | Компонент | Вкладки и структура |
 | :--- | :--- | :--- |

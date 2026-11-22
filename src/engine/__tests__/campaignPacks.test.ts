@@ -6,11 +6,14 @@ import {
   ATLAS_CONTEXT_BRANCH_IDS,
   buildCampaignBranchMask,
   countCampaignEventsInRange,
+  createCampaignReturnSnapshot,
   filterEventsForAnalyticsScope,
   findCampaignPackById,
   findCampaignPackForEvent,
   getCampaignBranches,
+  getCampaignEntryFilterDefaults,
   getCoreBranches,
+  resolveCampaignNavigationBounds,
 } from '../campaigns/campaignPacks';
 import { traceCausalChain } from '../campaigns/causalChainTracer';
 import { computeBranchPresetMap } from '../layout/subLaneLayout';
@@ -438,4 +441,76 @@ describe('campaignPacks — on-demand WWI architecture, operation profiles & dee
     expect(finalSnap!.files['data/campaigns/ww1/russia.json']).toBeDefined();
     expect(finalSnap!.files['data/campaigns/ww1/usa.json']).toBeDefined();
   });
+
+  it('creates an isolated return snapshot, resets entry filters, and scopes navigation bounds during Campaign Mode', () => {
+    const sourceState = {
+      yearFrom: 1682,
+      yearTo: 1825,
+      branchSelection: {
+        preset: 'overview' as const,
+        overrides: { MAIN_RULERS: true, WAR_CONTINENTAL: false },
+      },
+      collapsedParents: { WAR_GROUP: true },
+      selectedEra: 'imperial',
+      selectedReign: 'peter1',
+      searchQuery: 'Северная',
+      selectedPersonKey: 'peter_i',
+      selectedSyncTag: 'baltic',
+      selectedMacroRegion: 'europe' as const,
+      branchPairFilter: { branchA: 'MAIN_RULERS', branchB: 'WAR_CONTINENTAL' },
+      onlyWithSyncLinks: true,
+      syncLinkTypeFilter: 'causal' as const,
+      auditUnlinkedMode: true,
+    };
+
+    const snapshot = createCampaignReturnSnapshot(sourceState);
+    expect(snapshot).toEqual(sourceState);
+
+    // Mutate source objects to verify deep isolation of nested structures
+    sourceState.branchSelection.overrides.MAIN_RULERS = false;
+    sourceState.collapsedParents.WAR_GROUP = false;
+    sourceState.branchPairFilter.branchA = 'REFORMS_ECO';
+
+    expect(snapshot.branchSelection.overrides.MAIN_RULERS).toBe(true);
+    expect(snapshot.collapsedParents.WAR_GROUP).toBe(true);
+    expect(snapshot.branchPairFilter?.branchA).toBe('MAIN_RULERS');
+
+    const ww1Pack = {
+      id: 'ww1',
+      title: 'Первая мировая война',
+      shortTitle: 'ПМВ 1914–1918',
+      description: 'Углублённый разбор кампании 1914–1918 гг.',
+      yearFrom: 1914,
+      yearTo: 1918,
+      parentEventId: '1914-ww1',
+      branchIds: ['WW1_RUSSIA', 'WW1_GERMANY'],
+      filePaths: ['data/campaigns/ww1/russia.json'],
+      branches: [],
+      eventCount: 31,
+    };
+
+    const entryDefaults = getCampaignEntryFilterDefaults(ww1Pack);
+    expect(entryDefaults).toEqual({
+      yearFrom: 1914,
+      yearTo: 1918,
+      selectedEra: 'ALL',
+      selectedReign: 'ALL',
+      searchQuery: '',
+      selectedPersonKey: null,
+      selectedSyncTag: null,
+      selectedMacroRegion: 'all',
+      branchPairFilter: null,
+      onlyWithSyncLinks: false,
+      syncLinkTypeFilter: 'all',
+      auditUnlinkedMode: false,
+    });
+
+    const atlasBounds = { minYear: 862, maxYear: 2000 };
+    expect(resolveCampaignNavigationBounds(null, atlasBounds)).toEqual(atlasBounds);
+    expect(resolveCampaignNavigationBounds(ww1Pack, atlasBounds)).toEqual({
+      minYear: 1914,
+      maxYear: 1918,
+    });
+  });
 });
+

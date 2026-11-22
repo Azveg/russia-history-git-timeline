@@ -86,6 +86,7 @@ interface TopControlBarProps {
   isFiltersCollapsed: boolean;
   activeAdvancedCount?: number;
   onToggleFilters: () => void;
+  isCampaignMode?: boolean;
 }
 
 const QUICK_PRESETS: Array<{ id: BranchPresetId; label: string; shortLabel: string; title: string }> = [
@@ -163,6 +164,7 @@ export const TopControlBar = memo(function TopControlBar({
   isFiltersCollapsed,
   activeAdvancedCount = 0,
   onToggleFilters,
+  isCampaignMode = false,
 }: TopControlBarProps) {
   const barRef = useRef<HTMLDivElement | null>(null);
   const presetPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -268,23 +270,23 @@ export const TopControlBar = memo(function TopControlBar({
   const resolvedEras = useMemo(() => resolveMacroEras(eras), [eras]);
 
   const timeBreadcrumb = useMemo(() => {
-    const hasExplicitRuler = Boolean(selectedRulerId && selectedRulerId !== 'ALL');
+    const hasExplicitRuler = !isCampaignMode && Boolean(selectedRulerId && selectedRulerId !== 'ALL');
     const explicitRuler = hasExplicitRuler
       ? (rulers.find((r) => r.id === selectedRulerId) ?? null)
       : null;
 
-    const hasExplicitEra = Boolean(selectedEraId && selectedEraId !== 'ALL');
+    const hasExplicitEra = !isCampaignMode && Boolean(selectedEraId && selectedEraId !== 'ALL');
     const explicitEra = hasExplicitEra
       ? (resolvedEras.find((era) => era.id === selectedEraId) ?? null)
       : null;
 
-    const isNarrowedWindow = yearFrom > minYear || yearTo < maxYear;
+    const isNarrowedWindow = yearFrom !== minYear || yearTo !== maxYear;
     const matchedRulerByBounds =
-      !explicitRuler && !explicitEra && isNarrowedWindow
+      !isCampaignMode && !explicitRuler && !explicitEra && isNarrowedWindow
         ? (rulers.find((r) => r.startYear === yearFrom && r.endYear === yearTo) ?? null)
         : null;
     const matchedEraByBounds =
-      !explicitRuler && !explicitEra && !matchedRulerByBounds && isNarrowedWindow
+      !isCampaignMode && !explicitRuler && !explicitEra && !matchedRulerByBounds && isNarrowedWindow
         ? (resolvedEras.find(
             (era) =>
               Math.max(minYear, era.startYear) === yearFrom &&
@@ -292,14 +294,16 @@ export const TopControlBar = memo(function TopControlBar({
           ) ?? null)
         : null;
     const matchedPresetByBounds =
-      !explicitRuler && !explicitEra && !matchedRulerByBounds && !matchedEraByBounds && isNarrowedWindow
+      !isCampaignMode && !explicitRuler && !explicitEra && !matchedRulerByBounds && !matchedEraByBounds && isNarrowedWindow
         ? (EPOCH_SLICE_PRESETS.find((p) => p.from === yearFrom && p.to === yearTo) ?? null)
         : null;
 
     const isFiltered = Boolean(explicitRuler || explicitEra || isNarrowedWindow);
 
-    let label = 'Все века';
-    let detailTitle = `Открыть досье всего периода (${yearFrom}–${yearTo} гг.)`;
+    let label = isCampaignMode ? 'Вся кампания' : 'Все века';
+    let detailTitle = isCampaignMode
+      ? `Открыть сводное досье кампании (${yearFrom}–${yearTo} гг.)`
+      : `Открыть досье всего периода (${yearFrom}–${yearTo} гг.)`;
 
     if (explicitRuler) {
       label = explicitRuler.shortRuler;
@@ -327,7 +331,7 @@ export const TopControlBar = memo(function TopControlBar({
       isFiltered,
       detailTitle,
     };
-  }, [selectedRulerId, selectedEraId, rulers, resolvedEras, yearFrom, yearTo, minYear, maxYear]);
+  }, [isCampaignMode, selectedRulerId, selectedEraId, rulers, resolvedEras, yearFrom, yearTo, minYear, maxYear]);
 
   const handleResetTimeBreadcrumb = () => {
     if (onResetTimeFilter) {
@@ -359,97 +363,101 @@ export const TopControlBar = memo(function TopControlBar({
             onToggleCollapseParent={onToggleCollapseParent}
           />
 
-          <EraSelectorPopover
-            eras={eras}
-            enrichedEvents={enrichedEventsForEras}
-            selectedEraId={selectedEraId}
-            yearFrom={yearFrom}
-            yearTo={yearTo}
-            minYear={minYear}
-            maxYear={maxYear}
-            onSelectEra={onSelectEra}
-            onSelectYearRange={onYearRangeChange}
-            onOpenEraModal={onOpenEraModal}
-          />
-
-          <RulerSelectorPopover
-            rulers={rulers}
-            matchingEvents={matchingEvents}
-            selectedRulerId={selectedRulerId}
-            yearFrom={yearFrom}
-            yearTo={yearTo}
-            minYear={minYear}
-            maxYear={maxYear}
-            onJumpToRuler={onJumpToRuler}
-            onFilterByRuler={onFilterByRuler}
-            onOpenRulerModal={onOpenRulerModal}
-          />
-
-          {/* Выпадающее меню «Срез» фиксированной ширины без выезжающей текстовой плашки */}
-          <div ref={presetPopoverRef} className="relative shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsPresetMenuOpen((prev) => !prev)}
-              aria-expanded={isPresetMenuOpen}
-              aria-haspopup="menu"
-              className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
-                isPresetMenuOpen
-                  ? 'bg-slate-800/95 border-amber-400/60 text-white'
-                  : activePreset
-                    ? 'bg-amber-500/12 border-amber-500/40 text-amber-200 hover:bg-amber-500/20'
-                    : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
-              }`}
-              title={activePreset ? `Текущий срез: ${activePreset.label}` : 'Выбрать быстрый срез веток'}
-            >
-              <Compass className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
-              <span>Срез</span>
-              <ChevronDown
-                className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
-                  isPresetMenuOpen ? 'rotate-180' : ''
-                }`}
+          {!isCampaignMode && (
+            <>
+              <EraSelectorPopover
+                eras={eras}
+                enrichedEvents={enrichedEventsForEras}
+                selectedEraId={selectedEraId}
+                yearFrom={yearFrom}
+                yearTo={yearTo}
+                minYear={minYear}
+                maxYear={maxYear}
+                onSelectEra={onSelectEra}
+                onSelectYearRange={onYearRangeChange}
+                onOpenEraModal={onOpenEraModal}
               />
-            </button>
 
-            {isPresetMenuOpen && (
-              <div
-                role="menu"
-                aria-label="Сценарии веток"
-                className="fixed xl:absolute left-3 right-3 xl:left-0 xl:right-auto top-[calc(var(--top-bar-height,49px)+6px)] xl:top-full xl:mt-2 max-w-md xl:max-w-none xl:w-80 mx-auto xl:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-1.5 space-y-1 animate-modal"
-              >
-                <div className="px-2.5 py-1 text-[10px] font-mono text-slate-400 border-b border-slate-800/80">
-                  Быстрый выбор тематических линий
-                </div>
-                {QUICK_PRESETS.map((preset) => {
-                  const active = isPresetActive(preset.id);
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      role="menuitem"
-                      onClick={() => {
-                        onApplyPreset(preset.id);
-                        setIsPresetMenuOpen(false);
-                      }}
-                      className={`w-full flex items-start justify-between gap-2 px-2.5 py-2 rounded-xl text-left transition-colors cursor-pointer ${
-                        active
-                          ? 'bg-amber-500/15 border border-amber-500/45 text-white'
-                          : 'hover:bg-slate-900 border border-transparent text-slate-200'
-                      }`}
-                    >
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-white">{preset.label}</div>
-                        <div className="text-[11px] text-slate-400 leading-snug mt-0.5">{preset.title}</div>
-                      </div>
-                      {active && <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />}
-                    </button>
-                  );
-                })}
+              <RulerSelectorPopover
+                rulers={rulers}
+                matchingEvents={matchingEvents}
+                selectedRulerId={selectedRulerId}
+                yearFrom={yearFrom}
+                yearTo={yearTo}
+                minYear={minYear}
+                maxYear={maxYear}
+                onJumpToRuler={onJumpToRuler}
+                onFilterByRuler={onFilterByRuler}
+                onOpenRulerModal={onOpenRulerModal}
+              />
+
+              {/* Выпадающее меню «Срез» фиксированной ширины без выезжающей текстовой плашки */}
+              <div ref={presetPopoverRef} className="relative shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsPresetMenuOpen((prev) => !prev)}
+                  aria-expanded={isPresetMenuOpen}
+                  aria-haspopup="menu"
+                  className={`px-2 sm:px-2.5 py-1.5 rounded-lg border text-[11px] font-mono font-semibold inline-flex items-center gap-1 sm:gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
+                    isPresetMenuOpen
+                      ? 'bg-slate-800/95 border-amber-400/60 text-white'
+                      : activePreset
+                        ? 'bg-amber-500/12 border-amber-500/40 text-amber-200 hover:bg-amber-500/20'
+                        : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
+                  }`}
+                  title={activePreset ? `Текущий срез: ${activePreset.label}` : 'Выбрать быстрый срез веток'}
+                >
+                  <Compass className="w-3.5 h-3.5 text-amber-400/85 shrink-0" />
+                  <span>Срез</span>
+                  <ChevronDown
+                    className={`hidden min-[380px]:block w-3.5 h-3.5 text-slate-500 transition-transform ${
+                      isPresetMenuOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </button>
+
+                {isPresetMenuOpen && (
+                  <div
+                    role="menu"
+                    aria-label="Сценарии веток"
+                    className="fixed xl:absolute left-3 right-3 xl:left-0 xl:right-auto top-[calc(var(--top-bar-height,49px)+6px)] xl:top-full xl:mt-2 max-w-md xl:max-w-none xl:w-80 mx-auto xl:mx-0 bg-[#090e1c] border border-slate-700/90 rounded-2xl shadow-2xl z-50 p-1.5 space-y-1 animate-modal"
+                  >
+                    <div className="px-2.5 py-1 text-[10px] font-mono text-slate-400 border-b border-slate-800/80">
+                      Быстрый выбор тематических линий
+                    </div>
+                    {QUICK_PRESETS.map((preset) => {
+                      const active = isPresetActive(preset.id);
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            onApplyPreset(preset.id);
+                            setIsPresetMenuOpen(false);
+                          }}
+                          className={`w-full flex items-start justify-between gap-2 px-2.5 py-2 rounded-xl text-left transition-colors cursor-pointer ${
+                            active
+                              ? 'bg-amber-500/15 border border-amber-500/45 text-white'
+                              : 'hover:bg-slate-900 border border-transparent text-slate-200'
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-white">{preset.label}</div>
+                            <div className="text-[11px] text-slate-400 leading-snug mt-0.5">{preset.title}</div>
+                          </div>
+                          {active && <Check className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </>
+          )}
 
           {/* Выпадающее меню фильтра по макрорегионам фиксированной ширины */}
-          {onSelectMacroRegion && (
+          {!isCampaignMode && onSelectMacroRegion && (
             <div ref={regionPopoverRef} className="relative shrink-0">
               <button
                 type="button"
@@ -588,7 +596,7 @@ export const TopControlBar = memo(function TopControlBar({
                 title={
                   canZoomOut
                     ? `Отдалить масштаб ×2 вокруг центра окна (${Math.round((yearFrom + yearTo) / 2)} г.)`
-                    : 'Уже открыт весь период (862–2000)'
+                    : `Уже открыт весь период (${minYear}–${maxYear})`
                 }
                 className={`p-1.5 rounded-md inline-flex items-center justify-center transition-colors ${
                   canZoomOut
@@ -662,8 +670,16 @@ export const TopControlBar = memo(function TopControlBar({
                 <button
                   type="button"
                   onClick={handleResetTimeBreadcrumb}
-                  aria-label="Сбросить временной фильтр ко всем векам"
-                  title={`Сбросить фильтр и вернуть все века (${minYear}–${maxYear})`}
+                  aria-label={
+                    isCampaignMode
+                      ? 'Сбросить временной фильтр к диапазону кампании'
+                      : 'Сбросить временной фильтр ко всем векам'
+                  }
+                  title={
+                    isCampaignMode
+                      ? `Сбросить фильтр и вернуть период кампании (${minYear}–${maxYear})`
+                      : `Сбросить фильтр и вернуть все века (${minYear}–${maxYear})`
+                  }
                   className="pr-1.5 pl-1 py-1 border-l border-amber-500/25 text-amber-300/85 hover:text-white hover:bg-amber-500/20 rounded-r-lg transition-colors cursor-pointer shrink-0"
                 >
                   <X className="w-3.5 h-3.5" />

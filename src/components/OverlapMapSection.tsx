@@ -1,10 +1,8 @@
 import {
   ArrowUpRight,
   BarChart3,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ChevronUp,
   Crosshair,
   Crown,
   Flame,
@@ -46,6 +44,7 @@ interface OverlapMapSectionProps {
   onSelectYearRange: (from: number, to: number, recordHistory?: boolean) => void;
   zoomHistoryCount: number;
   lastZoomStep: { from: number; to: number } | null;
+  isExpanded: boolean;
   onStepBackZoom: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -82,6 +81,7 @@ export const OverlapMapSection = memo(function OverlapMapSection({
   onSelectYearRange,
   zoomHistoryCount,
   lastZoomStep,
+  isExpanded,
   onStepBackZoom,
   onZoomIn,
   onZoomOut,
@@ -89,7 +89,6 @@ export const OverlapMapSection = memo(function OverlapMapSection({
   onApplySpanPreset,
   onRecordZoomCheckpoint,
 }: OverlapMapSectionProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
   const [cursorState, setCursorState] = useState<ScanCursorState | null>(null);
   const [pinnedState, setPinnedState] = useState<ScanCursorState | null>(null);
   const [viewportTick, setViewportTick] = useState(0);
@@ -555,24 +554,6 @@ export const OverlapMapSection = memo(function OverlapMapSection({
                 <span>Досье окна</span>
               </button>
             )}
-            <button
-              type="button"
-              onClick={() => setIsExpanded((prev) => !prev)}
-              aria-expanded={isExpanded}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md border text-[11px] font-mono transition-colors cursor-pointer whitespace-nowrap ${
-                isExpanded
-                  ? 'bg-slate-800 border-amber-400/50 text-amber-200 hover:bg-slate-700'
-                  : 'bg-transparent border-transparent text-slate-300 hover:bg-slate-800/70 hover:text-white'
-              }`}
-              title="Показать или скрыть детальную гистограмму и горизонтальные полосы правлений и тематических веток"
-            >
-              <span>
-                {isExpanded
-                  ? 'Свернуть карту полос'
-                  : `Карта полос (${visibleEventBranches.length + (rulersActive ? 1 : 0)})`}
-              </span>
-              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            </button>
           </div>
         </div>
 
@@ -623,7 +604,7 @@ export const OverlapMapSection = memo(function OverlapMapSection({
                   title={
                     canZoomOut
                       ? `Отдалить временное окно в 2 раза вокруг ${midYear} г.`
-                      : 'Открыт весь доступный период (862–2000 гг.)'
+                      : `Открыт весь доступный период (${minYear}–${maxYear} гг.)`
                   }
                 >
                   <Minus className="w-3.5 h-3.5 shrink-0" />
@@ -670,7 +651,7 @@ export const OverlapMapSection = memo(function OverlapMapSection({
                   title={
                     canShiftLeft
                       ? `Сдвинуть окно раньше на ${shiftStepYears} л.`
-                      : 'Достигнуто начало хронологии (862 г.)'
+                      : `Достигнуто начало хронологии (${minYear} г.)`
                   }
                 >
                   <ChevronLeft className="w-3.5 h-3.5 shrink-0" />
@@ -691,7 +672,7 @@ export const OverlapMapSection = memo(function OverlapMapSection({
                   title={
                     canShiftRight
                       ? `Сдвинуть окно позже на ${shiftStepYears} л.`
-                      : 'Достигнут конец хронологии (2000 г.)'
+                      : `Достигнут конец хронологии (${maxYear} г.)`
                   }
                 >
                   <span>Позже</span>
@@ -719,30 +700,34 @@ export const OverlapMapSection = memo(function OverlapMapSection({
               >
                 Весь период
               </button>
-              <button
-                type="button"
-                onClick={() => onApplySpanPreset(100)}
-                className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  isCenturyActive
-                    ? 'bg-amber-500 text-slate-950 font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                title={`Масштаб в 100 лет вокруг центра окна (${midYear} г.)`}
-              >
-                Столетие (100 л.)
-              </button>
-              <button
-                type="button"
-                onClick={() => onApplySpanPreset(10)}
-                className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  isDecadeActive
-                    ? 'bg-amber-500 text-slate-950 font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
-                }`}
-                title={`Масштаб в 10 лет вокруг ${midYear} г. (включает помесячную детализацию оси)`}
-              >
-                Десятилетие (10 л.)
-              </button>
+              {globalSpan >= 100 && (
+                <button
+                  type="button"
+                  onClick={() => onApplySpanPreset(100)}
+                  className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    isCenturyActive
+                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                  title={`Масштаб в 100 лет вокруг центра окна (${midYear} г.)`}
+                >
+                  Столетие (100 л.)
+                </button>
+              )}
+              {globalSpan >= 10 && (
+                <button
+                  type="button"
+                  onClick={() => onApplySpanPreset(10)}
+                  className={`px-2 py-1 rounded-md transition-colors whitespace-nowrap cursor-pointer ${
+                    isDecadeActive
+                      ? 'bg-amber-500 text-slate-950 font-bold'
+                      : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                  }`}
+                  title={`Масштаб в 10 лет вокруг ${midYear} г. (включает помесячную детализацию оси)`}
+                >
+                  Десятилетие (10 л.)
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => onApplySpanPreset(2)}
