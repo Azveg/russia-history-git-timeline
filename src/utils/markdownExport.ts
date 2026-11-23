@@ -23,6 +23,7 @@ import {
   SOURCE_TYPE_LABELS,
   aggregatePersonSources,
   buildCanonicalDeepLink,
+  formatBibTeXCitation,
   formatGostCitation,
   type CitationTarget,
 } from './citation';
@@ -183,10 +184,15 @@ function appendSourcesAndCitation(
 
   if (citationTarget) {
     const gost = formatGostCitation(citationTarget, now);
+    const bibtex = formatBibTeXCitation(citationTarget, now);
     const deepLink = buildCanonicalDeepLink(citationTarget.kind, citationTarget.id);
-    lines.push(`**Ссылка (ГОСТ Р 7.0.5):** ${gost}`);
+    lines.push(`**Ссылка (ГОСТ Р 7.0.100–2018):** ${gost}`);
     lines.push('');
     lines.push(`**Постоянный адрес:** ${deepLink}`);
+    lines.push('');
+    lines.push('```bibtex');
+    lines.push(bibtex);
+    lines.push('```');
     lines.push('');
   }
 }

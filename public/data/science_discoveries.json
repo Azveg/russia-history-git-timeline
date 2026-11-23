@@ -53,11 +53,6 @@
           "targetId": "1110-kirik-novgorodets",
           "type": "sync_context",
           "label": "Создано 26-летним иеродиаконом Антониева монастыря Кириком Новгородцем в 1136 году"
-        },
-        {
-          "targetId": "1687-slavyano-greko-latinskaya",
-          "type": "sync_context",
-          "label": "Древнерусская традиция монастырской учёности XII века предшествовала институционализации высшего образования в России в XVII–XVIII веках"
         }
       ],
       "subEvents": [

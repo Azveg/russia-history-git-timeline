@@ -2,6 +2,7 @@ import {
   BookMarked,
   Check,
   Copy,
+  Download,
   ExternalLink,
   Link2,
   Quote,
@@ -14,6 +15,7 @@ import {
   SOURCE_TYPE_LABELS,
   buildCanonicalDeepLink,
   copyTextToClipboard,
+  downloadBibTeXFile,
   formatBibTeXCitation,
   formatGostCitation,
   isPrimaryGroupSource,
@@ -38,7 +40,7 @@ export function CiteTriggerButton({ isOpen, onToggle }: CiteTriggerButtonProps) 
           ? 'bg-amber-500/20 border-amber-400/70 text-amber-100 font-semibold'
           : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-amber-200'
       }`}
-      title="Сформировать библиографическую ссылку по ГОСТ Р 7.0.5 / BibTeX и скопировать канонический Deep Link"
+      title="Сформировать библиографическую ссылку по ГОСТ Р 7.0.100–2018 / BibTeX и скопировать канонический Deep Link"
     >
       <Quote className="w-3.5 h-3.5 shrink-0" />
       <span>Цитировать</span>
@@ -127,7 +129,7 @@ export function AcademicCitationPanel({
                   : 'text-slate-300 hover:text-white'
               }`}
             >
-              ГОСТ Р 7.0.5
+              ГОСТ Р 7.0.100–2018
             </button>
             <button
               type="button"
@@ -243,14 +245,35 @@ interface SourcesApparatusSectionProps {
   sources: Array<SourceEntry | AggregatedSourceEntry>;
   onSelectOriginCard?: (cardId: string) => void;
   contextHint?: string;
+  citationTarget?: CitationTarget;
 }
 
 export function SourcesApparatusSection({
   sources,
   onSelectOriginCard,
   contextHint,
+  citationTarget,
 }: SourcesApparatusSectionProps) {
   const [expanded, setExpanded] = useState(false);
+  const [copiedCitationMode, setCopiedCitationMode] = useState<'gost' | 'bibtex' | 'bibfile' | null>(null);
+
+  const handleCitationAction = async (mode: 'gost' | 'bibtex' | 'bibfile') => {
+    if (!citationTarget) return;
+    let ok = false;
+    if (mode === 'gost') {
+      ok = await copyTextToClipboard(formatGostCitation(citationTarget));
+    } else if (mode === 'bibtex') {
+      ok = await copyTextToClipboard(formatBibTeXCitation(citationTarget));
+    } else {
+      ok = downloadBibTeXFile(citationTarget);
+    }
+    if (ok) {
+      setCopiedCitationMode(mode);
+      window.setTimeout(() => {
+        setCopiedCitationMode((prev) => (prev === mode ? null : prev));
+      }, 2200);
+    }
+  };
 
   const primaryList = useMemo(
     () => sources.filter((s) => isPrimaryGroupSource(s.type)),
@@ -398,6 +421,57 @@ export function SourcesApparatusSection({
               : `Показать все источники (${sources.length})`}
           </span>
         </button>
+      )}
+
+      {citationTarget && (
+        <div className="pt-3 border-t border-slate-800/75 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
+          <span className="text-slate-400">Библиографическая ссылка:</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleCitationAction('gost')}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/90 text-amber-200 hover:text-amber-100 transition-colors cursor-pointer"
+              title="Скопировать ссылку по стандарту ГОСТ Р 7.0.100–2018"
+            >
+              {copiedCitationMode === 'gost' ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5 text-amber-400" />
+              )}
+              <span>
+                {copiedCitationMode === 'gost' ? 'ГОСТ скопирован' : 'ГОСТ Р 7.0.100–2018'}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleCitationAction('bibtex')}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/90 text-sky-200 hover:text-sky-100 transition-colors cursor-pointer"
+              title="Скопировать запись BibTeX в буфер обмена"
+            >
+              {copiedCitationMode === 'bibtex' ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Copy className="w-3.5 h-3.5 text-sky-400" />
+              )}
+              <span>{copiedCitationMode === 'bibtex' ? 'BibTeX скопирован' : 'BibTeX'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => void handleCitationAction('bibfile')}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/90 text-slate-300 hover:text-white transition-colors cursor-pointer"
+              title="Скачать библиографическую запись в формате BibTeX (.bib)"
+            >
+              {copiedCitationMode === 'bibfile' ? (
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+              ) : (
+                <Download className="w-3.5 h-3.5 text-slate-400" />
+              )}
+              <span>{copiedCitationMode === 'bibfile' ? 'Файл .bib скачан' : 'Скачать .bib'}</span>
+            </button>
+          </div>
+        </div>
       )}
     </section>
   );

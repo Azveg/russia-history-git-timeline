@@ -1,5 +1,12 @@
 export type AxisResolution = 'year' | 'month' | 'day';
 
+export interface ExactJdnWindow {
+  fromJdn: number;
+  toJdn: number;
+}
+
+export type SpanPreset = 'all' | 100 | 10 | 1 | 'month' | 'week';
+
 export type CalendarStyle = 'julian' | 'gregorian' | 'both';
 
 export interface DateCalendarParts {
@@ -536,6 +543,9 @@ export interface FilterState {
   activeBranches: Record<string, boolean>;
   yearFrom: number;
   yearTo: number;
+  fromJdn?: number;
+  toJdn?: number;
+  includeUndatedYearEvents?: boolean;
   selectedEra: string;
   selectedReign: string;
   searchQuery: string;
@@ -659,6 +669,7 @@ export interface DensityBin {
 export interface YearRangeStep {
   from: number;
   to: number;
+  exactDateRange?: ExactJdnWindow | null;
 }
 
 export interface BranchLaneLayout {

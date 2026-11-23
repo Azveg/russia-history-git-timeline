@@ -165,31 +165,58 @@ function validateRecordCalendarConsistency(relFromPublic, entityLabel, record, s
       return;
     }
 
-    for (const [df, raw] of dateFields) {
-      if (typeof raw !== 'string' || !DATE_REGEX.test(raw.trim())) continue;
-      if (style === 'both') {
+    if (style === 'both') {
+      const validRawDates = dateFields
+        .filter(([, raw]) => typeof raw === 'string' && DATE_REGEX.test(raw.trim()))
+        .map(([df, raw]) => [df, raw.trim()]);
+      let hasDualWindowDate = false;
+      for (const [df, raw] of validRawDates) {
         if (isBeforeGregorianIntro(raw, style)) {
           addError(
             relFromPublic,
             `${entityLabel}: calendarStyle="both" недопустим для ${df}="${raw}" (до введения григорианского календаря 15 октября 1582 г.). Используйте "julian".`,
           );
-        } else if (isModernGregorianEra(raw, style)) {
-          addError(
-            relFromPublic,
-            `${entityLabel}: calendarStyle="both" недопустим для ${df}="${raw}" (после реформы 14 февраля 1918 г.). Используйте "gregorian".`,
-          );
+        } else if (!isModernGregorianEra(raw, style)) {
+          hasDualWindowDate = true;
         }
-      } else if (style === 'julian' && isModernGregorianEra(raw, style)) {
+      }
+      if (validRawDates.length > 0 && !hasDualWindowDate) {
         addError(
           relFromPublic,
-          `${entityLabel}: calendarStyle="julian" недопустим для ${df}="${raw}" (после реформы 14 февраля 1918 г.). Используйте "gregorian".`,
-        );
-      } else if (style === 'gregorian' && isBeforeGregorianIntro(raw, style)) {
-        addError(
-          relFromPublic,
-          `${entityLabel}: calendarStyle="gregorian" недопустим для ${df}="${raw}" (до 15 октября 1582 г.). Используйте "julian".`,
+          `${entityLabel}: calendarStyle="both" недопустим, так как все указанные даты относятся к периоду после реформы 14 февраля 1918 г. Используйте "gregorian".`,
         );
       }
+    } else {
+      for (const [df, raw] of dateFields) {
+        if (typeof raw !== 'string' || !DATE_REGEX.test(raw.trim())) continue;
+        if (style === 'julian' && isModernGregorianEra(raw, style)) {
+          addError(
+            relFromPublic,
+            `${entityLabel}: calendarStyle="julian" недопустим для ${df}="${raw}" (после реформы 14 февраля 1918 г.). Используйте "gregorian".`,
+          );
+        } else if (style === 'gregorian' && isBeforeGregorianIntro(raw, style)) {
+          addError(
+            relFromPublic,
+            `${entityLabel}: calendarStyle="gregorian" недопустим для ${df}="${raw}" (до 15 октября 1582 г.). Используйте "julian".`,
+          );
+        }
+      }
+    }
+
+    // ПСИ-предохранитель: дореволюционные российские карточки с точной датой в окне 1582–1918 не должны скрывать ст. ст. через "gregorian"
+    const isWorldOrCampaignFile =
+      relFromPublic.startsWith('data/world') || relFromPublic.startsWith('data/campaigns/');
+    const isGlobalMacroEvent = record.id === '1914-ww1';
+    if (
+      !isWorldOrCampaignFile &&
+      !isGlobalMacroEvent &&
+      style === 'gregorian' &&
+      isDateInDualCalendarWindow(record.startDate, style)
+    ) {
+      addWarning(
+        relFromPublic,
+        `${entityLabel}: российское событие с дореволюционной датой startDate="${record.startDate}" использует calendarStyle="gregorian" вместо "both" или "julian".`,
+      );
     }
   } else if (
     isDateInDualCalendarWindow(record.startDate) ||
@@ -323,7 +350,7 @@ const STYLE_CLICHE_STEMS = [
 ];
 const STYLE_CLICHE_REGEX = new RegExp(`(?<![а-яё])(${STYLE_CLICHE_STEMS.join('|')})[а-яё]*`, 'gi');
 const STYLE_WHITELIST_REGEX =
-  /триумфальн[а-яё]*\s+(арк|ворот|колонн|площад)|кровав[а-яё]*\s+воскресень|сулейман[а-яё\sI()кануни]*великолепн|бессмерт(ие|ии|ию|ия)/i;
+  /триумфальн[а-яё]*\s+(арк|ворот|колонн|площад)|кровав[а-яё]*\s+воскресень|сулейман[а-яё\sI()кануни]*великолепн|бессмерт(ие|ии|ию|ия)|б\.\s*в\.\s*громов[а-яё]*/i;
 
 function addError(file, msg) {
   errors.push(`[ERROR] ${file}: ${msg}`);
@@ -1200,6 +1227,29 @@ function main() {
               );
             }
           }
+        }
+      }
+    }
+
+    // ПСИ-предохранитель: синхронные связи sync_context не могут соединять события с разрывом > 15 лет
+    if (lnk.type === 'sync_context') {
+      const fromMeta = allNodesById.get(lnk.from);
+      const toMeta = allNodesById.get(lnk.to);
+      if (
+        typeof fromMeta?.startYear === 'number' &&
+        typeof fromMeta?.endYear === 'number' &&
+        typeof toMeta?.startYear === 'number' &&
+        typeof toMeta?.endYear === 'number'
+      ) {
+        const gapYears = Math.max(
+          0,
+          Math.max(fromMeta.startYear, toMeta.startYear) - Math.min(fromMeta.endYear, toMeta.endYear),
+        );
+        if (gapYears > 15) {
+          addWarning(
+            lnk.file,
+            `Несинхронная связь sync_context (${lnk.source}): "${lnk.from}" (${fromMeta.startYear}–${fromMeta.endYear}) и "${lnk.to}" (${toMeta.startYear}–${toMeta.endYear}) разделены интервалом ${gapYears} л. (> 15 лет). Используйте причинный или ретроспективный тип связи.`,
+          );
         }
       }
     }

@@ -21,9 +21,9 @@ function loadRulersJson(): RulerPeriod[] {
 }
 
 describe('Ruler biographical profiles & PeriodSummary analytics', () => {
-  it('ensures all 77 rulers in public/data/rulers.json have structured biography, keyActions, innerCircle, and legacy', () => {
+  it('ensures all 78 rulers in public/data/rulers.json have structured biography, keyActions, innerCircle, and legacy', () => {
     const rulers = loadRulersJson();
-    expect(rulers).toHaveLength(77);
+    expect(rulers).toHaveLength(78);
 
     for (const ruler of rulers) {
       const sanitized = sanitizeRulerPeriod(ruler);

@@ -476,6 +476,13 @@ export function PersonDossierModal({
               sources={aggregatedSources}
               onSelectOriginCard={onSelectCard}
               contextHint="Источники собраны из биографической карточки и ключевых исторических вех с участием деятеля."
+              citationTarget={{
+                kind: 'person',
+                id: dossier.key,
+                title: dossier.displayName,
+                period: yearSpanLabel,
+                sectionLabel: 'досье исторического деятеля',
+              }}
             />
           )}
         </div>

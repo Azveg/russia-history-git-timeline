@@ -1,7 +1,15 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
+import { jdnToGregorian } from '../engine/calendar/jdnCalendar';
+import {
+  isFullCalendarYearRange,
+  jdnToIsoDate,
+  parseIsoDateToJdn,
+  yearEndJdn,
+  yearStartJdn,
+} from '../engine/layout/adaptiveOverlapScale';
 import { parseMacroRegionParam } from '../engine/regionFilter';
 import { serializeBranchSelection, type BranchSelection } from '../engine/layout/branchSelection';
-import type { MacroRegionId } from '../types/timeline';
+import type { ExactJdnWindow, MacroRegionId } from '../types/timeline';
 
 export interface TimelineUrlModalState {
   activeCardId: string | null;
@@ -14,12 +22,14 @@ export interface TimelineUrlModalState {
 export interface UseTimelineUrlSyncOptions extends TimelineUrlModalState {
   yearFrom: number | undefined;
   yearTo: number | undefined;
+  exactDateRange?: ExactJdnWindow | null;
   searchQuery: string;
   selectedMacroRegion?: MacroRegionId;
   activeCampaignId?: string | null;
   branchSelection: BranchSelection;
   setYearFrom: Dispatch<SetStateAction<number | undefined>>;
   setYearTo: Dispatch<SetStateAction<number | undefined>>;
+  setExactDateRange?: Dispatch<SetStateAction<ExactJdnWindow | null>>;
   setSearchQuery: Dispatch<SetStateAction<string>>;
   setSelectedMacroRegion?: Dispatch<SetStateAction<MacroRegionId>>;
   restoreBranchSelection: (value: string | null) => void;
@@ -34,10 +44,43 @@ export interface UseTimelineUrlSyncOptions extends TimelineUrlModalState {
 }
 
 export function parseInitialYearBound<T extends number | undefined>(
-  params: URLSearchParams, key: 'from' | 'to', fallback: T,
+  params: URLSearchParams,
+  key: 'from' | 'to',
+  fallback: T,
 ): number | T {
-  const raw = params.get(key);
-  return raw && /^\d{1,4}$/.test(raw) && Number(raw) > 0 ? Number(raw) : fallback;
+  const raw = params.get(key)?.trim();
+  if (!raw) return fallback;
+  if (/^\d{1,4}$/.test(raw) && Number(raw) > 0) {
+    return Number(raw);
+  }
+  const isoJdn = parseIsoDateToJdn(raw);
+  if (isoJdn !== null) {
+    return jdnToGregorian(isoJdn).year;
+  }
+  return fallback;
+}
+
+export function parseInitialExactDateRange(params: URLSearchParams): ExactJdnWindow | null {
+  const rawFrom = params.get('from')?.trim() ?? '';
+  const rawTo = params.get('to')?.trim() ?? '';
+  const hasExactDateSyntax = rawFrom.includes('-') || rawTo.includes('-');
+  if (!hasExactDateSyntax) return null;
+
+  const parseBound = (raw: string, isEnd: boolean): number | null => {
+    if (!raw) return null;
+    const iso = parseIsoDateToJdn(raw);
+    if (iso !== null) return iso;
+    if (/^\d{1,4}$/.test(raw) && Number(raw) > 0) {
+      return isEnd ? yearEndJdn(Number(raw)) : yearStartJdn(Number(raw));
+    }
+    return null;
+  };
+
+  const fromJdn = parseBound(rawFrom, false);
+  const toJdn = parseBound(rawTo, true);
+  if (fromJdn === null || toJdn === null || fromJdn > toJdn) return null;
+  if (isFullCalendarYearRange(fromJdn, toJdn)) return null;
+  return { fromJdn, toJdn };
 }
 
 export function resolveUrlYearRange(
@@ -82,6 +125,7 @@ export function safelyReplaceUrlState(nextUrl: string): boolean {
 export function useTimelineUrlSync({
   yearFrom,
   yearTo,
+  exactDateRange = null,
   searchQuery,
   selectedMacroRegion = 'all',
   activeCampaignId = null,
@@ -93,6 +137,7 @@ export function useTimelineUrlSync({
   branchSelection,
   setYearFrom,
   setYearTo,
+  setExactDateRange,
   setSearchQuery,
   setSelectedMacroRegion,
   restoreBranchSelection,
@@ -102,11 +147,16 @@ export function useTimelineUrlSync({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
-      if (yearFrom !== undefined) params.set('from', String(yearFrom));
-      else params.delete('from');
+      if (exactDateRange) {
+        params.set('from', jdnToIsoDate(exactDateRange.fromJdn));
+        params.set('to', jdnToIsoDate(exactDateRange.toJdn));
+      } else {
+        if (yearFrom !== undefined) params.set('from', String(yearFrom));
+        else params.delete('from');
 
-      if (yearTo !== undefined) params.set('to', String(yearTo));
-      else params.delete('to');
+        if (yearTo !== undefined) params.set('to', String(yearTo));
+        else params.delete('to');
+      }
 
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
       else params.delete('search');
@@ -151,6 +201,7 @@ export function useTimelineUrlSync({
   }, [
     yearFrom,
     yearTo,
+    exactDateRange,
     searchQuery,
     selectedMacroRegion,
     activeCampaignId,
@@ -167,6 +218,9 @@ export function useTimelineUrlSync({
       const params = new URLSearchParams(window.location.search);
       setYearFrom(parseInitialYearBound(params, 'from', undefined));
       setYearTo(parseInitialYearBound(params, 'to', undefined));
+      if (setExactDateRange) {
+        setExactDateRange(parseInitialExactDateRange(params));
+      }
       setSearchQuery(params.get('search') ?? '');
       if (setSelectedMacroRegion) {
         setSelectedMacroRegion(parseMacroRegionParam(params.get('region')));
@@ -191,6 +245,7 @@ export function useTimelineUrlSync({
   }, [
     setYearFrom,
     setYearTo,
+    setExactDateRange,
     setSearchQuery,
     setSelectedMacroRegion,
     restoreBranchSelection,

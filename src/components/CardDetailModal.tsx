@@ -1324,7 +1324,18 @@ export function CardDetailModal({
               </section>
 
               {card.sources && card.sources.length > 0 && (
-                <SourcesApparatusSection sources={card.sources} />
+                <SourcesApparatusSection
+                  sources={card.sources}
+                  citationTarget={{
+                    kind: 'card',
+                    id: card.id,
+                    title: card.title,
+                    period: card.period,
+                    sectionLabel: parentBranchObj
+                      ? `раздел «${parentBranchObj.short} · ${branchObj.label}»`
+                      : `раздел «${branchObj.label}»`,
+                  }}
+                />
               )}
             </div>
           )}

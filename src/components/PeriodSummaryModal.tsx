@@ -811,7 +811,16 @@ export function PeriodSummaryModal({
                   onToggle={() => setShowSources((prev) => !prev)}
                 >
                   <div className="pt-2">
-                    <SourcesApparatusSection sources={ruler.sources} />
+                    <SourcesApparatusSection
+                      sources={ruler.sources}
+                      citationTarget={{
+                        kind: 'ruler',
+                        id: ruler.id,
+                        title: ruler.reignTitle,
+                        period: ruler.reignPeriod,
+                        sectionLabel: 'досье правителя',
+                      }}
+                    />
                   </div>
                 </CollapsibleSection>
               )}

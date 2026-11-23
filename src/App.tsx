@@ -57,6 +57,7 @@ import {
 } from './engine/layout/branchSelection';
 import { useTimelineData } from './hooks/useTimelineData';
 import {
+  parseInitialExactDateRange,
   parseInitialYearBound,
   parseWindowRangeParam,
   resolveUrlYearRange,
@@ -75,7 +76,10 @@ import {
   buildUnifiedTimelineStream,
   collapseAllParentBranches,
   computeMacroRegionCounts,
+  computePresetJdnWindow,
+  computeShiftedJdnWindow,
   computeTimelineYearBounds,
+  computeZoomedJdnWindow,
   countExpectedLeafBranchesFromManifest,
   createCampaignReturnSnapshot,
   doesIntervalBelongToEra,
@@ -84,6 +88,8 @@ import {
   filterEventsForAnalyticsScope,
   findCampaignPackById,
   findCampaignPackForEvent,
+  findSmartAnchorJdn,
+  formatWindowRangeLabel,
   getCampaignBranches,
   getCampaignEntryFilterDefaults,
   getCoreBranches,
@@ -91,6 +97,8 @@ import {
   getEnrichedEvents,
   getEventEffectiveEndYear,
   getEventEffectiveStartYear,
+  getEventJdnBounds,
+  getInclusiveWindowDays,
   getLeafBranches,
   getVisibleLanes,
   getWindowLinksVisibilitySummary,
@@ -98,10 +106,13 @@ import {
   intersectsTimeWindow,
   isBranchOrDescendantActive,
   isEventBranchActive,
+  normalizeWindowRangeFromJdn,
   resolveCampaignNavigationBounds,
   resolveEventBranch,
   resolveMacroEras,
   resolvePersonKey,
+  yearEndJdn,
+  yearStartJdn,
   type CampaignReturnSnapshot,
   type CommandSearchItem,
 } from './engine/timelineEngine';
@@ -114,10 +125,12 @@ import type {
   CausalChainMode,
   CausalChainResult,
   ComparisonTarget,
+  ExactJdnWindow,
   FocusDepth,
   FocusScope,
   MacroRegionId,
   ModalHistoryItem,
+  SpanPreset,
   PersonDossier,
   SyncLinkTypeFilter,
   SyncTagOption,
@@ -208,6 +221,10 @@ export default function App() {
 
   const [requestedYearFrom, setYearFrom] = useState(() => parseInitialYearBound(initialParams, 'from', undefined));
   const [requestedYearTo, setYearTo] = useState(() => parseInitialYearBound(initialParams, 'to', undefined));
+  const [exactDateRange, setExactDateRange] = useState<ExactJdnWindow | null>(() =>
+    parseInitialExactDateRange(initialParams),
+  );
+  const [includeUndatedYearEvents, setIncludeUndatedYearEvents] = useState(false);
   const [activeCampaignId, setActiveCampaignId] = useState<string | null>(() => {
     const raw = initialParams.get('campaign')?.trim();
     return raw ? raw : null;
@@ -533,6 +550,7 @@ export default function App() {
   useTimelineUrlSync({
     yearFrom: requestedYearFrom,
     yearTo: requestedYearTo,
+    exactDateRange,
     searchQuery,
     selectedMacroRegion,
     activeCampaignId,
@@ -544,6 +562,7 @@ export default function App() {
     branchSelection,
     setYearFrom,
     setYearTo,
+    setExactDateRange,
     setSearchQuery,
     setSelectedMacroRegion,
     restoreBranchSelection,
@@ -763,6 +782,7 @@ export default function App() {
     auditCandidateMap,
     focusDistanceMap,
     outOfWindowFocusCount,
+    omittedYearOnlyCount,
   } = useMemo(() => {
     if (!manifest) {
       return {
@@ -776,12 +796,16 @@ export default function App() {
         auditCandidateMap: new Map(),
         focusDistanceMap: new Map<string, number>(),
         outOfWindowFocusCount: 0,
+        omittedYearOnlyCount: 0,
       };
     }
     return buildUnifiedTimelineStream(enrichedEvents, rulers, manifest, branches, {
       activeBranches: effectiveActiveBranches,
       yearFrom,
       yearTo,
+      fromJdn: exactDateRange?.fromJdn,
+      toJdn: exactDateRange?.toJdn,
+      includeUndatedYearEvents,
       selectedEra,
       selectedReign,
       searchQuery,
@@ -811,6 +835,8 @@ export default function App() {
     effectiveActiveBranches,
     yearFrom,
     yearTo,
+    exactDateRange,
+    includeUndatedYearEvents,
     selectedEra,
     selectedReign,
     searchQuery,
@@ -1342,11 +1368,23 @@ export default function App() {
     }
   }, [modalHistory]);
 
-  function handleRecordZoomStep(fromVal: number, toVal: number) {
+  function handleRecordZoomStep(
+    fromVal: number,
+    toVal: number,
+    exactRange: ExactJdnWindow | null = null,
+  ) {
     setZoomHistory((prev) => {
       const top = prev[prev.length - 1];
-      if (top && top.from === fromVal && top.to === toVal) return prev;
-      return [...prev.slice(-19), { from: fromVal, to: toVal }];
+      if (
+        top &&
+        top.from === fromVal &&
+        top.to === toVal &&
+        (top.exactDateRange?.fromJdn ?? null) === (exactRange?.fromJdn ?? null) &&
+        (top.exactDateRange?.toJdn ?? null) === (exactRange?.toJdn ?? null)
+      ) {
+        return prev;
+      }
+      return [...prev.slice(-19), { from: fromVal, to: toVal, exactDateRange: exactRange }];
     });
   }
 
@@ -1360,46 +1398,49 @@ export default function App() {
     }
     const baseFrom = effectiveYearFrom;
     const baseTo = effectiveYearTo;
-    if (y1 === baseFrom && y2 === baseTo && y1 === yearFrom && y2 === yearTo) return;
-    if (recordHistory && (y1 !== baseFrom || y2 !== baseTo)) {
-      handleRecordZoomStep(baseFrom, baseTo);
+    const clearingSubYear = exactDateRange !== null;
+    if (!clearingSubYear && y1 === baseFrom && y2 === baseTo && y1 === yearFrom && y2 === yearTo) {
+      return;
+    }
+    if (recordHistory && (clearingSubYear || y1 !== baseFrom || y2 !== baseTo)) {
+      handleRecordZoomStep(baseFrom, baseTo, exactDateRange);
     }
     if (focusedEventId && !focusKeepWindow) {
       setFocusKeepWindow(true);
     }
+    setExactDateRange(null);
     setYearFrom(y1);
     setYearTo(y2);
   }
 
-  function computeCenteredRange(
-    currentFrom: number,
-    currentTo: number,
-    targetSpan: number,
-    minYear: number,
-    maxYear: number,
-  ): { from: number; to: number } {
-    const fullSpan = Math.max(2, maxYear - minYear);
-    const clampedSpan = Math.max(2, Math.min(fullSpan, Math.round(targetSpan)));
-    if (clampedSpan >= fullSpan) {
-      return { from: minYear, to: maxYear };
+  function handleExactDateRangeChange(fromJdn: number, toJdn: number, recordHistory = true) {
+    const normalized = normalizeWindowRangeFromJdn(
+      fromJdn,
+      toJdn,
+      effectiveNavBounds.minYear,
+      effectiveNavBounds.maxYear,
+    );
+    const sameYears = normalized.yearFrom === effectiveYearFrom && normalized.yearTo === effectiveYearTo;
+    const sameExact =
+      (normalized.exactDateRange?.fromJdn ?? null) === (exactDateRange?.fromJdn ?? null) &&
+      (normalized.exactDateRange?.toJdn ?? null) === (exactDateRange?.toJdn ?? null);
+    if (sameYears && sameExact) return;
+
+    if (recordHistory) {
+      handleRecordZoomStep(effectiveYearFrom, effectiveYearTo, exactDateRange);
     }
-    const mid = Math.round((currentFrom + currentTo) / 2);
-    const halfLeft = Math.floor(clampedSpan / 2);
-    let nextFrom = mid - halfLeft;
-    let nextTo = nextFrom + clampedSpan;
-    if (nextFrom < minYear) {
-      nextFrom = minYear;
-      nextTo = Math.min(maxYear, minYear + clampedSpan);
+    if (focusedEventId && !focusKeepWindow) {
+      setFocusKeepWindow(true);
     }
-    if (nextTo > maxYear) {
-      nextTo = maxYear;
-      nextFrom = Math.max(minYear, maxYear - clampedSpan);
-    }
-    return { from: nextFrom, to: nextTo };
+    setSelectedEra('ALL');
+    setSelectedReign('ALL');
+    setYearFrom(normalized.yearFrom);
+    setYearTo(normalized.yearTo);
+    setExactDateRange(normalized.exactDateRange);
   }
 
   function handleRecordZoomCheckpoint() {
-    handleRecordZoomStep(effectiveYearFrom, effectiveYearTo);
+    handleRecordZoomStep(effectiveYearFrom, effectiveYearTo, exactDateRange);
   }
 
   function handleStepBackZoom() {
@@ -1414,75 +1455,107 @@ export default function App() {
       }
       setYearFrom(last.from);
       setYearTo(last.to);
+      setExactDateRange(last.exactDateRange ?? null);
     });
   }
 
-  function handleZoomByFactor(factor: number) {
-    const currentSpan = Math.max(2, effectiveYearTo - effectiveYearFrom);
-    const fullSpan = Math.max(2, effectiveNavBounds.maxYear - effectiveNavBounds.minYear);
-    let targetSpan: number;
-    if (factor < 1) {
-      targetSpan = Math.max(2, Math.floor(currentSpan * factor));
-      if (targetSpan === currentSpan && currentSpan > 2) {
-        targetSpan = currentSpan - 1;
-      }
-    } else {
-      targetSpan = Math.min(fullSpan, Math.max(currentSpan + 2, Math.round(currentSpan * factor)));
-    }
-    const next = computeCenteredRange(
-      effectiveYearFrom,
-      effectiveYearTo,
-      targetSpan,
+  function handleZoomByFactor(factor: number, preferredAnchorJdn?: number) {
+    const currentFromJdn = exactDateRange ? exactDateRange.fromJdn : yearStartJdn(effectiveYearFrom);
+    const currentToJdn = exactDateRange ? exactDateRange.toJdn : yearEndJdn(effectiveYearTo);
+    const currentDays = getInclusiveWindowDays(currentFromJdn, currentToJdn);
+    const shouldSmartCenter = factor < 1 && !exactDateRange && currentDays <= 1500;
+    const anchorJdn =
+      typeof preferredAnchorJdn === 'number'
+        ? preferredAnchorJdn
+        : shouldSmartCenter
+          ? findSmartAnchorJdn(matchingEvents, currentFromJdn, currentToJdn, null, branches)
+          : undefined;
+
+    const next = computeZoomedJdnWindow(
+      currentFromJdn,
+      currentToJdn,
+      factor,
       effectiveNavBounds.minYear,
       effectiveNavBounds.maxYear,
+      anchorJdn,
     );
-    if (next.from === effectiveYearFrom && next.to === effectiveYearTo) return;
+    const unchanged =
+      next.yearFrom === effectiveYearFrom &&
+      next.yearTo === effectiveYearTo &&
+      (next.exactDateRange?.fromJdn ?? null) === (exactDateRange?.fromJdn ?? null) &&
+      (next.exactDateRange?.toJdn ?? null) === (exactDateRange?.toJdn ?? null);
+    if (unchanged) return;
+
     preserveViewportScrollAnchor(() => {
       setSelectedEra('ALL');
       setSelectedReign('ALL');
-      handleYearRangeChange(next.from, next.to, true);
+      if (next.exactDateRange) {
+        handleExactDateRangeChange(next.exactDateRange.fromJdn, next.exactDateRange.toJdn, true);
+      } else {
+        handleYearRangeChange(next.yearFrom, next.yearTo, true);
+      }
     });
   }
 
-  function handleApplySpanPreset(preset: 'all' | 100 | 10 | 2) {
-    const next =
-      preset === 'all'
-        ? { from: effectiveNavBounds.minYear, to: effectiveNavBounds.maxYear }
-        : computeCenteredRange(
-            effectiveYearFrom,
-            effectiveYearTo,
-            preset,
-            effectiveNavBounds.minYear,
-            effectiveNavBounds.maxYear,
-          );
-    if (next.from === effectiveYearFrom && next.to === effectiveYearTo) return;
+  function handleApplySpanPreset(preset: SpanPreset, preferredAnchorJdn?: number) {
+    const currentFromJdn = exactDateRange ? exactDateRange.fromJdn : yearStartJdn(effectiveYearFrom);
+    const currentToJdn = exactDateRange ? exactDateRange.toJdn : yearEndJdn(effectiveYearTo);
+    const anchorJdn =
+      preset === 'week' || preset === 'month' || preset === 1
+        ? findSmartAnchorJdn(matchingEvents, currentFromJdn, currentToJdn, preferredAnchorJdn, branches)
+        : preferredAnchorJdn;
+
+    const next = computePresetJdnWindow(
+      preset,
+      currentFromJdn,
+      currentToJdn,
+      effectiveNavBounds.minYear,
+      effectiveNavBounds.maxYear,
+      anchorJdn,
+    );
+    const unchanged =
+      next.yearFrom === effectiveYearFrom &&
+      next.yearTo === effectiveYearTo &&
+      (next.exactDateRange?.fromJdn ?? null) === (exactDateRange?.fromJdn ?? null) &&
+      (next.exactDateRange?.toJdn ?? null) === (exactDateRange?.toJdn ?? null);
+    if (unchanged) return;
+
     preserveViewportScrollAnchor(() => {
       setSelectedEra('ALL');
       setSelectedReign('ALL');
-      handleYearRangeChange(next.from, next.to, true);
+      if (next.exactDateRange) {
+        handleExactDateRangeChange(next.exactDateRange.fromJdn, next.exactDateRange.toJdn, true);
+      } else {
+        handleYearRangeChange(next.yearFrom, next.yearTo, true);
+      }
     });
   }
 
   function handleShiftWindow(direction: -1 | 1) {
-    const currentSpan = Math.max(2, effectiveYearTo - effectiveYearFrom);
-    const fullSpan = Math.max(2, effectiveNavBounds.maxYear - effectiveNavBounds.minYear);
-    if (currentSpan >= fullSpan) return;
-    const step = Math.max(1, Math.round(currentSpan / 2)) * direction;
-    let nextFrom = effectiveYearFrom + step;
-    let nextTo = effectiveYearTo + step;
-    if (nextFrom < effectiveNavBounds.minYear) {
-      nextFrom = effectiveNavBounds.minYear;
-      nextTo = Math.min(effectiveNavBounds.maxYear, effectiveNavBounds.minYear + currentSpan);
-    }
-    if (nextTo > effectiveNavBounds.maxYear) {
-      nextTo = effectiveNavBounds.maxYear;
-      nextFrom = Math.max(effectiveNavBounds.minYear, effectiveNavBounds.maxYear - currentSpan);
-    }
-    if (nextFrom === effectiveYearFrom && nextTo === effectiveYearTo) return;
+    const currentFromJdn = exactDateRange ? exactDateRange.fromJdn : yearStartJdn(effectiveYearFrom);
+    const currentToJdn = exactDateRange ? exactDateRange.toJdn : yearEndJdn(effectiveYearTo);
+    const next = computeShiftedJdnWindow(
+      currentFromJdn,
+      currentToJdn,
+      direction,
+      effectiveNavBounds.minYear,
+      effectiveNavBounds.maxYear,
+    );
+    const unchanged =
+      next.yearFrom === effectiveYearFrom &&
+      next.yearTo === effectiveYearTo &&
+      (next.exactDateRange?.fromJdn ?? null) === (exactDateRange?.fromJdn ?? null) &&
+      (next.exactDateRange?.toJdn ?? null) === (exactDateRange?.toJdn ?? null);
+    if (unchanged) return;
+
     preserveViewportScrollAnchor(() => {
       setSelectedEra('ALL');
       setSelectedReign('ALL');
-      handleYearRangeChange(nextFrom, nextTo, true);
+      if (next.exactDateRange) {
+        handleExactDateRangeChange(next.exactDateRange.fromJdn, next.exactDateRange.toJdn, true);
+      } else {
+        handleYearRangeChange(next.yearFrom, next.yearTo, true);
+      }
     });
   }
 
@@ -1543,6 +1616,8 @@ export default function App() {
     setForceShowHiddenLinks(false);
     setDismissedHiddenLinks(false);
     setZoomHistory([]);
+    setExactDateRange(null);
+    setIncludeUndatedYearEvents(false);
     if (activeCampaignPack) {
       setYearFrom(activeCampaignPack.yearFrom);
       setYearTo(activeCampaignPack.yearTo);
@@ -1628,6 +1703,8 @@ export default function App() {
     setAuditUnlinkedMode(defaults.auditUnlinkedMode);
     setFocusedEventId(null);
     setZoomHistory([]);
+    setExactDateRange(null);
+    setIncludeUndatedYearEvents(false);
     setYearFrom(defaults.yearFrom);
     setYearTo(defaults.yearTo);
     void loadCampaignPack(pack.id);
@@ -1645,6 +1722,8 @@ export default function App() {
     setFocusedEventId(null);
     setIsOverlapMapExpanded(false);
     setZoomHistory([]);
+    setExactDateRange(null);
+    setIncludeUndatedYearEvents(false);
     if (snap) {
       setYearFrom(snap.yearFrom);
       setYearTo(snap.yearTo);
@@ -1821,7 +1900,15 @@ export default function App() {
       adjustments.push('снята изоляция цепочки');
     }
 
-    if (target.endYear < yearFrom || target.startYear > yearTo) {
+    if (exactDateRange) {
+      const targetBounds = getEventJdnBounds(target, branches);
+      if (targetBounds.endJdn < exactDateRange.fromJdn || targetBounds.startJdn > exactDateRange.toJdn) {
+        const nextFrom = Math.min(yearFrom, target.startYear);
+        const nextTo = Math.max(yearTo, target.endYear);
+        handleYearRangeChange(nextFrom, nextTo);
+        adjustments.push(`окно расширено до ${nextFrom}–${nextTo}`);
+      }
+    } else if (target.endYear < yearFrom || target.startYear > yearTo) {
       const nextFrom = Math.min(yearFrom, target.startYear);
       const nextTo = Math.max(yearTo, target.endYear);
       handleYearRangeChange(nextFrom, nextTo);
@@ -2182,6 +2269,7 @@ export default function App() {
     handleJumpToRuler,
     handleSelectReign,
     handleYearRangeChange,
+    handleExactDateRangeChange,
     handleStepBackZoom,
     handleZoomByFactor,
     handleShiftWindow,
@@ -2214,6 +2302,7 @@ export default function App() {
     handleJumpToRuler,
     handleSelectReign,
     handleYearRangeChange,
+    handleExactDateRangeChange,
     handleStepBackZoom,
     handleZoomByFactor,
     handleShiftWindow,
@@ -2346,8 +2435,19 @@ export default function App() {
   }, []);
   const stableClearPersonFilter = useCallback(() => setSelectedPersonKey(null), []);
   const stableResetFiltersOnly = useCallback(() => actionsRef.current.handleResetFiltersOnly(), []);
+  const stableSelectExactDateRange = useCallback(
+    (fromJdn: number, toJdn: number, recordHistory = true) =>
+      actionsRef.current.handleExactDateRangeChange(fromJdn, toJdn, recordHistory),
+    [],
+  );
+  const stableToggleIncludeUndatedYearEvents = useCallback(() => {
+    preserveViewportScrollAnchor(() => {
+      setIncludeUndatedYearEvents((prev) => !prev);
+    });
+  }, []);
   const stableApplySpanPreset = useCallback(
-    (preset: 'all' | 100 | 10 | 2) => actionsRef.current.handleApplySpanPreset(preset),
+    (preset: SpanPreset, preferredAnchorJdn?: number) =>
+      actionsRef.current.handleApplySpanPreset(preset, preferredAnchorJdn),
     [],
   );
   const stableRecordZoomCheckpoint = useCallback(
@@ -2442,6 +2542,7 @@ export default function App() {
         onSelectMacroRegion={stableSelectMacroRegionTop}
         yearFrom={effectiveYearFrom}
         yearTo={effectiveYearTo}
+        exactDateRange={exactDateRange}
         minYear={effectiveNavBounds.minYear}
         maxYear={effectiveNavBounds.maxYear}
         onYearRangeChange={stableSelectYearRangeResettingEra}
@@ -2617,6 +2718,10 @@ export default function App() {
               activeBranches={effectiveActiveBranches}
               yearFrom={effectiveYearFrom}
               yearTo={effectiveYearTo}
+              exactDateRange={exactDateRange}
+              omittedYearOnlyCount={omittedYearOnlyCount}
+              includeUndatedYearEvents={includeUndatedYearEvents}
+              onToggleIncludeUndatedYearEvents={stableToggleIncludeUndatedYearEvents}
               minYear={effectiveNavBounds.minYear}
               maxYear={effectiveNavBounds.maxYear}
               hoveredEventId={hoveredEventId}
@@ -2625,6 +2730,7 @@ export default function App() {
               onOpenPeriodModal={handleOpenPeriodModal}
               onOpenWindowModal={handleOpenWindowModal}
               onSelectYearRange={stableSelectYearRangeResettingEra}
+              onSelectExactDateRange={stableSelectExactDateRange}
               zoomHistoryCount={zoomHistory.length}
               lastZoomStep={lastZoomStep}
               isExpanded={isOverlapMapExpanded}
@@ -2636,6 +2742,37 @@ export default function App() {
               onRecordZoomCheckpoint={stableRecordZoomCheckpoint}
             />
           </Suspense>
+        )}
+
+        {exactDateRange && !isOverlapMapExpanded && (omittedYearOnlyCount > 0 || includeUndatedYearEvents) && (
+          <div className="rounded-xl border border-slate-800/80 bg-[#0b1325]/85 px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-slate-300">
+            <span className="tabular-nums">
+              Узкое окно{' '}
+              <strong className="text-amber-300 font-semibold">
+                {formatWindowRangeLabel(exactDateRange.fromJdn, exactDateRange.toJdn, true).full}
+              </strong>
+              {' · '}
+              {includeUndatedYearEvents
+                ? 'показаны все годовые записи без точного дня'
+                : `скрыто годовых записей без точного дня: ${omittedYearOnlyCount}`}
+            </span>
+            <div className="flex items-center gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={stableToggleIncludeUndatedYearEvents}
+                className="text-amber-300 hover:text-amber-200 underline underline-offset-2 cursor-pointer"
+              >
+                {includeUndatedYearEvents ? 'Скрыть неточные' : 'Показать'}
+              </button>
+              <button
+                type="button"
+                onClick={() => handleYearRangeChange(effectiveYearFrom, effectiveYearTo, true)}
+                className="text-slate-400 hover:text-white underline underline-offset-2 cursor-pointer"
+              >
+                Сбросить к годам
+              </button>
+            </div>
+          </div>
         )}
 
         {shouldShowHiddenLinksNotice && (

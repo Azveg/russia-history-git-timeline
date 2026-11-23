@@ -116,7 +116,7 @@
       "linksTo": [
         {
           "targetId": "1113-povest-vremennykh-let",
-          "type": "sync_context",
+          "type": "inspired_by",
           "label": "Памятник высокой книжной культуры Руси эпохи Владимира Мономаха и Мстислава Великого"
         }
       ],

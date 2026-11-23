@@ -46,10 +46,11 @@ function createEmptySphereCounts(): Record<EraEventSphereId, number> {
   };
 }
 
-function chooseBucketCount(spanYears: number): number {
-  if (spanYears <= 12) return Math.max(3, Math.min(6, spanYears + 1));
-  if (spanYears <= 45) return 6;
-  if (spanYears <= 100) return 8;
+function chooseBucketCount(totalYears: number): number {
+  if (totalYears <= 1) return 1;
+  if (totalYears <= 13) return Math.min(totalYears, 6);
+  if (totalYears <= 46) return 6;
+  if (totalYears <= 101) return 8;
   return 10;
 }
 
@@ -77,16 +78,16 @@ export function computeEraAnalyticalProfile(
   if (cached) return cached;
 
   const branchById = new Map(branches.map((b) => [b.id, b]));
-  const span = Math.max(1, safeTo - safeFrom);
-  const bucketCount = chooseBucketCount(span);
+  const totalYears = safeTo - safeFrom + 1;
+  const bucketCount = chooseBucketCount(totalYears);
 
   const buckets: EraIntensityBucket[] = [];
   for (let i = 0; i < bucketCount; i += 1) {
-    const bFrom = Math.round(safeFrom + (span * i) / bucketCount);
+    const bFrom = safeFrom + Math.floor((totalYears * i) / bucketCount);
     const bTo =
       i === bucketCount - 1
         ? safeTo
-        : Math.max(bFrom, Math.round(safeFrom + (span * (i + 1)) / bucketCount) - 1);
+        : safeFrom + Math.floor((totalYears * (i + 1)) / bucketCount) - 1;
     const label = bFrom === bTo ? `${bFrom}` : `${bFrom}–${bTo}`;
     buckets.push({
       index: i,
@@ -107,7 +108,7 @@ export function computeEraAnalyticalProfile(
 
     // Bucket assignment by clamped event startYear (or activeFrom for biographies)
     const anchorYear = Math.max(safeFrom, Math.min(safeTo, ev.startYear));
-    let bucketIdx = Math.floor(((anchorYear - safeFrom) / (span + 1)) * bucketCount);
+    let bucketIdx = Math.floor(((anchorYear - safeFrom) / totalYears) * bucketCount);
     if (bucketIdx < 0) bucketIdx = 0;
     if (bucketIdx >= bucketCount) bucketIdx = bucketCount - 1;
 

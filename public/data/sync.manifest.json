@@ -372,7 +372,7 @@
     },
     {
       "id": "link-northern-spanish",
-      "from": "1701-world-spanish-succ",
+      "from": "1701-world-spanish-succession-war",
       "to": "1700-northern-war",
       "type": "sync_context",
       "label": "Война за испанское наследство сковала Англию, Францию и Австрию, не позволив им вмешаться в Северную войну"

@@ -30,10 +30,18 @@ import {
   isBiographyNode,
   isLiteraryWorkNode,
   isScienceDiscoveryNode,
+  jdnToGregorian,
   parseEventYears,
   parsePreciseDate,
   resolveMacroEras,
 } from './calendar/jdnCalendar';
+import {
+  doesEventMatchSubYearWindow,
+  getEventJdnBounds,
+  getInclusiveWindowDays,
+  getRulerJdnBounds,
+  isFullCalendarYearRange,
+} from './layout/adaptiveOverlapScale';
 import {
   RULER_ALT_COLORS,
   computeRulerSubLaneLayout,
@@ -59,6 +67,7 @@ export * from './calendar/jdnCalendar';
 export * from './nlp/personExtractor';
 export * from './repository/timelineRepository';
 export * from './layout/subLaneLayout';
+export * from './layout/adaptiveOverlapScale';
 export * from './analytics/periodAnalytics';
 export * from './analytics/eraInsights';
 export * from './search/commandSearch';
@@ -856,6 +865,7 @@ export function buildUnifiedTimelineStream(
   effectiveYearTo: number;
   axisResolution: AxisResolution;
   auditCandidateMap: Map<string, AuditCandidateInfo>;
+  omittedYearOnlyCount: number;
 } {
   const q = filters.searchQuery.trim().toLowerCase();
   const selectedTagNorm = filters.selectedSyncTag?.trim().toLowerCase() || null;
@@ -888,6 +898,18 @@ export function buildUnifiedTimelineStream(
   let auditCandidateMap = new Map<string, AuditCandidateInfo>();
   const focusDistanceMap = new Map<string, number>();
   let outOfWindowFocusCount = 0;
+  let omittedYearOnlyCount = 0;
+
+  const hasExactSubYearWindow =
+    typeof filters.fromJdn === 'number' &&
+    typeof filters.toJdn === 'number' &&
+    Number.isFinite(filters.fromJdn) &&
+    Number.isFinite(filters.toJdn) &&
+    filters.fromJdn <= filters.toJdn &&
+    !isFullCalendarYearRange(filters.fromJdn, filters.toJdn);
+  const subYearFromJdn = hasExactSubYearWindow ? Math.round(filters.fromJdn!) : null;
+  const subYearToJdn = hasExactSubYearWindow ? Math.round(filters.toJdn!) : null;
+  const includeUndatedYearEvents = Boolean(filters.includeUndatedYearEvents);
 
   const yearBounds = computeTimelineYearBounds(manifest, rulers, enrichedEvents);
 
@@ -1005,6 +1027,17 @@ export function buildUnifiedTimelineStream(
       const effStart = getEventEffectiveStartYear(ev, branches);
       const effEnd = getEventEffectiveEndYear(ev, branches);
       if (!intersectsTimeWindow(effStart, effEnd, filters.yearFrom, filters.yearTo)) return false;
+      let subYearMatch: 'match' | 'omitted_undated' | 'outside' = 'match';
+      if (subYearFromJdn !== null && subYearToJdn !== null) {
+        subYearMatch = doesEventMatchSubYearWindow(
+          ev,
+          subYearFromJdn,
+          subYearToJdn,
+          branches,
+          includeUndatedYearEvents,
+        );
+        if (subYearMatch === 'outside') return false;
+      }
       if (selectedEraObj) {
         if (!doesIntervalBelongToEra(effStart, effEnd, ev.eraId, selectedEraObj)) {
           return false;
@@ -1063,8 +1096,9 @@ export function buildUnifiedTimelineStream(
           if (!matchesPerson) return false;
         }
       }
-      if (!q) return true;
-      return (
+      const passesQuery = !q
+        ? true
+        : (
         ev.title.toLowerCase().includes(q) ||
         ev.subtitle.toLowerCase().includes(q) ||
         ev.details.toLowerCase().includes(q) ||
@@ -1128,6 +1162,12 @@ export function buildUnifiedTimelineStream(
           ),
         )
       );
+      if (!passesQuery) return false;
+      if (subYearMatch === 'omitted_undated') {
+        omittedYearOnlyCount += 1;
+        return false;
+      }
+      return true;
     });
 
     if (filters.auditUnlinkedMode || filters.computeAuditMap) {
@@ -1140,6 +1180,10 @@ export function buildUnifiedTimelineStream(
     matchingRulers = rulers.filter((r) => {
       if (!isRulersFileMounted || filters.activeBranches.MAIN_RULERS === false) return false;
       if (!intersectsTimeWindow(r.startYear, r.endYear, filters.yearFrom, filters.yearTo)) return false;
+      if (subYearFromJdn !== null && subYearToJdn !== null) {
+        const rb = getRulerJdnBounds(r);
+        if (rb.endJdn < subYearFromJdn || rb.startJdn > subYearToJdn) return false;
+      }
       if (selectedEraObj) {
         if (!doesIntervalBelongToEra(r.startYear, r.endYear, r.eraId, selectedEraObj)) {
           return false;
@@ -1162,7 +1206,16 @@ export function buildUnifiedTimelineStream(
     });
   }
 
-  const axisResolution = detectAxisResolution(effectiveYearFrom, effectiveYearTo);
+  const isSubYearStreamActive =
+    subYearFromJdn !== null && subYearToJdn !== null && !focusTarget && !tracedChainIds;
+  const subYearWindowDays = isSubYearStreamActive
+    ? getInclusiveWindowDays(subYearFromJdn, subYearToJdn)
+    : 365;
+  const axisResolution: AxisResolution = isSubYearStreamActive
+    ? subYearWindowDays <= 60
+      ? 'day'
+      : 'month'
+    : detectAxisResolution(effectiveYearFrom, effectiveYearTo);
   const stream: StreamRow[] = [];
 
   const hasAnySelectableBranchEnabled = branches.some(
@@ -1189,8 +1242,58 @@ export function buildUnifiedTimelineStream(
     }
   });
 
-  // В узком окне (месяцы / дни) добавляем опорные хронологические метки на центральной оси времени
-  if (!focusTarget && (axisResolution === 'month' || axisResolution === 'day')) {
+  // В узком окне (дни / недели / месяцы) добавляем опорные хронологические метки на центральной оси времени
+  const subYearStartG = isSubYearStreamActive ? jdnToGregorian(subYearFromJdn) : null;
+  const subYearStartSortKey = subYearStartG
+    ? subYearStartG.year * 10000 + subYearStartG.month * 100 + subYearStartG.day
+    : null;
+  const subYearStartDateLabel = subYearStartG
+    ? `${subYearStartG.day} ${MONTHS_SHORT_RU[subYearStartG.month - 1] ?? 'янв'} ${subYearStartG.year}`
+    : null;
+
+  if (isSubYearStreamActive) {
+    if (subYearWindowDays <= 95) {
+      const dayStep = subYearWindowDays <= 14 ? 1 : subYearWindowDays <= 35 ? 3 : 7;
+      for (let j = subYearFromJdn; j <= subYearToJdn; j += dayStep) {
+        const g = jdnToGregorian(j);
+        const mShort = MONTHS_SHORT_RU[g.month - 1] ?? 'янв';
+        stream.push({
+          rowType: 'TIME_TICK',
+          year: g.year,
+          month: g.month,
+          day: g.day,
+          label: `${g.day} ${mShort} ${g.year}`,
+          sortKey: g.year * 10000 + g.month * 100 + g.day,
+          priority: 2,
+        });
+      }
+    } else {
+      const startG = jdnToGregorian(subYearFromJdn);
+      const endG = jdnToGregorian(subYearToJdn);
+      let y = startG.year;
+      let m = startG.month;
+      let guard = 0;
+      while ((y < endG.year || (y === endG.year && m <= endG.month)) && guard < 48) {
+        guard += 1;
+        const d = y === startG.year && m === startG.month ? startG.day : 1;
+        const mShort = MONTHS_SHORT_RU[m - 1] ?? 'янв';
+        stream.push({
+          rowType: 'TIME_TICK',
+          year: y,
+          month: m,
+          day: d,
+          label: d === 1 ? `${mShort} ${y}` : `${d} ${mShort} ${y}`,
+          sortKey: y * 10000 + m * 100 + d,
+          priority: 2,
+        });
+        m += 1;
+        if (m > 12) {
+          m = 1;
+          y += 1;
+        }
+      }
+    }
+  } else if (!focusTarget && (axisResolution === 'month' || axisResolution === 'day')) {
     const stepMonths = axisResolution === 'day' ? 1 : 6;
     for (let y = effectiveYearFrom; y <= effectiveYearTo; y++) {
       for (let m = 1; m <= 12; m += stepMonths) {
@@ -1227,19 +1330,26 @@ export function buildUnifiedTimelineStream(
       calendarStyle: rulerObj.calendarStyle,
       task: 'MAIN_RULERS',
     });
+    const rulerBounds = isSubYearStreamActive ? getRulerJdnBounds(rulerObj) : null;
 
-    const startedBeforeWindow = !focusTarget && rulerObj.startYear < effectiveYearFrom;
-    const displayYear = startedBeforeWindow ? effectiveYearFrom : rulerObj.startYear;
-    const displayParts = startedBeforeWindow
-      ? parsePreciseDate(undefined, effectiveYearFrom, false)
-      : startParts;
+    const startedBeforeWindow = isSubYearStreamActive
+      ? Boolean(rulerBounds && rulerBounds.startJdn < subYearFromJdn)
+      : !focusTarget && rulerObj.startYear < effectiveYearFrom;
+    const displayYear = startedBeforeWindow
+      ? (subYearStartG?.year ?? effectiveYearFrom)
+      : rulerObj.startYear;
+    const displaySortKey = startedBeforeWindow
+      ? (subYearStartSortKey ?? parsePreciseDate(undefined, effectiveYearFrom, false).sortKey)
+      : startParts.sortKey;
 
     stream.push({
       rowType: 'RULER_COMMIT',
       year: displayYear,
-      sortKey: displayParts.sortKey,
+      sortKey: displaySortKey,
       dateLabel: startedBeforeWindow
-        ? `${effectiveYearFrom} г. (с ${rulerObj.startYear})`
+        ? isSubYearStreamActive && subYearStartDateLabel
+          ? `${subYearStartDateLabel} (с ${rulerObj.startYear})`
+          : `${effectiveYearFrom} г. (с ${rulerObj.startYear})`
         : formatDateForResolution(startParts, axisResolution),
       priority: 4,
       startedBeforeWindow,
@@ -1248,7 +1358,11 @@ export function buildUnifiedTimelineStream(
       rulerObj,
     });
 
-    if (filters.showEndNodes && ((focusTarget && !filters.focusKeepWindow) || rulerObj.endYear <= effectiveYearTo)) {
+    const rulerEndsInWindow = isSubYearStreamActive
+      ? Boolean(rulerBounds && rulerBounds.endJdn <= subYearToJdn)
+      : (focusTarget && !filters.focusKeepWindow) || rulerObj.endYear <= effectiveYearTo;
+
+    if (filters.showEndNodes && rulerEndsInWindow) {
       stream.push({
         rowType: 'RULER_END',
         year: rulerObj.endYear,
@@ -1275,6 +1389,7 @@ export function buildUnifiedTimelineStream(
     const effStartYear = getEventEffectiveStartYear(eventObj, branches);
     const effEndYear = getEventEffectiveEndYear(eventObj, branches);
     const effStartParts = getEventEffectiveStartPrecision(eventObj, branches);
+    const evBounds = isSubYearStreamActive ? getEventJdnBounds(eventObj, branches) : null;
 
     const isAtomicInView = isAtomicEventNode(
       eventObj,
@@ -1282,27 +1397,32 @@ export function buildUnifiedTimelineStream(
       eventObj.endPrecision,
       axisResolution,
     );
-    const startedBeforeWindow =
-      (!focusTarget || Boolean(filters.focusKeepWindow)) &&
-      !isAtomicInView &&
-      effStartYear < windowEntryFloorYear;
-    const displayYear = startedBeforeWindow ? windowEntryFloorYear : effStartYear;
-    const displayParts = startedBeforeWindow
-      ? parsePreciseDate(undefined, windowEntryFloorYear, false)
-      : effStartParts;
+    const startedBeforeWindow = isSubYearStreamActive
+      ? !isAtomicInView && Boolean(evBounds && evBounds.startJdn < subYearFromJdn)
+      : (!focusTarget || Boolean(filters.focusKeepWindow)) &&
+        !isAtomicInView &&
+        effStartYear < windowEntryFloorYear;
+    const displayYear = startedBeforeWindow
+      ? (subYearStartG?.year ?? windowEntryFloorYear)
+      : effStartYear;
+    const displaySortKey = startedBeforeWindow
+      ? (subYearStartSortKey ?? parsePreciseDate(undefined, windowEntryFloorYear, false).sortKey)
+      : effStartParts.sortKey;
 
     const dateLabel = isBio
       ? startedBeforeWindow
         ? `активен с ${effStartYear} г. (жизнь ${eventObj.period})`
         : `активен ${effStartYear}–${effEndYear} (${eventObj.period})`
       : startedBeforeWindow
-        ? `${windowEntryFloorYear} г. (с ${effStartYear})`
+        ? isSubYearStreamActive && subYearStartDateLabel
+          ? `${subYearStartDateLabel} (с ${effStartYear})`
+          : `${windowEntryFloorYear} г. (с ${effStartYear})`
         : formatDateForResolution(effStartParts, axisResolution);
 
     stream.push({
       rowType: 'EVENT_COMMIT',
       year: displayYear,
-      sortKey: displayParts.sortKey,
+      sortKey: displaySortKey,
       dateLabel,
       priority: isBio ? 5.2 : 5,
       seq: eventObj.seq,
@@ -1311,11 +1431,11 @@ export function buildUnifiedTimelineStream(
       eventObj,
     });
 
-    if (
-      !isAtomicInView &&
-      filters.showEndNodes &&
-      ((focusTarget && !filters.focusKeepWindow) || effEndYear <= effectiveYearTo)
-    ) {
+    const eventEndsInWindow = isSubYearStreamActive
+      ? Boolean(evBounds && evBounds.endJdn <= subYearToJdn)
+      : (focusTarget && !filters.focusKeepWindow) || effEndYear <= effectiveYearTo;
+
+    if (!isAtomicInView && filters.showEndNodes && eventEndsInWindow) {
       stream.push({
         rowType: 'EVENT_END',
         year: effEndYear,
@@ -1347,5 +1467,6 @@ export function buildUnifiedTimelineStream(
     effectiveYearTo,
     axisResolution,
     auditCandidateMap,
+    omittedYearOnlyCount,
   };
 }

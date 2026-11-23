@@ -317,7 +317,7 @@
       "linksTo": [
         {
           "targetId": "1685-naryshkin-baroque-architecture",
-          "type": "sync_context",
+          "type": "enables",
           "label": "Влияние европейского барокко и гравюр конца XVII века отразилось в формировании московского (нарышкинского) барокко"
         },
         {

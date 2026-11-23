@@ -16,8 +16,8 @@ export interface AggregatedSourceEntry extends SourceEntry {
   originCardId?: string;
 }
 
-const ATLAS_PUBLICATION_TITLE = 'Исторический атлас-хронограф России и мира (862–2000)';
-const ATLAS_DB_VERSION = '2.2.0';
+const ATLAS_PUBLICATION_TITLE = 'Исторический атлас-хронограф России и мира (862–2019)';
+const ATLAS_DB_VERSION = '2.3.0';
 
 const CYRILLIC_TRANSLIT: Record<string, string> = {
   а: 'a',
@@ -123,7 +123,7 @@ function buildBibTeXKey(kind: DeepLinkKind, rawId: string): string {
 }
 
 /**
- * Формирует библиографическую ссылку по стандарту ГОСТ Р 7.0.5–2008 для электронного ресурса.
+ * Формирует библиографическую ссылку по стандарту ГОСТ Р 7.0.100–2018 для электронного ресурса.
  */
 export function formatGostCitation(target: CitationTarget, now: Date = new Date()): string {
   const cleanTitle = target.title.trim().replace(/\.+$/, '');
@@ -135,7 +135,7 @@ export function formatGostCitation(target: CitationTarget, now: Date = new Date(
   const url = buildCanonicalDeepLink(target.kind, target.id);
   const accessDate = formatAccessDateRu(now);
 
-  return `${titleWithPeriod} [Электронный ресурс] // ${ATLAS_PUBLICATION_TITLE} : науч.-справ. электрон. изд. — Версия БД ${ATLAS_DB_VERSION}. — Раздел: ${target.sectionLabel}. — URL: ${url} (дата обращения: ${accessDate}).`;
+  return `${titleWithPeriod}. — Текст : электронный // ${ATLAS_PUBLICATION_TITLE} : науч.-справ. электрон. изд. — Версия БД ${ATLAS_DB_VERSION}. — Раздел: ${target.sectionLabel}. — URL: ${url} (дата обращения: ${accessDate}).`;
 }
 
 /**
@@ -161,6 +161,31 @@ export function formatBibTeXCitation(target: CitationTarget, now: Date = new Dat
     `  note         = {Версия БД ${ATLAS_DB_VERSION}; дата обращения: ${isoDate}}`,
     `}`,
   ].join('\n');
+}
+
+export function downloadBibTeXFile(target: CitationTarget, now: Date = new Date()): boolean {
+  if (typeof document === 'undefined' || typeof URL === 'undefined') {
+    return false;
+  }
+  try {
+    const content = `${formatBibTeXCitation(target, now)}\n`;
+    const key = buildBibTeXKey(target.kind, target.id);
+    const blob = new Blob([content], { type: 'application/x-bibtex;charset=utf-8' });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = `${key}.bib`;
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+    }, 1000);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function copyTextToClipboard(text: string): Promise<boolean> {

@@ -427,15 +427,18 @@ export function computeDensityBins(
   binCount = 28,
 ): DensityBin[] {
   const safeFrom = Math.min(yearFrom, yearTo);
-  const safeTo = Math.max(safeFrom + 1, yearTo);
-  const span = safeTo - safeFrom;
-  const count = Math.max(4, Math.min(60, binCount));
-  const step = span / count;
+  const safeTo = Math.max(safeFrom, yearTo);
+  const totalYears = safeTo - safeFrom + 1;
+  const requestedCount = Math.max(1, Math.min(60, Math.round(binCount)));
+  const count = Math.min(totalYears, requestedCount);
 
   const bins: DensityBin[] = [];
   for (let i = 0; i < count; i++) {
-    const startYear = Math.round(safeFrom + i * step);
-    const endYear = i === count - 1 ? safeTo : Math.max(startYear, Math.round(safeFrom + (i + 1) * step) - 1);
+    const startYear = safeFrom + Math.floor((totalYears * i) / count);
+    const endYear =
+      i === count - 1
+        ? safeTo
+        : safeFrom + Math.floor((totalYears * (i + 1)) / count) - 1;
     let totalCount = 0;
     let commitCount = 0;
 

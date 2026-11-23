@@ -55,7 +55,7 @@ const MONTHS_NOMINATIVE_RU = [
   'декабрь',
 ];
 
-function gregorianToJdn(y: number, m: number, d: number): number {
+export function gregorianToJdn(y: number, m: number, d: number): number {
   const a = Math.floor((14 - m) / 12);
   const yAdj = y + 4800 - a;
   const mAdj = m + 12 * a - 3;
@@ -70,14 +70,14 @@ function gregorianToJdn(y: number, m: number, d: number): number {
   );
 }
 
-function julianToJdn(y: number, m: number, d: number): number {
+export function julianToJdn(y: number, m: number, d: number): number {
   const a = Math.floor((14 - m) / 12);
   const yAdj = y + 4800 - a;
   const mAdj = m + 12 * a - 3;
   return d + Math.floor((153 * mAdj + 2) / 5) + 365 * yAdj + Math.floor(yAdj / 4) - 32083;
 }
 
-function jdnToGregorian(jdn: number): { year: number; month: number; day: number } {
+export function jdnToGregorian(jdn: number): { year: number; month: number; day: number } {
   const a = jdn + 32044;
   const b = Math.floor((4 * a + 3) / 146097);
   const c = a - Math.floor((146097 * b) / 4);
@@ -90,7 +90,7 @@ function jdnToGregorian(jdn: number): { year: number; month: number; day: number
   return { year, month, day };
 }
 
-function jdnToJulian(jdn: number): { year: number; month: number; day: number } {
+export function jdnToJulian(jdn: number): { year: number; month: number; day: number } {
   const c = jdn + 32082;
   const d = Math.floor((4 * c + 3) / 1461);
   const e = c - Math.floor((1461 * d) / 4);
@@ -296,23 +296,49 @@ export function parsePreciseDate(
   }
 
   const refMonth = month ?? 1;
+  const refDay = isEnd ? 28 : 1;
   const offsetDays = julianToJdn(year, refMonth, 15) - gregorianToJdn(year, refMonth, 15);
-  const unifiedSortDay =
-    resolvedStyle === 'julian' && !isEnd ? Math.min(28, 1 + Math.max(0, offsetDays)) : origSortDay;
-  const unified: DateCalendarParts = {
-    year,
-    month,
-    precision: 'month',
-    sortKey: year * 10000 + refMonth * 100 + unifiedSortDay,
-  };
+  let unified: DateCalendarParts;
+  let gregorianParts: DateCalendarParts | undefined;
+  let julianParts: DateCalendarParts | undefined;
+
+  if (resolvedStyle === 'julian') {
+    const g = jdnToGregorian(julianToJdn(year, refMonth, refDay));
+    unified = {
+      year: g.year,
+      month: g.month,
+      precision: 'month',
+      sortKey: g.year * 10000 + g.month * 100 + g.day,
+    };
+    julianParts = original;
+    gregorianParts = unified;
+  } else {
+    const j = jdnToJulian(gregorianToJdn(year, refMonth, refDay));
+    unified = {
+      year,
+      month,
+      precision: 'month',
+      sortKey: year * 10000 + refMonth * 100 + origSortDay,
+    };
+    gregorianParts = original;
+    julianParts =
+      resolvedStyle === 'both'
+        ? {
+            year: j.year,
+            month: j.month,
+            precision: 'month',
+            sortKey: j.year * 10000 + j.month * 100 + j.day,
+          }
+        : undefined;
+  }
 
   return {
     ...unified,
     calendarStyle: resolvedStyle,
     original,
     unified,
-    julianParts: resolvedStyle === 'julian' || resolvedStyle === 'both' ? original : undefined,
-    gregorianParts: resolvedStyle === 'gregorian' || resolvedStyle === 'both' ? original : undefined,
+    julianParts,
+    gregorianParts,
     offsetDays,
     hasStyleSplit: true,
   };
@@ -326,7 +352,7 @@ export function detectAxisResolution(yearFrom: number, yearTo: number): AxisReso
 }
 
 export function resolveMacroEra(era: MacroEra, idx = 0): ResolvedMacroEra {
-  const parsed = parseEventYears(era.period || '862–2000');
+  const parsed = parseEventYears(era.period || '862–2019');
   const startYear = typeof era.startYear === 'number' ? era.startYear : parsed.startYear;
   const endYear = typeof era.endYear === 'number' ? era.endYear : parsed.endYear;
 
@@ -371,10 +397,10 @@ export function findMacroEraForYear(
   const matches = eras.filter((e) => year >= e.startYear && year <= e.endYear);
   if (matches.length === 1) return matches[0];
   if (matches.length > 1) {
-    if (month !== undefined && month <= 6) {
+    if (year === 1917 && month !== undefined && month <= 10) {
       return matches[0];
     }
-    if (year === 1917 && month !== undefined && month <= 9) {
+    if (month !== undefined && month <= 6) {
       return matches[0];
     }
     return matches[matches.length - 1];

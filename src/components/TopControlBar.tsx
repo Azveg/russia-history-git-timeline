@@ -24,16 +24,27 @@ import {
   computeMacroRegionCounts,
   getMacroRegionOption,
 } from '../engine/regionFilter';
-import { computeBranchPresetMap, resolveMacroEras } from '../engine/timelineEngine';
+import {
+  MIN_WINDOW_DAYS,
+  computeBranchPresetMap,
+  formatWindowDurationLabel,
+  formatWindowRangeLabel,
+  getInclusiveWindowDays,
+  resolveMacroEras,
+  yearEndJdn,
+  yearStartJdn,
+} from '../engine/timelineEngine';
 import type {
   BranchDefinition,
   BranchPresetId,
   CardDensity,
   EnrichedEvent,
+  ExactJdnWindow,
   MacroEra,
   MacroRegionId,
   RulerPeriod,
   TimeScaleMode,
+  YearRangeStep,
 } from '../types/timeline';
 import { BranchSelectorPopover } from './BranchSelectorPopover';
 import { EPOCH_SLICE_PRESETS, EraSelectorPopover } from './EraSelectorPopover';
@@ -67,11 +78,12 @@ interface TopControlBarProps {
   onSelectMacroRegion?: (region: MacroRegionId) => void;
   yearFrom: number;
   yearTo: number;
+  exactDateRange?: ExactJdnWindow | null;
   minYear?: number;
   maxYear?: number;
   onYearRangeChange: (from: number, to: number) => void;
   zoomHistoryCount: number;
-  lastZoomStep: { from: number; to: number } | null;
+  lastZoomStep: YearRangeStep | null;
   onStepBackZoom: () => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -146,6 +158,7 @@ export const TopControlBar = memo(function TopControlBar({
   onSelectMacroRegion,
   yearFrom,
   yearTo,
+  exactDateRange = null,
   minYear = 862,
   maxYear = 2019,
   onYearRangeChange,
@@ -178,12 +191,25 @@ export const TopControlBar = memo(function TopControlBar({
   const [isViewMenuOpen, setIsViewMenuOpen] = useState(false);
 
   const leafBranches = branchControls.filter((b) => !b.isGroup);
+  const globalStartJdn = yearStartJdn(minYear);
+  const globalEndJdn = yearEndJdn(maxYear);
+  const activeFromJdn = exactDateRange ? exactDateRange.fromJdn : yearStartJdn(yearFrom);
+  const activeToJdn = exactDateRange ? exactDateRange.toJdn : yearEndJdn(yearTo);
+  const windowDays = getInclusiveWindowDays(activeFromJdn, activeToJdn);
+  const fullDays = getInclusiveWindowDays(globalStartJdn, globalEndJdn);
   const span = Math.max(1, yearTo - yearFrom);
-  const fullSpan = Math.max(1, maxYear - minYear);
-  const canZoomIn = span > 2;
-  const canZoomOut = span < fullSpan;
-  const canShiftLeft = yearFrom > minYear;
-  const canShiftRight = yearTo < maxYear;
+  const canZoomIn = windowDays > MIN_WINDOW_DAYS;
+  const canZoomOut = windowDays < fullDays - 1;
+  const canShiftLeft = activeFromJdn > globalStartJdn;
+  const canShiftRight = activeToJdn < globalEndJdn;
+  const shiftStepLabel = exactDateRange
+    ? formatWindowDurationLabel(Math.max(1, Math.round(windowDays / 2)))
+    : `${Math.max(1, Math.round(span / 2))} л.`;
+  const lastStepLabel = lastZoomStep
+    ? lastZoomStep.exactDateRange
+      ? formatWindowRangeLabel(lastZoomStep.exactDateRange.fromJdn, lastZoomStep.exactDateRange.toJdn, true).full
+      : `${lastZoomStep.from}–${lastZoomStep.to} гг.`
+    : null;
 
   const isPresetActive = (presetId: BranchPresetId): boolean => {
     if (leafBranches.length === 0) return false;
@@ -283,13 +309,13 @@ export const TopControlBar = memo(function TopControlBar({
       ? (resolvedEras.find((era) => era.id === selectedEraId) ?? null)
       : null;
 
-    const isNarrowedWindow = yearFrom !== minYear || yearTo !== maxYear;
+    const isNarrowedWindow = Boolean(exactDateRange) || yearFrom !== minYear || yearTo !== maxYear;
     const matchedRulerByBounds =
-      !isCampaignMode && !explicitRuler && !explicitEra && isNarrowedWindow
+      !isCampaignMode && !exactDateRange && !explicitRuler && !explicitEra && isNarrowedWindow
         ? (rulers.find((r) => r.startYear === yearFrom && r.endYear === yearTo) ?? null)
         : null;
     const matchedEraByBounds =
-      !isCampaignMode && !explicitRuler && !explicitEra && !matchedRulerByBounds && isNarrowedWindow
+      !isCampaignMode && !exactDateRange && !explicitRuler && !explicitEra && !matchedRulerByBounds && isNarrowedWindow
         ? (resolvedEras.find(
             (era) =>
               Math.max(minYear, era.startYear) === yearFrom &&
@@ -297,18 +323,24 @@ export const TopControlBar = memo(function TopControlBar({
           ) ?? null)
         : null;
     const matchedPresetByBounds =
-      !isCampaignMode && !explicitRuler && !explicitEra && !matchedRulerByBounds && !matchedEraByBounds && isNarrowedWindow
+      !isCampaignMode && !exactDateRange && !explicitRuler && !explicitEra && !matchedRulerByBounds && !matchedEraByBounds && isNarrowedWindow
         ? (EPOCH_SLICE_PRESETS.find((p) => p.from === yearFrom && p.to === yearTo) ?? null)
         : null;
 
     const isFiltered = Boolean(explicitRuler || explicitEra || isNarrowedWindow);
+    const formattedWindow = exactDateRange
+      ? formatWindowRangeLabel(exactDateRange.fromJdn, exactDateRange.toJdn, true)
+      : null;
 
     let label = isCampaignMode ? 'Вся кампания' : 'Все века';
     let detailTitle = isCampaignMode
       ? `Открыть сводное досье кампании (${yearFrom}–${yearTo} гг.)`
       : `Открыть досье всего периода (${yearFrom}–${yearTo} гг.)`;
 
-    if (explicitRuler) {
+    if (formattedWindow) {
+      label = windowDays <= 14 ? 'Неделя' : 'Окно';
+      detailTitle = `Точный интервал: ${formattedWindow.full} (${formattedWindow.durationLabel}). Клик — досье окна`;
+    } else if (explicitRuler) {
       label = explicitRuler.shortRuler;
       detailTitle = `Активный фильтр правителя: ${explicitRuler.ruler} (${yearFrom}–${yearTo}). Клик — досье окна`;
     } else if (explicitEra) {
@@ -325,16 +357,32 @@ export const TopControlBar = memo(function TopControlBar({
       detailTitle = `Срез: ${matchedPresetByBounds.label}. Клик — досье окна`;
     } else if (isNarrowedWindow) {
       label = 'Окно';
-      detailTitle = `Выбранный интервал: ${yearFrom}–${yearTo} гг. Клик — досье окна`;
+      detailTitle = `Выбранный интервал: ${yearFrom === yearTo ? `${yearFrom} г.` : `${yearFrom}–${yearTo} гг.`} Клик — досье окна`;
     }
 
     return {
       label,
-      rangeText: `${yearFrom}–${yearTo}`,
+      rangeText: formattedWindow
+        ? formattedWindow.compact
+        : yearFrom === yearTo
+          ? `${yearFrom}`
+          : `${yearFrom}–${yearTo}`,
       isFiltered,
       detailTitle,
     };
-  }, [isCampaignMode, selectedRulerId, selectedEraId, rulers, resolvedEras, yearFrom, yearTo, minYear, maxYear]);
+  }, [
+    isCampaignMode,
+    exactDateRange,
+    windowDays,
+    selectedRulerId,
+    selectedEraId,
+    rulers,
+    resolvedEras,
+    yearFrom,
+    yearTo,
+    minYear,
+    maxYear,
+  ]);
 
   const handleResetTimeBreadcrumb = () => {
     if (onResetTimeFilter) {
@@ -576,8 +624,8 @@ export const TopControlBar = memo(function TopControlBar({
                 disabled={zoomHistoryCount === 0}
                 aria-label="Шаг назад по масштабу"
                 title={
-                  lastZoomStep
-                    ? `Вернуться к предыдущему масштабу: ${lastZoomStep.from}–${lastZoomStep.to} гг. (шагов в истории: ${zoomHistoryCount})`
+                  lastStepLabel
+                    ? `Вернуться к предыдущему масштабу: ${lastStepLabel} (шагов в истории: ${zoomHistoryCount})`
                     : 'История масштабирования пуста'
                 }
                 className={`p-1.5 rounded-md inline-flex items-center justify-center transition-colors ${
@@ -598,7 +646,7 @@ export const TopControlBar = memo(function TopControlBar({
                 aria-label="Отдалить окно времени в 2 раза"
                 title={
                   canZoomOut
-                    ? `Отдалить масштаб ×2 вокруг центра окна (${Math.round((yearFrom + yearTo) / 2)} г.)`
+                    ? `Отдалить масштаб ×2 (текущее окно: ${timeBreadcrumb.rangeText})`
                     : `Уже открыт весь период (${minYear}–${maxYear})`
                 }
                 className={`p-1.5 rounded-md inline-flex items-center justify-center transition-colors ${
@@ -617,8 +665,8 @@ export const TopControlBar = memo(function TopControlBar({
                 aria-label="Приблизить окно времени в 2 раза"
                 title={
                   canZoomIn
-                    ? `Приблизить масштаб ×2 вокруг центра окна (${Math.round((yearFrom + yearTo) / 2)} г.)`
-                    : 'Достигнут максимальный масштаб (2–3 года)'
+                    ? `Приблизить масштаб ×2 (вплоть до 7 дней)`
+                    : 'Достигнуто максимальное приближение (1 неделя / 7 дней)'
                 }
                 className={`p-1.5 rounded-md inline-flex items-center justify-center transition-colors ${
                   canZoomIn
@@ -698,7 +746,7 @@ export const TopControlBar = memo(function TopControlBar({
                 aria-label="Сдвинуть окно времени влево"
                 title={
                   canShiftLeft
-                    ? `Сдвинуть окно назад на ${Math.max(1, Math.round(span / 2))} л.`
+                    ? `Сдвинуть окно назад на ${shiftStepLabel}`
                     : 'Достигнута нижняя граница хронологии'
                 }
                 className={`p-0.5 rounded transition-colors ${
@@ -736,7 +784,7 @@ export const TopControlBar = memo(function TopControlBar({
                 aria-label="Сдвинуть окно времени вправо"
                 title={
                   canShiftRight
-                    ? `Сдвинуть окно вперёд на ${Math.max(1, Math.round(span / 2))} л.`
+                    ? `Сдвинуть окно вперёд на ${shiftStepLabel}`
                     : 'Достигнута верхняя граница хронологии'
                 }
                 className={`p-0.5 rounded transition-colors ${
@@ -907,6 +955,17 @@ export const TopControlBar = memo(function TopControlBar({
                         {showEndNodes ? 'ВКЛ' : 'ВЫКЛ'}
                       </span>
                     </button>
+                  </div>
+
+                  <div className="border-t border-slate-800/80 pt-2 px-1.5 space-y-1 text-[11px] leading-relaxed text-slate-400">
+                    <div className="font-mono text-[10px] text-amber-300/90">
+                      Календарная методика (ст. ст. / н. ст.)
+                    </div>
+                    <p>
+                      До 15 окт. 1582 г. — юлианский стиль; с 1582 по 14 февр. 1918 г. для России
+                      приводится двойная датировка (ст. ст. / н. ст., разница 10–13 сут.); с 14 февр.
+                      1918 г. — григорианский стиль.
+                    </p>
                   </div>
                 </div>
               )}
